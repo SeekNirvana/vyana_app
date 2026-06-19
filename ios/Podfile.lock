@@ -1,0 +1,93 @@
+PODS:
+  - coinbase_wallet_sdk (0.0.1):
+    - CoinbaseWalletSDK/CrossPlatform (= 1.0.4)
+    - Flutter
+  - CoinbaseWalletSDK/Client (1.0.4)
+  - CoinbaseWalletSDK/CrossPlatform (1.0.4):
+    - CoinbaseWalletSDK/Client
+  - ffmpeg_kit_flutter_new_min (7.1.1):
+    - ffmpeg_kit_flutter_new_min/min (= 7.1.1)
+    - Flutter
+  - ffmpeg_kit_flutter_new_min/min (7.1.1):
+    - Flutter
+  - Flutter (1.0.0)
+  - flutter_gemma (0.13.4):
+    - Flutter
+    - MediaPipeTasksGenAI (= 0.10.33)
+    - MediaPipeTasksGenAIC (= 0.10.33)
+    - TensorFlowLiteC (= 0.0.1-nightly.20250619)
+  - flutter_tts (0.0.1):
+    - Flutter
+  - iOSDFULibrary (4.13.0):
+    - ZIPFoundation (= 0.9.11)
+  - large_file_handler (0.0.1):
+    - Flutter
+  - MediaPipeTasksGenAI (0.10.33):
+    - MediaPipeTasksGenAIC (= 0.10.33)
+  - MediaPipeTasksGenAIC (0.10.33)
+  - TensorFlowLiteC (0.0.1-nightly.20250619):
+    - TensorFlowLiteC/Core (= 0.0.1-nightly.20250619)
+  - TensorFlowLiteC/Core (0.0.1-nightly.20250619)
+  - vyana_sdk (0.2.6):
+    - Flutter
+    - iOSDFULibrary (~> 4.13.0)
+  - whisper_ggml_plus (1.3.1):
+    - Flutter
+  - ZIPFoundation (0.9.11)
+
+DEPENDENCIES:
+  - coinbase_wallet_sdk (from `.symlinks/plugins/coinbase_wallet_sdk/ios`)
+  - ffmpeg_kit_flutter_new_min (from `.symlinks/plugins/ffmpeg_kit_flutter_new_min/ios`)
+  - Flutter (from `Flutter`)
+  - flutter_gemma (from `.symlinks/plugins/flutter_gemma/ios`)
+  - flutter_tts (from `.symlinks/plugins/flutter_tts/ios`)
+  - large_file_handler (from `.symlinks/plugins/large_file_handler/ios`)
+  - vyana_sdk (from `.symlinks/plugins/vyana_sdk/ios`)
+  - whisper_ggml_plus (from `.symlinks/plugins/whisper_ggml_plus/ios`)
+
+SPEC REPOS:
+  trunk:
+    - CoinbaseWalletSDK
+    - iOSDFULibrary
+    - MediaPipeTasksGenAI
+    - MediaPipeTasksGenAIC
+    - TensorFlowLiteC
+    - ZIPFoundation
+
+EXTERNAL SOURCES:
+  coinbase_wallet_sdk:
+    :path: ".symlinks/plugins/coinbase_wallet_sdk/ios"
+  ffmpeg_kit_flutter_new_min:
+    :path: ".symlinks/plugins/ffmpeg_kit_flutter_new_min/ios"
+  Flutter:
+    :path: Flutter
+  flutter_gemma:
+    :path: ".symlinks/plugins/flutter_gemma/ios"
+  flutter_tts:
+    :path: ".symlinks/plugins/flutter_tts/ios"
+  large_file_handler:
+    :path: ".symlinks/plugins/large_file_handler/ios"
+  vyana_sdk:
+    :path: ".symlinks/plugins/vyana_sdk/ios"
+  whisper_ggml_plus:
+    :path: ".symlinks/plugins/whisper_ggml_plus/ios"
+
+SPEC CHECKSUMS:
+  coinbase_wallet_sdk: 7ccd4e1a7940deba6ba9bd81beece999a2268c15
+  CoinbaseWalletSDK: ea1f37512bbc69ebe07416e3b29bf840f5cc3152
+  ffmpeg_kit_flutter_new_min: f28813df6012a3b3c0e66e4e9f3583a9b30be4d6
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_gemma: 5a7a785813c235bfcac6fb7149d917708b484391
+  flutter_tts: 91ad1884033cd95ef6e9338754adad54f01f090f
+  iOSDFULibrary: ae1bcb1cb921e6e3ff551755f6fdff1b77e07e15
+  large_file_handler: e3686e246052b0f03955789d3a04604574f80afe
+  MediaPipeTasksGenAI: 8eed8e6d03fe26d30c4205cb5295ec7b394432ad
+  MediaPipeTasksGenAIC: cb098ecea44e248efe8fe7e2f62b4cb0df781802
+  TensorFlowLiteC: 215ef57653dd0fa09a474e7d94d79ae64a870b28
+  vyana_sdk: afa8962cb18eb18b66be3553bd9df13d4cd3df95
+  whisper_ggml_plus: bc246e13d703b406453fe5fac6ceda7ae2217092
+  ZIPFoundation: b1f0de4eed33e74a676f76e12559ab6b75990197
+
+PODFILE CHECKSUM: b3de6a0f424eba74b6ed93ba20d399bcf7a211c9
+
+COCOAPODS: 1.16.2

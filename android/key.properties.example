@@ -1,0 +1,17 @@
+# Copy to key.properties and paste your passwords:
+#   cp android/key.properties.example android/key.properties
+#
+# Solana dApp Store requires a key separate from Google Play:
+# https://docs.solanamobile.com/dapp-store/publishing-from-google-play
+
+# --- Google Play upload key (fill when publishing to Play) ---
+googlePlayStorePassword=PASTE_GOOGLEPLAY_KEYSTORE_PASSWORD
+googlePlayKeyPassword=PASTE_GOOGLEPLAY_KEY_PASSWORD
+googlePlayKeyAlias=vyana-googleplay
+googlePlayStoreFile=../keystores/vyana-googleplay.keystore
+
+# --- Solana dApp Store key (required for dApp Store APK) ---
+dappStoreStorePassword=PASTE_DAPPSTORE_KEYSTORE_PASSWORD
+dappStoreKeyPassword=PASTE_DAPPSTORE_KEY_PASSWORD
+dappStoreKeyAlias=vyana-dappstore
+dappStoreStoreFile=../keystores/vyana-dappstore.keystore

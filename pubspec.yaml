@@ -1,0 +1,172 @@
+name: vyana
+description: "Vyana smart ring detection, connection, and vitals dashboard."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.0.1+2
+
+environment:
+  sdk: ^3.12.0
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  vyana_sdk:
+    git:
+      url: https://github.com/SeekNirvana/vyana_sdk.git
+      ref: v0.2.7
+  shared_preferences: ^2.5.5
+  package_info_plus: ^10.1.0
+  device_info_plus: ^13.1.0
+  solana: ^0.31.0
+  solana_mobile_client: ^0.1.2
+  reown_appkit: ^1.5.0
+
+  # Vyana Sadhana/Antara foundation
+  flutter_riverpod: ^2.6.1
+  go_router: ^14.8.1
+  flutter_svg: ^2.0.17
+
+  # Local-vault persistence (sessions, samples, route points, journal)
+  # drift_flutter 0.3.x pulls sqlite3 ^3 (required by flutter_gemma 0.13.x).
+  drift: ^2.30.0
+  drift_flutter: ^0.3.0
+  path_provider: ^2.1.4
+  geolocator: ^14.0.3
+  flutter_tts: ^4.2.5
+  flutter_dotenv: ^6.0.1
+
+  # On-device AI guides — local LLM inference + offline voice (STT/TTS).
+  # All guide personas run fully on-device; nothing leaves the phone.
+  flutter_gemma: ^0.13.2          # On-device Gemma runtime (download + inference)
+  record: ^6.2.0                  # Microphone capture for voice prompts
+  whisper_ggml_plus: ^1.5.2       # Offline speech-to-text (whisper.cpp)
+  whisper_ggml_plus_ffmpeg: ^1.0.0 # WAV->whisper audio conversion
+  path: ^1.9.1                    # Model/voice storage path joins
+  image_picker: ^1.2.2
+  url_launcher: ^6.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # drift code generation
+  drift_dev: ^2.30.0
+  build_runner: ^2.4.13
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.6
+
+dependency_overrides:
+  web_socket_channel: ^3.0.2
+  package_info_plus: ^10.1.0
+  # whisper_ggml_plus needs freezed_annotation ^3, while solana_mobile_client
+  # 0.1.2 (latest) pins ^2. solana ships pre-generated freezed code, so forcing
+  # the newer annotation runtime resolves the conflict without code changes.
+  freezed_annotation: ^3.1.0
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+
+  assets:
+    - .env
+    - assets/logo.png
+    - assets/fonts/
+    - assets/ring_images/
+
+  # Bundled (not runtime-fetched) so the app stays offline/sovereign.
+  # Cormorant Garamond and Manrope are variable-weight fonts; Flutter maps
+  # fontWeight onto the wght axis.
+  fonts:
+    - family: Cormorant Garamond
+      fonts:
+        - asset: assets/fonts/CormorantGaramond.ttf
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope.ttf
+    - family: Space Mono
+      fonts:
+        - asset: assets/fonts/SpaceMono-Regular.ttf
+        - asset: assets/fonts/SpaceMono-Bold.ttf
+          weight: 700
+
+  # To add assets to your application, add an assets section, like this:
+  # assets:
+  #   - images/a_dot_burr.jpeg
+  #   - images/a_dot_ham.jpeg
+
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/to/resolution-aware-images
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/to/asset-from-package
+
+  # To add custom fonts to your application, add a fonts section here,
+  # in this "flutter" section. Each entry in this list should have a
+  # "family" key with the font family name, and a "fonts" key with a
+  # list giving the asset and other descriptors for the font. For
+  # example:
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
+  #
+  # For details regarding fonts from package dependencies,
+  # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/logo.png
+  adaptive_icon_background: "#0A0F0A"
+  adaptive_icon_foreground: assets/logo.png
+  remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#0A0F0A"
+  image: assets/logo.png
+  android_12:
+    color: "#0A0F0A"
+    image: assets/logo.png

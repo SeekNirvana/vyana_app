@@ -1,0 +1,1 @@
+Future<bool> isSolanaMobileDevice() => Future.value(false);

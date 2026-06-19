@@ -1,0 +1,7 @@
+# Copy to local.properties and set paths for this machine:
+#   cp android/local.properties.example android/local.properties
+#
+# Not used for signing — see key.properties.example for keystore passwords.
+
+sdk.dir=/path/to/Android/sdk
+flutter.sdk=/path/to/flutter
