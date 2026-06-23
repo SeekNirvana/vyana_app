@@ -4,6 +4,8 @@
 
 ### Added
 
+- **iOS flavor schemes** (`googlePlay`, `dappStore`) so `flutter run` works on
+  iPhone alongside Android product flavors (uses `default-flavor: googlePlay`)
 - **Exit confirmation** on main tabs — Android hardware back shows a confirm
   dialog instead of closing the app (pushed screens such as scan and vitals
   still pop normally)

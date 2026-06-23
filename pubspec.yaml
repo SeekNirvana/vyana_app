@@ -99,6 +99,10 @@ dependency_overrides:
 flutter:
   # Default Android flavor for `flutter run` / IDE Run without --flavor.
   default-flavor: googlePlay
+  config:
+    # Avoid an extra Xcode scheme (FlutterGeneratedPluginSwiftPackage) that
+    # forces --flavor on iOS when Android product flavors are enabled.
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

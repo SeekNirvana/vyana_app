@@ -28,13 +28,32 @@ flutter run
 flutter run --flavor googlePlay
 ```
 
+`googlePlay` is also the default flavor (`pubspec.yaml` → `default-flavor`), so
+plain `flutter run` works too — including the IDE Run button.
+
+For Seeker/Saga builds:
+
+```bash
+flutter run --flavor dappStore
+```
+
 ### iOS
 
 Requires Xcode 16+ and iOS 16 deployment target (set in `ios/Podfile`).
 
+Vyana mirrors the Android flavors as Xcode schemes (`googlePlay`, `dappStore`).
+`googlePlay` is the default (`pubspec.yaml` → `default-flavor`), so plain
+`flutter run` works on a connected iPhone:
+
 ```bash
 cd ios && pod install && cd ..
 flutter run
+```
+
+For the dApp Store scheme:
+
+```bash
+flutter run --flavor dappStore
 ```
 
 ## Release (Android)

@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "vyana (debug)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "debug",
+      "toolArgs": ["--flavor", "googlePlay"]
+    },
+    {
+      "name": "vyana (release)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "release",
+      "toolArgs": ["--flavor", "googlePlay"]
+    },
+    {
+      "name": "vyana dApp Store (release)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "release",
+      "toolArgs": ["--flavor", "dappStore"]
+    }
+  ]
+}
