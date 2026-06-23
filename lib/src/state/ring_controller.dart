@@ -103,9 +103,10 @@ class RingController extends ChangeNotifier {
   HistoryLogStatus get historyLogStatus => _historyLogStatus;
   List<String> get eventLog => List.unmodifiable(_eventLog);
 
-  /// Paired device, synced records, or hydrated cache — user has used a ring before.
+  /// Paired device, live connection, synced records, or hydrated cache.
   bool get hasRingContext =>
       _pairedRing != null ||
+      _isConnected ||
       _history.totalRecords > 0 ||
       _historyHydratedFromCache;
 

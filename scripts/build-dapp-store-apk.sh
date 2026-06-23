@@ -18,13 +18,17 @@ die() {
 
 cd "$ROOT"
 flutter pub get
+# Avoid stale incremental snapshots omitting recent Dart changes (e.g. new UI rows).
+flutter clean
 flutter build apk --release --flavor dappStore --target-platform android-arm64
 
 APK="$APK_DIR/app-dappstore-release.apk"
 [[ -f "$APK" ]] || die "Expected APK not found at $APK"
 
+"$ROOT/scripts/verify-release-apk.sh" "$APK"
+
 echo ""
-echo "Signed dApp Store APK:"
+echo "Signed dApp Store APK (verified):"
 echo "  $APK"
 echo ""
 echo "Verify signing:"

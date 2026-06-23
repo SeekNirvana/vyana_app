@@ -1,0 +1,15 @@
+# Required fingerprints in lib/arm64-v8a/libapp.so for store-ready dApp Store APKs.
+# Update when shipping major features; verify-release-apk.sh fails the build if any are missing.
+#
+# These catch stale incremental compiles that bump versionCode but omit new Dart code.
+
+# v1.0.2 — Reset PRANA ring
+RingResetResult
+resetPranaRingToFactory
+restoreFactorySettings
+deleteDeviceHealthData
+The ring did not confirm factory reset. Stay nearby and try again.
+Ring and local vitals cleared. Pair again from You when ready.
+
+# v1.0.2 — Exit confirmation on main tabs
+Exit Vyana?

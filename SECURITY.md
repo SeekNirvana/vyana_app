@@ -6,7 +6,7 @@ If you discover a security issue in Vyana App, please report it responsibly.
 
 **Do not** open a public GitHub issue for exploitable vulnerabilities.
 
-Contact: **security@seeknirvana.com** (or open a
+Contact: **support@seeknirvana.com** (or open a
 [GitHub Security Advisory](https://github.com/SeekNirvana/vyana_app/security/advisories/new)
 on this repository).
 

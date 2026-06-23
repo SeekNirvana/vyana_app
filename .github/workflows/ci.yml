@@ -26,3 +26,26 @@ jobs:
 
       - name: Test
         run: flutter test
+
+  release-apk-contract:
+    name: Release APK contract (stale-build guard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: |
+          cp .env.example .env
+          flutter pub get
+
+      - name: Build dApp Store release APK (unsigned OK for fingerprint check)
+        run: |
+          flutter clean
+          flutter build apk --release --flavor dappStore --target-platform android-arm64
+
+      - name: Verify release APK fingerprints
+        run: ./scripts/verify-release-apk.sh build/app/outputs/flutter-apk/app-dappstore-release.apk

@@ -78,6 +78,19 @@ cp android/key.properties.example android/key.properties
 
 ### dApp Store APK (arm64)
 
+**Always use the script** — never `flutter build apk` alone for store uploads.
+
+```bash
+./scripts/pre-store-upload.sh
+```
+
+That runs `flutter analyze`, `flutter test`, a **clean** release build, signing, and
+**mandatory APK verification** (`scripts/verify-release-apk.sh`). The build **fails**
+if the APK is missing compiled features (catches stale incremental builds that bump
+the version but drop new Dart code).
+
+Build only (after tests already passed):
+
 ```bash
 ./scripts/build-dapp-store-apk.sh
 ```
@@ -87,6 +100,13 @@ Output:
 ```
 build/app/outputs/flutter-apk/app-dappstore-release.apk
 ```
+
+### Before every store upload
+
+1. Run `./scripts/pre-store-upload.sh` (or at minimum `./scripts/build-dapp-store-apk.sh`)
+2. Confirm the script prints `Release APK verified` — if it fails, **do not upload**
+3. Install the APK on a Seeker and spot-check new features in **release** mode (not debug)
+4. When adding features, append fingerprints to `scripts/release-manifest.txt`
 
 ### Clean rebuild
 
