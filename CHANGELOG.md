@@ -4,6 +4,9 @@
 
 ### Added
 
+- **Exit confirmation** on main tabs — Android hardware back shows a confirm
+  dialog instead of closing the app (pushed screens such as scan and vitals
+  still pop normally)
 - **Reset PRANA ring** on the You tab — when connected, factory-resets the ring
   if `isSupportFactorySettings` is available; otherwise erases on-ring health
   history via SDK delete commands (sleep, steps, vitals, etc.), then unpairs,

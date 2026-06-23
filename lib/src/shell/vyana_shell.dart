@@ -83,24 +83,37 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
 
     final t = context.vyana;
     final index = ref.watch(tabIndexProvider);
-    return Scaffold(
-      extendBody: true,
-      body: DecoratedBox(
-        decoration: BoxDecoration(gradient: t.bgGradient),
-        child: SafeArea(
-          bottom: false,
-          child: IndexedStack(index: index, children: _tabs),
-        ),
-      ),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SessionResumeBar(),
-          VTabBar(
-            active: index,
-            onTap: (i) => ref.read(tabIndexProvider.notifier).state = i,
+    final sessionRecording = ref.watch(sessionControllerProvider).active;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        unawaited(
+          confirmExitVyanaApp(
+            context,
+            sessionRecording: sessionRecording,
           ),
-        ],
+        );
+      },
+      child: Scaffold(
+        extendBody: true,
+        body: DecoratedBox(
+          decoration: BoxDecoration(gradient: t.bgGradient),
+          child: SafeArea(
+            bottom: false,
+            child: IndexedStack(index: index, children: _tabs),
+          ),
+        ),
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SessionResumeBar(),
+            VTabBar(
+              active: index,
+              onTap: (i) => ref.read(tabIndexProvider.notifier).state = i,
+            ),
+          ],
+        ),
       ),
     );
   }

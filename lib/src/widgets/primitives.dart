@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../brand/wallet_branding.dart';
 import '../theme/app_colors.dart';
@@ -801,6 +802,29 @@ Future<T?> showVyanaConfirmDialog<T>({
       );
     },
   );
+}
+
+/// Confirms before leaving Vyana from a root tab (Android hardware back, etc.).
+Future<void> confirmExitVyanaApp(
+  BuildContext context, {
+  bool sessionRecording = false,
+}) async {
+  final recordingNote = sessionRecording
+      ? 'A practice session is still recording in the background.\n\n'
+      : '';
+  final confirmed = await showVyanaConfirmDialog<bool>(
+    context: context,
+    title: 'Exit Vyana?',
+    message:
+        '${recordingNote}Your ring pairing, journal, and on-device data stay '
+        'on this phone.',
+    confirmLabel: 'Exit',
+    cancelLabel: 'Stay',
+    destructive: true,
+  );
+  if (confirmed == true) {
+    SystemNavigator.pop();
+  }
 }
 
 /// Strips lightweight markdown markers before TTS reads guide replies aloud.
