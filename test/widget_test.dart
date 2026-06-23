@@ -237,6 +237,29 @@ void main() {
     expect(missing.supports('isSupportFactorySettings'), isFalse);
   });
 
+  test('ring health delete targets mirror sync feature gates', () {
+    final full = DeviceFeatureSnapshot.fromDynamic({
+      'isSupportSport': true,
+      'isSupportBloodGlucose': true,
+    });
+    expect(
+      ringHealthDeleteTargets(full).map((target) => target.label).toList(),
+      ['step', 'sleep', 'heartRate', 'bloodPressure', 'combined', 'invasive', 'sport'],
+    );
+
+    final minimal = DeviceFeatureSnapshot.fromDynamic({
+      'isSupportSport': false,
+      'isSupportBloodGlucose': false,
+      'isSupportUricAcid': false,
+      'isSupportBloodKetone': false,
+      'isSupportBloodFat': false,
+    });
+    expect(
+      ringHealthDeleteTargets(minimal).map((target) => target.label).toList(),
+      ['step', 'sleep', 'heartRate', 'bloodPressure', 'combined'],
+    );
+  });
+
   test('cloud history batch keeps typed sleep stages for upload', () {
     final history = RingHistory(
       steps: const [],

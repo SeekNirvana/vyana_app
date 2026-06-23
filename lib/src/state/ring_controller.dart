@@ -582,17 +582,27 @@ class RingController extends ChangeNotifier {
       );
     }
 
-    _set(() => _status = 'Resetting PRANA ring…');
-    final factoryOk = await _repo.restoreFactorySettings();
+    final useFactoryReset = supportsFactoryReset;
+    _set(() => _status = useFactoryReset
+        ? 'Factory-resetting PRANA ring…'
+        : 'Erasing ring health data…');
+
+    final ringOk = useFactoryReset
+        ? await _repo.restoreFactorySettings()
+        : await _repo.deleteAllSupportedRingHealthData(_features);
     if (_disposed) {
       return const RingResetResult(success: false, message: 'Reset cancelled.');
     }
 
-    if (!factoryOk) {
-      _set(() => _status = 'Factory reset failed — stay close and try again');
-      return const RingResetResult(
+    if (!ringOk) {
+      _set(() => _status = useFactoryReset
+          ? 'Factory reset failed — stay close and try again'
+          : 'Ring data erase failed — stay close and try again');
+      return RingResetResult(
         success: false,
-        message: 'The ring did not confirm factory reset. Stay nearby and try again.',
+        message: useFactoryReset
+            ? 'The ring did not confirm factory reset. Stay nearby and try again.'
+            : 'The ring did not confirm data erase. Stay nearby and try again.',
       );
     }
 

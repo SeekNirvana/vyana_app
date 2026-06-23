@@ -242,7 +242,7 @@ class YouScreen extends ConsumerWidget {
               _SettingsRow(
                 icon: 'refresh',
                 label: 'Reset PRANA ring',
-                onTap: c.isConnected && c.supportsFactoryReset
+                onTap: c.isConnected
                     ? () => _confirmResetRing(context, c)
                     : null,
               ),
@@ -444,11 +444,14 @@ class YouScreen extends ConsumerWidget {
       context: context,
       title: 'Reset PRANA ring?',
       message:
-          'This factory-resets $ringName — erasing settings and health records '
-          'stored on the ring.\n\n'
-          'Vyana will also remove pairing, cached vitals and history, health '
-          'monitoring prefs, and the local sync log. Practice sessions, journal, '
-          'and wallet data stay on your phone.\n\n'
+          c.supportsFactoryReset
+              ? 'This factory-resets $ringName — erasing ring settings and '
+                  'health records.\n\n'
+              : 'This erases health records stored on $ringName '
+                  '(sleep, steps, vitals, and related history).\n\n'
+          'Vyana will also unpair the ring, and remove cached vitals and history, '
+          'health monitoring prefs, and the local sync log. Practice sessions, '
+          'journal, and wallet data stay on your phone.\n\n'
           'This cannot be undone. Keep the ring nearby and connected.',
       confirmLabel: 'Reset ring',
       cancelLabel: 'Cancel',

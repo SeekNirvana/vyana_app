@@ -305,6 +305,28 @@ class RingRepository {
     return ok;
   }
 
+  Future<bool> deleteRingHealthData(int type, String label) async {
+    final response = await _safePluginCall(
+      () => _plugin.deleteDeviceHealthData(type),
+    );
+    final ok = response?.statusCode == PluginState.succeed;
+    debugPrint('PRANA_DELETE_HISTORY $label status=${response?.statusCode} ok=$ok');
+    return ok;
+  }
+
+  Future<bool> deleteAllSupportedRingHealthData(
+    DeviceFeatureSnapshot? features,
+  ) async {
+    final targets = ringHealthDeleteTargets(features);
+    var allOk = true;
+    for (final target in targets) {
+      final ok = await deleteRingHealthData(target.type, target.label);
+      if (!ok) allOk = false;
+    }
+    debugPrint('PRANA_DELETE_HISTORY allOk=$allOk types=${targets.length}');
+    return allOk;
+  }
+
   Future<RingNameUpdateResult> renameConnectedRing(String name) async {
     final cleanName = normalizeRingName(name);
     if (cleanName == null) {

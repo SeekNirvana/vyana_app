@@ -36,6 +36,59 @@ class RingResetResult {
   final String message;
 }
 
+class RingHealthDeleteTarget {
+  const RingHealthDeleteTarget({
+    required this.type,
+    required this.label,
+  });
+
+  final int type;
+  final String label;
+}
+
+/// Health history types to wipe on the ring when factory reset is unavailable.
+/// Mirrors the history types Vyana syncs, gated on the same feature flags.
+List<RingHealthDeleteTarget> ringHealthDeleteTargets(
+  DeviceFeatureSnapshot? features,
+) {
+  final supportsInvasive =
+      features?.supportsAny(const [
+        'isSupportBloodGlucose',
+        'isSupportUricAcid',
+        'isSupportBloodKetone',
+        'isSupportBloodFat',
+      ]) ??
+      true;
+  final supportsSport = features?.supports('isSupportSport') ?? true;
+
+  return [
+    const RingHealthDeleteTarget(type: HealthDataType.step, label: 'step'),
+    const RingHealthDeleteTarget(type: HealthDataType.sleep, label: 'sleep'),
+    const RingHealthDeleteTarget(
+      type: HealthDataType.heartRate,
+      label: 'heartRate',
+    ),
+    const RingHealthDeleteTarget(
+      type: HealthDataType.bloodPressure,
+      label: 'bloodPressure',
+    ),
+    const RingHealthDeleteTarget(
+      type: HealthDataType.combinedData,
+      label: 'combined',
+    ),
+    if (supportsInvasive)
+      const RingHealthDeleteTarget(
+        type: HealthDataType.invasiveComprehensiveData,
+        label: 'invasive',
+      ),
+    if (supportsSport)
+      const RingHealthDeleteTarget(
+        type: HealthDataType.sportHistoryData,
+        label: 'sport',
+      ),
+  ];
+}
+
 /// SDK-allowed automatic health monitoring interval (minutes).
 const kHealthMonitoringMinInterval = 1;
 const kHealthMonitoringMaxInterval = 60;

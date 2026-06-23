@@ -4,9 +4,11 @@
 
 ### Added
 
-- **Reset PRANA ring** on the You tab — factory-resets the ring when connected,
-  clears local pairing/cache, and returns to scan & pair (requires
-  `isSupportFactorySettings` and a strong confirmation dialog)
+- **Reset PRANA ring** on the You tab — when connected, factory-resets the ring
+  if `isSupportFactorySettings` is available; otherwise erases on-ring health
+  history via SDK delete commands (sleep, steps, vitals, sport, etc.), then
+  unpairs, clears local cache, and returns to scan & pair (strong confirmation
+  dialog)
 
 ## v1.0.1 — 2026-06-19
 
