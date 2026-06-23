@@ -612,10 +612,10 @@ class RingController extends ChangeNotifier {
       return const RingResetResult(success: false, message: 'Reset cancelled.');
     }
 
-    _applyUnpairedRingState(status: 'PRANA ring reset — scan to pair again');
+    _applyUnpairedRingState(status: 'PRANA ring reset — pair again from You');
     return const RingResetResult(
       success: true,
-      message: 'Ring reset. Pair again when you are ready.',
+      message: 'Ring and local vitals cleared. Pair again from You when ready.',
     );
   }
 
@@ -650,12 +650,20 @@ class RingController extends ChangeNotifier {
     await _historyLogger.clear();
     if (_disposed) return;
     _set(() {
+      _basicInfo = null;
+      _features = null;
+      _history = RingHistory.empty();
+      _historyHydratedFromCache = false;
+      _cachedHistorySyncedAt = null;
+      _historyLogStatus = HistoryLogStatus.empty();
+      _vitals = RingVitals.empty();
       _healthMonitoring = const HealthMonitoringSettings(
         enabled: true,
         intervalMinutes: kHealthMonitoringDefaultInterval,
         ringAcknowledged: false,
       );
     });
+    _publishMeasurementSnapshot();
   }
 
   Future<RingSyncFeedback?> syncDeviceData() => _syncDeviceData();

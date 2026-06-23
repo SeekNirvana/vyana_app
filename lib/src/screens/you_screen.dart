@@ -243,7 +243,7 @@ class YouScreen extends ConsumerWidget {
                 icon: 'refresh',
                 label: 'Reset PRANA ring',
                 onTap: c.isConnected
-                    ? () => _confirmResetRing(context, c)
+                    ? () => _confirmResetRing(context, ref, c)
                     : null,
               ),
             ],
@@ -438,20 +438,21 @@ class YouScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmResetRing(BuildContext context, RingController c) async {
+  Future<void> _confirmResetRing(
+    BuildContext context,
+    WidgetRef ref,
+    RingController c,
+  ) async {
     final ringName = c.pairedRing?.displayName ?? 'your ring';
     final confirmed = await showVyanaConfirmDialog<bool>(
       context: context,
       title: 'Reset PRANA ring?',
       message:
-          c.supportsFactoryReset
-              ? 'This factory-resets $ringName — erasing ring settings and '
-                  'health records.\n\n'
-              : 'This erases health records stored on $ringName '
-                  '(sleep, steps, vitals, and related history).\n\n'
-          'Vyana will also unpair the ring, and remove cached vitals and history, '
-          'health monitoring prefs, and the local sync log. Practice sessions, '
-          'journal, and wallet data stay on your phone.\n\n'
+          'Back up anything you want to keep first.\n\n'
+          '${c.supportsFactoryReset ? 'This factory-resets $ringName — erasing ring settings and health records.' : 'This erases health records stored on $ringName (sleep, steps, vitals, and related history).'}\n\n'
+          'Vyana will also unpair the ring and remove all cached vitals, history, '
+          'health monitoring prefs, and the local sync log from this phone. '
+          'Practice sessions, journal, and wallet data stay on your phone.\n\n'
           'This cannot be undone. Keep the ring nearby and connected.',
       confirmLabel: 'Reset ring',
       cancelLabel: 'Cancel',
@@ -479,12 +480,13 @@ class YouScreen extends ConsumerWidget {
           ? null
           : SnackBarAction(
               label: 'Retry',
-              onPressed: () => unawaited(_confirmResetRing(context, c)),
+              onPressed: () => unawaited(_confirmResetRing(context, ref, c)),
             ),
     );
 
     if (result.success) {
-      await openScanner(context, c);
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      ref.read(tabIndexProvider.notifier).state = 0;
     }
   }
 

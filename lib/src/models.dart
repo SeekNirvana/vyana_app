@@ -89,6 +89,41 @@ List<RingHealthDeleteTarget> ringHealthDeleteTargets(
   ];
 }
 
+const _coreRingHealthDeleteLabels = {
+  'step',
+  'sleep',
+  'heartRate',
+  'bloodPressure',
+  'combined',
+};
+
+bool isCoreRingHealthDeleteLabel(String label) =>
+    _coreRingHealthDeleteLabels.contains(label);
+
+/// True when every core delete succeeded and no core delete hard-failed.
+/// Optional types (sport, invasive) may return [PluginState.unavailable] — that
+/// is normal on rings that sync sport but do not expose a delete command.
+bool ringHealthDeleteSucceeded(
+  Iterable<({String label, int? statusCode})> results,
+) {
+  var anyCoreSuccess = false;
+  var anyCoreFailure = false;
+
+  for (final result in results) {
+    final isCore = isCoreRingHealthDeleteLabel(result.label);
+    switch (result.statusCode) {
+      case PluginState.succeed:
+        if (isCore) anyCoreSuccess = true;
+      case PluginState.unavailable:
+        break;
+      default:
+        if (isCore) anyCoreFailure = true;
+    }
+  }
+
+  return !anyCoreFailure && anyCoreSuccess;
+}
+
 /// SDK-allowed automatic health monitoring interval (minutes).
 const kHealthMonitoringMinInterval = 1;
 const kHealthMonitoringMaxInterval = 60;

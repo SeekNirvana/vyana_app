@@ -6,9 +6,9 @@
 
 - **Reset PRANA ring** on the You tab — when connected, factory-resets the ring
   if `isSupportFactorySettings` is available; otherwise erases on-ring health
-  history via SDK delete commands (sleep, steps, vitals, sport, etc.), then
-  unpairs, clears local cache, and returns to scan & pair (strong confirmation
-  dialog)
+  history via SDK delete commands (sleep, steps, vitals, etc.), then unpairs,
+  clears local vitals/cache, and returns to Home (strong confirmation with
+  backup warning; unsupported optional deletes such as sport do not fail reset)
 
 ## v1.0.1 — 2026-06-19
 

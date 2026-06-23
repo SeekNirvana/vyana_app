@@ -305,26 +305,31 @@ class RingRepository {
     return ok;
   }
 
-  Future<bool> deleteRingHealthData(int type, String label) async {
+  Future<int?> deleteRingHealthDataStatus(int type, String label) async {
     final response = await _safePluginCall(
       () => _plugin.deleteDeviceHealthData(type),
     );
-    final ok = response?.statusCode == PluginState.succeed;
-    debugPrint('PRANA_DELETE_HISTORY $label status=${response?.statusCode} ok=$ok');
-    return ok;
+    final code = response?.statusCode;
+    debugPrint(
+      'PRANA_DELETE_HISTORY $label status=$code '
+      'ok=${code == PluginState.succeed} '
+      'skipped=${code == PluginState.unavailable}',
+    );
+    return code;
   }
 
   Future<bool> deleteAllSupportedRingHealthData(
     DeviceFeatureSnapshot? features,
   ) async {
     final targets = ringHealthDeleteTargets(features);
-    var allOk = true;
+    final results = <({String label, int? statusCode})>[];
     for (final target in targets) {
-      final ok = await deleteRingHealthData(target.type, target.label);
-      if (!ok) allOk = false;
+      final code = await deleteRingHealthDataStatus(target.type, target.label);
+      results.add((label: target.label, statusCode: code));
     }
-    debugPrint('PRANA_DELETE_HISTORY allOk=$allOk types=${targets.length}');
-    return allOk;
+    final ok = ringHealthDeleteSucceeded(results);
+    debugPrint('PRANA_DELETE_HISTORY ok=$ok types=${targets.length}');
+    return ok;
   }
 
   Future<RingNameUpdateResult> renameConnectedRing(String name) async {

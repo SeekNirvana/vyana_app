@@ -237,6 +237,28 @@ void main() {
     expect(missing.supports('isSupportFactorySettings'), isFalse);
   });
 
+  test('ring health delete treats unsupported optional types as success', () {
+    expect(
+      ringHealthDeleteSucceeded([
+        (label: 'step', statusCode: PluginState.succeed),
+        (label: 'sleep', statusCode: PluginState.succeed),
+        (label: 'heartRate', statusCode: PluginState.succeed),
+        (label: 'bloodPressure', statusCode: PluginState.succeed),
+        (label: 'combined', statusCode: PluginState.succeed),
+        (label: 'sport', statusCode: PluginState.unavailable),
+      ]),
+      isTrue,
+    );
+
+    expect(
+      ringHealthDeleteSucceeded([
+        (label: 'step', statusCode: PluginState.succeed),
+        (label: 'sleep', statusCode: PluginState.failed),
+      ]),
+      isFalse,
+    );
+  });
+
   test('ring health delete targets mirror sync feature gates', () {
     final full = DeviceFeatureSnapshot.fromDynamic({
       'isSupportSport': true,
