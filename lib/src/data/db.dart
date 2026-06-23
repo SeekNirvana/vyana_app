@@ -603,6 +603,8 @@ class VyanaDatabase extends _$VyanaDatabase {
       ),
     );
   }
+
+  Future<int> clearRingHistoryCaches() => delete(ringHistoryCaches).go();
 }
 
 /// The local vault (drift). One instance app-wide.

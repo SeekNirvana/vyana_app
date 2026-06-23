@@ -112,6 +112,9 @@ class RingController extends ChangeNotifier {
   bool get supportsFindRing =>
       _features?.supports('isSupportFindDevice') ?? false;
 
+  bool get supportsFactoryReset =>
+      _features?.supports('isSupportFactorySettings') ?? false;
+
   bool get supportsHealthMonitoring =>
       _features?.supportsAny(const [
         'isSupportHeartRate',
@@ -543,25 +546,106 @@ class RingController extends ChangeNotifier {
     if (_disposed) return false;
 
     if (ok) {
-      await PranaRingStore.clear();
+      await _clearAllLocalRingData();
       if (_disposed) return false;
-      _set(() {
-        _pairedRing = null;
-        _selectedDevice = null;
-        _basicInfo = null;
-        _features = null;
-        _vitals = RingVitals.empty();
-        _isConnected = false;
-        _isConnecting = false;
-        _status = 'PRANA ring unpaired';
-        _lastConnectionConfirmedAt = null;
-      });
-      _publishMeasurementSnapshot();
+      _applyUnpairedRingState(status: 'PRANA ring unpaired');
       return true;
     }
 
     _set(() => _status = 'Unpair failed');
     return false;
+  }
+
+  Future<RingResetResult> resetPranaRingToFactory() async {
+    if (!_isConnected) {
+      return const RingResetResult(
+        success: false,
+        message: 'Connect your ring first.',
+      );
+    }
+    if (_sessionActive) {
+      return const RingResetResult(
+        success: false,
+        message: 'Finish your practice session before resetting the ring.',
+      );
+    }
+    if (_isSyncing) {
+      return const RingResetResult(
+        success: false,
+        message: 'Wait for the current sync to finish.',
+      );
+    }
+    if (_isMeasuring || _activeMeasurementLabel != null) {
+      return const RingResetResult(
+        success: false,
+        message: 'Finish the current measurement before resetting.',
+      );
+    }
+
+    _set(() => _status = 'Resetting PRANA ring…');
+    final factoryOk = await _repo.restoreFactorySettings();
+    if (_disposed) {
+      return const RingResetResult(success: false, message: 'Reset cancelled.');
+    }
+
+    if (!factoryOk) {
+      _set(() => _status = 'Factory reset failed — stay close and try again');
+      return const RingResetResult(
+        success: false,
+        message: 'The ring did not confirm factory reset. Stay nearby and try again.',
+      );
+    }
+
+    await _repo.unpair();
+    await _clearAllLocalRingData();
+    if (_disposed) {
+      return const RingResetResult(success: false, message: 'Reset cancelled.');
+    }
+
+    _applyUnpairedRingState(status: 'PRANA ring reset — scan to pair again');
+    return const RingResetResult(
+      success: true,
+      message: 'Ring reset. Pair again when you are ready.',
+    );
+  }
+
+  void _applyUnpairedRingState({required String status}) {
+    _set(() {
+      _pairedRing = null;
+      _selectedDevice = null;
+      _basicInfo = null;
+      _features = null;
+      _vitals = RingVitals.empty();
+      _history = RingHistory.empty();
+      _historyHydratedFromCache = false;
+      _cachedHistorySyncedAt = null;
+      _historyLogStatus = HistoryLogStatus.empty();
+      _isConnected = false;
+      _isConnecting = false;
+      _isAutoReconnecting = false;
+      _status = status;
+      _lastConnectionConfirmedAt = null;
+      _eventLog.clear();
+    });
+    _publishMeasurementSnapshot();
+  }
+
+  Future<void> _clearAllLocalRingData() async {
+    await PranaRingStore.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_healthMonitoringEnabledKey);
+    await prefs.remove(_healthMonitoringIntervalKey);
+    await prefs.remove(_healthMonitoringAckKey);
+    await _historyCache?.clearAll();
+    await _historyLogger.clear();
+    if (_disposed) return;
+    _set(() {
+      _healthMonitoring = const HealthMonitoringSettings(
+        enabled: true,
+        intervalMinutes: kHealthMonitoringDefaultInterval,
+        ringAcknowledged: false,
+      );
+    });
   }
 
   Future<RingSyncFeedback?> syncDeviceData() => _syncDeviceData();

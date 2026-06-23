@@ -962,6 +962,13 @@ class HistorySyncLogger {
     return status();
   }
 
+  Future<void> clear() async {
+    final file = await _logFile();
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
   Future<HistoryLogStatus> status() async {
     final file = await _logFile();
     if (!await file.exists()) {

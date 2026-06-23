@@ -26,6 +26,16 @@ class RingNameUpdateResult {
   final String message;
 }
 
+class RingResetResult {
+  const RingResetResult({
+    required this.success,
+    required this.message,
+  });
+
+  final bool success;
+  final String message;
+}
+
 /// SDK-allowed automatic health monitoring interval (minutes).
 const kHealthMonitoringMinInterval = 1;
 const kHealthMonitoringMaxInterval = 60;
@@ -621,6 +631,7 @@ class DeviceFeatureSnapshot {
       ['Real-time ECG', 'isSupportRealTimeECG'],
       ['Historical ECG', 'isSupportHistoricalECG'],
       ['ECG diagnosis', 'isSupportECGDiagnosis'],
+      ['Factory reset', 'isSupportFactorySettings'],
     ];
     final flags = <String, bool>{
       for (final item in candidates)

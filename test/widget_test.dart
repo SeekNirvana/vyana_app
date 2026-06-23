@@ -218,6 +218,25 @@ void main() {
     expect(find.text('Start blood oxygen'), findsNothing);
   });
 
+  test('DeviceFeatureSnapshot parses factory reset support flag', () {
+    final supported = DeviceFeatureSnapshot.fromDynamic({
+      'isSupportFactorySettings': true,
+    });
+    expect(supported.supports('isSupportFactorySettings'), isTrue);
+    expect(
+      supported.items.singleWhere((item) => item.key == 'isSupportFactorySettings').supported,
+      isTrue,
+    );
+
+    final unsupported = DeviceFeatureSnapshot.fromDynamic({
+      'isSupportFactorySettings': false,
+    });
+    expect(unsupported.supports('isSupportFactorySettings'), isFalse);
+
+    final missing = DeviceFeatureSnapshot.fromDynamic({});
+    expect(missing.supports('isSupportFactorySettings'), isFalse);
+  });
+
   test('cloud history batch keeps typed sleep stages for upload', () {
     final history = RingHistory(
       steps: const [],

@@ -298,6 +298,13 @@ class RingRepository {
     return _statusMessage(response, 'Find ring command sent');
   }
 
+  Future<bool> restoreFactorySettings() async {
+    final response = await _safePluginCall(() => _plugin.restoreFactorySettings());
+    final ok = response?.statusCode == PluginState.succeed;
+    debugPrint('PRANA_FACTORY_RESET status=${response?.statusCode} ok=$ok');
+    return ok;
+  }
+
   Future<RingNameUpdateResult> renameConnectedRing(String name) async {
     final cleanName = normalizeRingName(name);
     if (cleanName == null) {

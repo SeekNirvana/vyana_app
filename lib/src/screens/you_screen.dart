@@ -239,6 +239,13 @@ class YouScreen extends ConsumerWidget {
                 label: 'Disconnect',
                 onTap: c.isConnected ? c.disconnect : null,
               ),
+              _SettingsRow(
+                icon: 'refresh',
+                label: 'Reset PRANA ring',
+                onTap: c.isConnected && c.supportsFactoryReset
+                    ? () => _confirmResetRing(context, c)
+                    : null,
+              ),
             ],
           )
         else
@@ -429,6 +436,53 @@ class YouScreen extends ConsumerWidget {
       icon: 'info',
       success: true,
     );
+  }
+
+  Future<void> _confirmResetRing(BuildContext context, RingController c) async {
+    final ringName = c.pairedRing?.displayName ?? 'your ring';
+    final confirmed = await showVyanaConfirmDialog<bool>(
+      context: context,
+      title: 'Reset PRANA ring?',
+      message:
+          'This factory-resets $ringName — erasing settings and health records '
+          'stored on the ring.\n\n'
+          'Vyana will also remove pairing, cached vitals and history, health '
+          'monitoring prefs, and the local sync log. Practice sessions, journal, '
+          'and wallet data stay on your phone.\n\n'
+          'This cannot be undone. Keep the ring nearby and connected.',
+      confirmLabel: 'Reset ring',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    showVyanaSnackBar(
+      context,
+      message: 'Resetting ring…',
+      icon: 'refresh',
+      success: true,
+      duration: const Duration(seconds: 2),
+    );
+
+    final result = await c.resetPranaRingToFactory();
+    if (!context.mounted) return;
+
+    showVyanaSnackBar(
+      context,
+      message: result.message,
+      icon: result.success ? 'check' : 'alert',
+      success: result.success,
+      action: result.success
+          ? null
+          : SnackBarAction(
+              label: 'Retry',
+              onPressed: () => unawaited(_confirmResetRing(context, c)),
+            ),
+    );
+
+    if (result.success) {
+      await openScanner(context, c);
+    }
   }
 
   Future<void> _renameRing(BuildContext context, RingController c) async {

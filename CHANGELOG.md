@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.2 — 2026-06-23
+
+### Added
+
+- **Reset PRANA ring** on the You tab — factory-resets the ring when connected,
+  clears local pairing/cache, and returns to scan & pair (requires
+  `isSupportFactorySettings` and a strong confirmation dialog)
+
 ## v1.0.1 — 2026-06-19
 
 First open-source release.

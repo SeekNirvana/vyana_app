@@ -36,6 +36,8 @@ class RingHistoryCacheService {
     );
   }
 
+  Future<void> clearAll() => _db.clearRingHistoryCaches();
+
   RingHistoryCacheSnapshot? _snapshotFromRow(RingHistoryCacheRow row) {
     try {
       final historyMap = Map<String, dynamic>.from(
