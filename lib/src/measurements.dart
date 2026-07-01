@@ -91,7 +91,7 @@ const realtimeMeasurementActions = [
     ['isSupportStartHRVMeasurement', 'isSupportHRV'],
   ),
   MeasurementAction(
-    'Pressure',
+    'Stress',
     DeviceAppControlMeasureHealthDataType.pressure,
     Icons.psychology,
     ['isSupportStartPressureMeasurement', 'isSupportPressure'],
@@ -917,7 +917,7 @@ MeasurementSeries measurementSeriesFor(
       final points = [
         ..._pointsFromRecords(snapshot.history.heartRate, const [
           'heartRate',
-        ], 'bpm'),
+        ], 'bpm', filter: validHeartRateValue),
         if (snapshot.vitals.heartRate != null)
           _livePoint(snapshot.vitals.heartRate!.toDouble(), 'bpm'),
       ];
@@ -930,7 +930,7 @@ MeasurementSeries measurementSeriesFor(
       final points = [
         ..._pointsFromRecords(snapshot.history.combined, const [
           'bloodOxygen',
-        ], '%'),
+        ], '%', filter: validSpo2Value),
         if (snapshot.vitals.bloodOxygen != null)
           _livePoint(snapshot.vitals.bloodOxygen!.toDouble(), '%'),
       ];
@@ -944,7 +944,7 @@ MeasurementSeries measurementSeriesFor(
         ..._pointsFromRecords(snapshot.history.bloodPressure, const [
           'systolicBloodPressure',
           'systolic',
-        ], 'mmHg'),
+        ], 'mmHg', filter: validSystolicValue),
       ];
       final systolic = snapshot.vitals.bloodPressure?.split('/').first;
       final systolicValue = double.tryParse(systolic ?? '');
@@ -972,7 +972,8 @@ MeasurementSeries measurementSeriesFor(
       );
     case DeviceAppControlMeasureHealthDataType.hrv:
       final points = [
-        ..._pointsFromRecords(snapshot.history.combined, const ['hrv'], 'ms'),
+        ..._pointsFromRecords(snapshot.history.combined, const ['hrv'], 'ms',
+            filter: validHrvValue),
         if (snapshot.vitals.hrv != null)
           _livePoint(snapshot.vitals.hrv!.toDouble(), 'ms'),
       ];
@@ -995,10 +996,10 @@ MeasurementSeries measurementSeriesFor(
       final points = [
         ..._pointsFromRecords(snapshot.history.combined, const [
           'bloodGlucose',
-        ], 'mmol/L'),
+        ], 'mmol/L', filter: validGlucoseValue),
         ..._pointsFromRecords(snapshot.history.invasive, const [
           'bloodGlucose',
-        ], 'mmol/L'),
+        ], 'mmol/L', filter: validGlucoseValue),
         if (snapshot.vitals.bloodGlucose != null)
           _livePoint(snapshot.vitals.bloodGlucose!, 'mmol/L'),
       ];

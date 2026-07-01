@@ -370,9 +370,13 @@ List<HomeVitalTile> homeVitalTiles({
   );
   add(
     VitalsMetricKind.stress,
-    'Stress index',
+    'Stress',
     'brain',
-    dashD(vitals.pressure),
+    vitals.pressure == null
+        ? '—'
+        : stressZoneLabel(
+            stressZoneForLevel((vitals.pressure! / 100).clamp(0.0, 1.0)),
+          ),
     '',
     'stress',
   );

@@ -790,6 +790,23 @@ class RingHistory {
     sport: [],
   );
 
+  /// Physically cleans the history so garbage never persists: drops whole
+  /// no-contact records (all-zero vitals), and scrubs implausible individual
+  /// fields (e.g. a bogus HRV of 179 in an otherwise-good record) out of the
+  /// records that remain.
+  RingHistory sanitized() => RingHistory(
+        steps: steps,
+        sleep: sleep,
+        heartRate: heartRate.map(scrubRecordFields).toList(),
+        bloodPressure: bloodPressure,
+        combined: combined
+            .where((r) => !isNoContactRecord(r))
+            .map(scrubRecordFields)
+            .toList(),
+        invasive: invasive.map(scrubRecordFields).toList(),
+        sport: sport,
+      );
+
   int get totalRecords =>
       steps.length +
       sleep.length +
@@ -941,11 +958,26 @@ List<VitalHistoryPoint> vitalHistoryPoints(
           )
           .toList();
     case VitalsMetricKind.heartRate:
-      return _pointsFromHistoryRecords(history.heartRate, const ['heartRate'], 'bpm');
+      return _pointsFromHistoryRecords(
+        history.heartRate,
+        const ['heartRate'],
+        'bpm',
+        filter: validHeartRateValue,
+      );
     case VitalsMetricKind.hrv:
-      return _pointsFromHistoryRecords(history.combined, const ['hrv'], 'ms');
+      return _pointsFromHistoryRecords(
+        history.combined,
+        const ['hrv'],
+        'ms',
+        filter: validHrvValue,
+      );
     case VitalsMetricKind.spo2:
-      return _pointsFromHistoryRecords(history.combined, const ['bloodOxygen'], '%');
+      return _pointsFromHistoryRecords(
+        history.combined,
+        const ['bloodOxygen'],
+        '%',
+        filter: validSpo2Value,
+      );
     case VitalsMetricKind.calories:
       return stepDaySummaries(history.steps)
           .reversed
@@ -972,7 +1004,7 @@ List<VitalHistoryPoint> vitalHistoryPoints(
       return history.bloodPressure
           .map((record) {
             final ts = timestampOf(record);
-            final text = pressureText(record);
+            final text = plausibleBloodPressure(pressureText(record));
             if (ts == null || text == null) return null;
             final systolic = int.tryParse(text.split('/').first);
             if (systolic == null) return null;
@@ -993,19 +1025,50 @@ List<VitalHistoryPoint> vitalHistoryPoints(
       );
     case VitalsMetricKind.glucose:
       return [
-        ..._pointsFromHistoryRecords(history.combined, const ['bloodGlucose'], 'mmol/L'),
-        ..._pointsFromHistoryRecords(history.invasive, const ['bloodGlucose'], 'mmol/L'),
+        ..._pointsFromHistoryRecords(
+          history.combined,
+          const ['bloodGlucose'],
+          'mmol/L',
+          filter: validGlucoseValue,
+        ),
+        ..._pointsFromHistoryRecords(
+          history.invasive,
+          const ['bloodGlucose'],
+          'mmol/L',
+          filter: validGlucoseValue,
+        ),
       ]..sort((a, b) => a.time.compareTo(b.time));
     case VitalsMetricKind.uricAcid:
-      return _pointsFromHistoryRecords(history.invasive, const ['uricAcid'], 'µmol/L');
+      return _pointsFromHistoryRecords(
+        history.invasive,
+        const ['uricAcid'],
+        'µmol/L',
+        filter: validUricAcidValue,
+      );
     case VitalsMetricKind.cholesterol:
       return _pointsFromHistoryRecords(
         history.invasive,
         const ['totalCholesterol'],
         'mmol/L',
+        filter: validCholesterolValue,
       );
     case VitalsMetricKind.stress:
-      return _pointsFromHistoryRecords(history.combined, const ['pressure'], '');
+      // The ring stores no stress series; derive it inversely from HRV so the
+      // chart populates and refreshes as HRV syncs (0 = calm … 100 = stressed).
+      return _pointsFromHistoryRecords(
+        history.combined,
+        const ['hrv'],
+        '',
+        filter: validHrvValue,
+      )
+          .map(
+            (p) => VitalHistoryPoint(
+              time: p.time,
+              value: stressLevelForHrv(p.value) * 100,
+              label: stressZoneLabel(stressZoneForHrv(p.value)),
+            ),
+          )
+          .toList();
     case VitalsMetricKind.sleep:
       return sleepDaySummaries(history.sleep)
           .reversed
@@ -1510,6 +1573,7 @@ SleepVitalsSummary sleepVitalsForDays(
         [history.heartRate, history.combined],
         const ['heartRate'],
         dayList,
+        filter: validHeartRateValue,
       ),
       _sleepVitalSeries(
         'SpO2',
@@ -1517,6 +1581,7 @@ SleepVitalsSummary sleepVitalsForDays(
         [history.combined],
         const ['bloodOxygen'],
         dayList,
+        filter: validSpo2Value,
       ),
       _sleepVitalSeries(
         'HRV',
@@ -1524,6 +1589,7 @@ SleepVitalsSummary sleepVitalsForDays(
         [history.combined],
         const ['hrv'],
         dayList,
+        filter: validHrvValue,
       ),
       _sleepVitalSeries(
         'Temperature',
@@ -1533,12 +1599,15 @@ SleepVitalsSummary sleepVitalsForDays(
         dayList,
         filter: validTemperature,
       ),
+      // Stress is derived inversely from HRV (the ring stores no stress series).
       _sleepVitalSeries(
         'Stress',
         '',
         [history.combined],
-        const ['pressure'],
+        const ['hrv'],
         dayList,
+        filter: validHrvValue,
+        transform: (hrv) => stressLevelForHrv(hrv) * 100,
       ),
       _sleepVitalSeries(
         'Glucose',
@@ -1546,6 +1615,7 @@ SleepVitalsSummary sleepVitalsForDays(
         [history.combined, history.invasive],
         const ['bloodGlucose'],
         dayList,
+        filter: validGlucoseValue,
       ),
     ],
   );
@@ -1575,6 +1645,7 @@ SleepVitalSeries _sleepVitalSeries(
   List<String> valueFields,
   List<SleepDaySummary> days, {
   double? Function(double?)? filter,
+  double Function(double)? transform,
 }) {
   final points = <SleepVitalPoint>[];
   for (final records in sources) {
@@ -1592,7 +1663,7 @@ SleepVitalSeries _sleepVitalSeries(
       points.add(
         SleepVitalPoint(
           time: DateTime.fromMillisecondsSinceEpoch(timestamp * 1000),
-          value: value,
+          value: transform == null ? value : transform(value),
         ),
       );
     }
@@ -1803,30 +1874,66 @@ class RingVitals {
           return max == null || value > max ? value : max;
         });
 
+    // Pick the newest *plausible* value per field so a single loose-contact
+    // record (all-zero vitals) or a sensor artefact never becomes the headline.
     return RingVitals(
       battery: basic?.batteryPower,
       steps: readInt(latestStep, const ['step', 'steps']),
       distanceMeters: readInt(latestStep, const ['distance']),
       calories: readInt(latestStep, const ['calories']),
       heartRate:
-          readInt(latestHeart, const ['heartRate']) ??
-          readInt(latestCombined, const ['heartRate']),
-      bloodOxygen: readInt(latestCombined, const ['bloodOxygen']),
-      respirationRate: readInt(latestCombined, const ['respirationRate']),
-      hrv: readInt(latestCombined, const ['hrv']),
-      temperature: validTemperature(
-        readDouble(latestCombined, const ['temperature']),
+          latestPlausibleInt(
+            history.heartRate,
+            const ['heartRate'],
+            validHeartRateValue,
+          ) ??
+          latestPlausibleInt(
+            history.combined,
+            const ['heartRate'],
+            validHeartRateValue,
+          ),
+      bloodOxygen: latestPlausibleInt(
+        history.combined,
+        const ['bloodOxygen'],
+        validSpo2Value,
       ),
-      bloodPressure: pressureText(latestBp) ?? pressureText(latestCombined),
-      pressure: readDouble(latestCombined, const ['pressure']),
+      // The PRANA ring does not report respiration (always 0) — don't surface it.
+      respirationRate: null,
+      hrv: latestPlausibleInt(history.combined, const ['hrv'], validHrvValue),
+      temperature: latestPlausibleValue(
+        history.combined,
+        const ['temperature'],
+        validTemperature,
+      ),
+      bloodPressure:
+          latestPlausibleBloodPressure(history.bloodPressure) ??
+          latestPlausibleBloodPressure(history.combined),
+      // No stress series on the ring; derive the current index from latest HRV.
+      pressure: latestStressFromHrv(history.combined),
       sleepSummary: latestSleepDay == null
           ? null
           : durationText(latestSleepDay.breakdown.asleepSeconds),
       bloodGlucose:
-          readDouble(latestCombined, const ['bloodGlucose']) ??
-          readDouble(latestInvasive, const ['bloodGlucose']),
-      uricAcid: readInt(latestInvasive, const ['uricAcid']),
-      totalCholesterol: readDouble(latestInvasive, const ['totalCholesterol']),
+          latestPlausibleValue(
+            history.combined,
+            const ['bloodGlucose'],
+            validGlucoseValue,
+          ) ??
+          latestPlausibleValue(
+            history.invasive,
+            const ['bloodGlucose'],
+            validGlucoseValue,
+          ),
+      uricAcid: latestPlausibleInt(
+        history.invasive,
+        const ['uricAcid'],
+        validUricAcidValue,
+      ),
+      totalCholesterol: latestPlausibleValue(
+        history.invasive,
+        const ['totalCholesterol'],
+        validCholesterolValue,
+      ),
       updatedAt: latestTime == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(latestTime * 1000),
@@ -1876,15 +1983,27 @@ class RingVitals {
       calories: calories,
       // During an app-started sport the ring streams HR inside the sport frame
       // (deviceRealSport) rather than as a standalone deviceRealHeartRate.
+      // Gate every live value through plausibility so a loose-contact spike or
+      // zero never overwrites a good reading.
       heartRate:
-          eventInt('deviceRealHeartRate', const ['heartRate', 'value']) ??
-          readInt(event['deviceRealSport'], const ['heartRate']) ??
+          plausibleHeartRate(
+            eventInt('deviceRealHeartRate', const ['heartRate', 'value']),
+          ) ??
+          plausibleHeartRate(
+            readInt(event['deviceRealSport'], const ['heartRate']),
+          ) ??
           heartRate,
       bloodOxygen:
-          eventInt('deviceRealBloodOxygen', const ['bloodOxygen', 'value']) ??
+          plausibleSpo2(
+            eventInt('deviceRealBloodOxygen', const ['bloodOxygen', 'value']),
+          ) ??
           bloodOxygen,
       respirationRate: respirationRate,
-      hrv: eventInt('deviceRealECGAlgorithmHRV', const ['hrv', 'value']) ?? hrv,
+      hrv:
+          plausibleHrv(
+            eventInt('deviceRealECGAlgorithmHRV', const ['hrv', 'value']),
+          ) ??
+          hrv,
       temperature:
           validTemperature(
             eventDouble('deviceRealTemperature', const [
@@ -1894,16 +2013,21 @@ class RingVitals {
           ) ??
           temperature,
       bloodPressure:
-          pressureText(event['deviceRealBloodPressure']) ?? bloodPressure,
+          plausibleBloodPressure(
+            pressureText(event['deviceRealBloodPressure']),
+          ) ??
+          bloodPressure,
       pressure:
           eventDouble('deviceRealPressure', const ['pressure', 'value']) ??
           pressure,
       sleepSummary: sleepSummary,
       bloodGlucose:
-          eventDouble('deviceRealBloodGlucose', const [
-            'bloodGlucose',
-            'value',
-          ]) ??
+          plausibleGlucose(
+            eventDouble('deviceRealBloodGlucose', const [
+              'bloodGlucose',
+              'value',
+            ]),
+          ) ??
           bloodGlucose,
       uricAcid: uricAcid,
       totalCholesterol: totalCholesterol,

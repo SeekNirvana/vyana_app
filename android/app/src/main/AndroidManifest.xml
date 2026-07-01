@@ -69,6 +69,31 @@
         <service
             android:name="com.realsil.sdk.dfu.DfuService"
             android:exported="false" />
+
+        <!-- Home-screen widgets: live "state of being" tile + one-tap
+             Monitor-all-vitals action. Data pushed from the app via home_widget. -->
+        <receiver
+            android:name=".VyanaVitalsWidget"
+            android:label="Vyana Vitals"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/vyana_vitals_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".VyanaMonitorWidget"
+            android:label="Vyana Monitor"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/vyana_monitor_widget_info" />
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

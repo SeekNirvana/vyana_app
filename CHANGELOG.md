@@ -1,5 +1,51 @@
 # Changelog
 
+## v1.0.3 — 2026-06-30
+
+### Added
+
+- **Monitor all vitals** — a one-tap check-in on Home that reads every supported
+  vital in turn (heart rate, SpO₂, temperature, HRV, blood pressure, and more —
+  ECG excluded), auto-reconnecting to the ring first if needed, then syncs so the
+  results land on the phone. Set the phone aside and get a **notification** when
+  it's done. Also triggerable from the home-screen widget.
+- **State-of-being homepage** — Home now leads with a single "How you're being"
+  card that combines the readiness ring and worded state into one clear signal
+  (no more duplicate "Steady"), felt signal chips, a horizontally-scrollable
+  biomarker strip (tap any to open its chart), and both **Check vitals** and
+  **Sync** actions. Live progress shows while a check-in runs.
+- **Home-screen widgets** — Android App Widgets (and iOS WidgetKit source, see
+  `ios/VyanaWidget/SETUP.md`): a live "state of being" tile showing your worded
+  state plus a compact 2-column **biomarker grid** (Heart, Oxygen, HRV, Stress,
+  Glucose, Steps), resizable from 2×2 up, and a one-tap "Monitor all vitals"
+  action button that deep-links in to start a run. iOS medium/large render the
+  same grid.
+- **Stress rhythm** — the "Pressure" data point is now **Stress**, shown as a
+  Calm / Activated / Stressed band chart derived from HRV so it populates and
+  refreshes on every sync (the ring stores no stress series of its own).
+
+### Changed
+
+- After an automatic reconnect + sync, the latest state of being is pushed to the
+  home-screen widgets.
+- **Reading quality gates** — vitals are now validated against plausible ranges
+  grounded in real ring data (HRV 10–150, SpO₂ 70–100, glucose 2–35, etc.).
+  Loose-contact "all-zero" records are dropped whole, and single-field artefacts
+  (e.g. a bogus HRV of 179) are filtered from the current value, charts, sleep
+  averages, and history. A Monitor-all run now retries a metric on loose contact
+  and flags anything that still won't read as a "retake".
+
+### Fixed
+
+- HRV no longer shows impossible spikes (e.g. 179 ms) on the graph or in sleep
+  averages; the artefact cluster is filtered out.
+- Glucose, SpO₂ and HRV no longer read **0** from a loose-contact sample — the
+  newest *plausible* value is shown instead, both live and in history.
+- The Measurements-screen charts (a second code path) now apply the same gates,
+  so HRV/SpO₂/glucose artefacts are gone there too, not just on Home.
+- Running a single test with poor contact now prompts a retake instead of
+  recording a zero.
+
 ## v1.0.2 — 2026-06-23
 
 ### Added

@@ -74,15 +74,22 @@ class VitalsDetailScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Trend',
-                            style: VyanaType.label.copyWith(color: t.text)),
-                        const SizedBox(height: 10),
-                        Sparkline(
-                          data: points.map((p) => p.value).toList(),
-                          color: t.vit(meta.accent),
-                          width: double.infinity,
-                          height: 56,
+                        Text(
+                          metric == VitalsMetricKind.stress
+                              ? 'Stress rhythm'
+                              : 'Trend',
+                          style: VyanaType.label.copyWith(color: t.text),
                         ),
+                        const SizedBox(height: 10),
+                        if (metric == VitalsMetricKind.stress)
+                          _StressBandChart(points: points)
+                        else
+                          Sparkline(
+                            data: points.map((p) => p.value).toList(),
+                            color: t.vit(meta.accent),
+                            width: double.infinity,
+                            height: 56,
+                          ),
                       ],
                     ),
                   ),
@@ -614,12 +621,14 @@ _MetricMeta _metricMeta(VitalsMetricKind kind) => switch (kind) {
         ),
       VitalsMetricKind.stress => const _MetricMeta(
           eyebrow: 'Recovery',
-          title: 'Stress index',
+          title: 'Stress',
           icon: 'brain',
           accent: 'stress',
           unit: '',
-          caption: 'Latest',
-          footnote: 'Pressure/stress index from combined vitals history.',
+          caption: 'Now',
+          footnote:
+              'Stress is read from your heart-rate variability — higher HRV '
+              'means calmer. It refreshes each time HRV syncs from the ring.',
         ),
       VitalsMetricKind.sleep => const _MetricMeta(
           eyebrow: 'Recovery',
@@ -647,7 +656,141 @@ String _currentValue(RingController controller, VitalsMetricKind kind) {
     VitalsMetricKind.glucose => doubleOrDash(v.bloodGlucose, 1),
     VitalsMetricKind.uricAcid => valueOrDash(v.uricAcid),
     VitalsMetricKind.cholesterol => doubleOrDash(v.totalCholesterol, 1),
-    VitalsMetricKind.stress => doubleOrDash(v.pressure, 1),
+    VitalsMetricKind.stress => v.pressure == null
+        ? '—'
+        : stressZoneLabel(
+            stressZoneForLevel((v.pressure! / 100).clamp(0.0, 1.0)),
+          ),
     VitalsMetricKind.sleep => v.sleepSummary ?? '—',
   };
+}
+
+/// Qualitative stress "rhythm": a waveform banded into Calm / Activated /
+/// Stressed, coloured by zone. Values are 0–100 stress levels derived from HRV.
+class _StressBandChart extends StatelessWidget {
+  const _StressBandChart({required this.points});
+
+  final List<VitalHistoryPoint> points;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    var values = points.map((p) => p.value).toList();
+    // Keep the rhythm readable — show the most recent stretch.
+    if (values.length > 60) values = values.sublist(values.length - 60);
+    const stressed = Color(0xFFE08A4B);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 88,
+          width: double.infinity,
+          child: CustomPaint(
+            painter: _StressBandPainter(
+              values: values,
+              calm: t.green,
+              activated: t.gold,
+              stressed: stressed,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            _StressLegend(color: t.green, label: 'Calm'),
+            const SizedBox(width: 16),
+            _StressLegend(color: t.gold, label: 'Activated'),
+            const SizedBox(width: 16),
+            _StressLegend(color: stressed, label: 'Stressed'),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _StressLegend extends StatelessWidget {
+  const _StressLegend({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(label, style: VyanaType.caption.copyWith(color: t.textSec)),
+      ],
+    );
+  }
+}
+
+class _StressBandPainter extends CustomPainter {
+  _StressBandPainter({
+    required this.values,
+    required this.calm,
+    required this.activated,
+    required this.stressed,
+  });
+
+  final List<double> values;
+  final Color calm;
+  final Color activated;
+  final Color stressed;
+
+  Color _zoneColor(double v) =>
+      v < 34 ? calm : (v < 67 ? activated : stressed);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Faint band backgrounds, stressed at the top.
+    final bands = <(double, double, Color)>[
+      (0.0, 1 / 3, stressed),
+      (1 / 3, 2 / 3, activated),
+      (2 / 3, 1.0, calm),
+    ];
+    for (final band in bands) {
+      final rect = Rect.fromLTRB(
+        0,
+        size.height * band.$1,
+        size.width,
+        size.height * band.$2,
+      );
+      canvas.drawRect(rect, Paint()..color = band.$3.withValues(alpha: 0.10));
+    }
+    if (values.length < 2) return;
+
+    final dx = size.width / (values.length - 1);
+    Offset at(int i) {
+      final v = values[i].clamp(0.0, 100.0);
+      return Offset(dx * i, size.height * (1 - v / 100));
+    }
+
+    for (var i = 0; i < values.length - 1; i++) {
+      canvas.drawLine(
+        at(i),
+        at(i + 1),
+        Paint()
+          ..color = _zoneColor(values[i])
+          ..strokeWidth = 2.4
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke,
+      );
+    }
+    for (var i = 0; i < values.length; i++) {
+      canvas.drawCircle(at(i), 2, Paint()..color = _zoneColor(values[i]));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StressBandPainter oldDelegate) =>
+      !listEquals(oldDelegate.values, values);
 }

@@ -1,5 +1,8 @@
 part of '../../main.dart';
 
+/// Phases of a hands-off "Monitor all vitals" run.
+enum AllVitalsPhase { idle, reconnecting, running, syncing, done, failed }
+
 /// Owns the PRANA ring connection lifecycle, live vitals, sync, measurements
 /// and ECG — ported from the original `_RingDashboardState` so behaviour is
 /// preserved. UI now reads it through [ringControllerProvider]; navigation and
@@ -59,6 +62,23 @@ class RingController extends ChangeNotifier {
       ValueNotifier(_currentMeasurementSnapshot());
   final List<String> _eventLog = [];
 
+  // ── Monitor-all-vitals run state ──────────────────────────────────────────
+  AllVitalsPhase _allVitalsPhase = AllVitalsPhase.idle;
+  int _allVitalsTotal = 0;
+  int _allVitalsDone = 0;
+  String? _allVitalsCurrentLabel;
+  String? _allVitalsMessage;
+  DateTime? _allVitalsFinishedAt;
+  Completer<void>? _allVitalsStepCompleter;
+  final List<String> _allVitalsRetakes = [];
+
+  /// The metric being actively measured, and whether a fresh *plausible* value
+  /// arrived for it this attempt — the contact/quality signal that drives
+  /// retries (batch) and the "retake" hint (single test).
+  DeviceAppControlMeasureHealthDataType? _activeMeasureType;
+  bool _measureCaptured = false;
+  static const _kMaxVitalRetries = 2;
+
   static const _healthMonitoringEnabledKey = 'health_monitoring_enabled_v1';
   static const _healthMonitoringIntervalKey = 'health_monitoring_interval_v1';
   static const _healthMonitoringAckKey = 'health_monitoring_ring_ack_v1';
@@ -102,6 +122,31 @@ class RingController extends ChangeNotifier {
   DateTime? get cachedHistorySyncedAt => _cachedHistorySyncedAt;
   HistoryLogStatus get historyLogStatus => _historyLogStatus;
   List<String> get eventLog => List.unmodifiable(_eventLog);
+
+  // ── Monitor-all-vitals getters ────────────────────────────────────────────
+  AllVitalsPhase get allVitalsPhase => _allVitalsPhase;
+  bool get allVitalsRunning =>
+      _allVitalsPhase == AllVitalsPhase.reconnecting ||
+      _allVitalsPhase == AllVitalsPhase.running ||
+      _allVitalsPhase == AllVitalsPhase.syncing;
+  int get allVitalsTotal => _allVitalsTotal;
+  int get allVitalsDone => _allVitalsDone;
+  String? get allVitalsCurrentLabel => _allVitalsCurrentLabel;
+  String? get allVitalsMessage => _allVitalsMessage;
+  DateTime? get allVitalsFinishedAt => _allVitalsFinishedAt;
+
+  /// Current felt "state of being" from the latest vitals + readiness.
+  WellnessState currentWellnessState() {
+    final dashboard = HomeDashboard.from(this);
+    return WellnessState.from(
+      heartRate: _vitals.heartRate,
+      bloodOxygen: _vitals.bloodOxygen,
+      hrv: _vitals.hrv,
+      temperature: _vitals.temperature,
+      stressIndex: _vitals.pressure,
+      readinessScore: dashboard.readinessScore,
+    );
+  }
 
   /// Paired device, live connection, synced records, or hydrated cache.
   bool get hasRingContext =>
@@ -203,6 +248,7 @@ class RingController extends ChangeNotifier {
           _applyBluetoothStateToModel(bluetoothState, fromPoll: true);
     });
     _publishMeasurementSnapshot();
+    _maybeSignalStepFromState();
 
     if (shouldSyncAfterConnection) {
       unawaited(_syncDeviceData());
@@ -334,6 +380,10 @@ class RingController extends ChangeNotifier {
         _eventLog.removeLast();
       }
       _vitals = _vitals.mergeLiveEvent(map);
+      if (_activeMeasureType != null &&
+          _eventCarriesPlausibleValue(map, _activeMeasureType!)) {
+        _measureCaptured = true;
+      }
       if (measurementMessage != null) {
         _testStatus = measurementMessage;
       }
@@ -366,6 +416,19 @@ class RingController extends ChangeNotifier {
       }
     });
     _publishMeasurementSnapshot();
+    _maybeSignalStepFromState();
+    // Single-test contact hint: the reading finished but no plausible value came
+    // through (loose contact). Don't leave the user with a scary blank/zero.
+    if (shouldFinishMeasurement &&
+        !ecgIsActive &&
+        !allVitalsRunning &&
+        _activeMeasureType != null &&
+        !_measureCaptured) {
+      _set(() => _testStatus =
+          "Couldn't get a clean reading — keep the ring snug on your "
+          'finger and try again.');
+      _publishMeasurementSnapshot();
+    }
     if (sessionEventSink != null && map.isNotEmpty) {
       sessionEventSink!(map);
     }
@@ -692,7 +755,7 @@ class RingController extends ChangeNotifier {
     }
 
     _set(() {
-      _history = snapshot.history;
+      _history = snapshot.history.sanitized();
       _historyHydratedFromCache = true;
       _cachedHistorySyncedAt = snapshot.syncedAt;
       if (snapshot.vitals != null) {
@@ -717,7 +780,7 @@ class RingController extends ChangeNotifier {
     try {
       await cache.save(
         deviceId: deviceId,
-        history: result.history,
+        history: result.history.sanitized(),
         vitals: result.vitals.merge(_vitals),
         basicInfo: result.basicInfo,
       );
@@ -766,7 +829,7 @@ class RingController extends ChangeNotifier {
         _lastConnectionConfirmedAt = DateTime.now();
         _basicInfo = result.basicInfo;
         _features = result.features;
-        _history = result.history;
+        _history = result.history.sanitized();
         _historyHydratedFromCache = false;
         _cachedHistorySyncedAt = DateTime.now();
         if (logStatus != null) {
@@ -791,6 +854,7 @@ class RingController extends ChangeNotifier {
         );
       }
       _publishMeasurementSnapshot();
+      unawaited(_pushWidgetState());
     } on Object catch (error) {
       if (_disposed) return null;
       feedback = RingSyncFeedback(
@@ -912,7 +976,320 @@ class RingController extends ChangeNotifier {
       _publishMeasurementSnapshot();
       return;
     }
+    _activeMeasureType = action.type;
+    _measureCaptured = false;
     await _beginMeasurement(action.label, () => _repo.measure(action.type, true));
+  }
+
+  /// Whether [map] delivers an in-range value for [type] — mirrors the keys
+  /// `RingVitals.mergeLiveEvent` reads, so it is the true "we got a reading"
+  /// signal (loose contact yields zeros, which fail these gates).
+  bool _eventCarriesPlausibleValue(
+    Map<dynamic, dynamic> map,
+    DeviceAppControlMeasureHealthDataType type,
+  ) {
+    switch (type) {
+      case DeviceAppControlMeasureHealthDataType.heartRate:
+        return plausibleHeartRate(
+              readInt(map['deviceRealHeartRate'], const ['heartRate', 'value']) ??
+                  readInt(map['deviceRealSport'], const ['heartRate']),
+            ) !=
+            null;
+      case DeviceAppControlMeasureHealthDataType.bloodOxygen:
+        return plausibleSpo2(
+              readInt(map['deviceRealBloodOxygen'], const [
+                'bloodOxygen',
+                'value',
+              ]),
+            ) !=
+            null;
+      case DeviceAppControlMeasureHealthDataType.hrv:
+        return plausibleHrv(
+              readInt(map['deviceRealECGAlgorithmHRV'], const ['hrv', 'value']),
+            ) !=
+            null;
+      case DeviceAppControlMeasureHealthDataType.bodyTemperature:
+        return validTemperature(
+              readDouble(map['deviceRealTemperature'], const [
+                'temperature',
+                'value',
+              ]),
+            ) !=
+            null;
+      case DeviceAppControlMeasureHealthDataType.bloodPressure:
+        return plausibleBloodPressure(
+              pressureText(map['deviceRealBloodPressure']),
+            ) !=
+            null;
+      case DeviceAppControlMeasureHealthDataType.bloodGlucose:
+        return plausibleGlucose(
+              readDouble(map['deviceRealBloodGlucose'], const [
+                'bloodGlucose',
+                'value',
+              ]),
+            ) !=
+            null;
+      case DeviceAppControlMeasureHealthDataType.pressure:
+        return readDouble(map['deviceRealPressure'], const [
+              'pressure',
+              'value',
+            ]) !=
+            null;
+      default:
+        return false;
+    }
+  }
+
+  /// Current plausible value already held for [type] (null when we have none).
+  double? _plausibleVitalForType(DeviceAppControlMeasureHealthDataType type) {
+    switch (type) {
+      case DeviceAppControlMeasureHealthDataType.heartRate:
+        return _vitals.heartRate?.toDouble();
+      case DeviceAppControlMeasureHealthDataType.bloodOxygen:
+        return _vitals.bloodOxygen?.toDouble();
+      case DeviceAppControlMeasureHealthDataType.hrv:
+        return _vitals.hrv?.toDouble();
+      case DeviceAppControlMeasureHealthDataType.bodyTemperature:
+        return _vitals.temperature;
+      case DeviceAppControlMeasureHealthDataType.bloodPressure:
+        return _vitals.bloodPressure != null ? 1 : null;
+      case DeviceAppControlMeasureHealthDataType.bloodGlucose:
+        return _vitals.bloodGlucose;
+      case DeviceAppControlMeasureHealthDataType.pressure:
+        return _vitals.pressure;
+      default:
+        return 1; // metrics we don't range-check — never block on them
+    }
+  }
+
+  /// Hands-off "Monitor all vitals": reconnect if needed, then run every
+  /// supported realtime measurement one after the other (ECG is intentionally
+  /// excluded — it needs deliberate finger contact), sync so the readings land
+  /// on the phone, and report the result as a felt state of being. Designed so
+  /// the user can tap once, set the phone aside, and get a notification.
+  Future<void> runAllVitals() async {
+    if (allVitalsRunning) return;
+    if (_sessionActive) {
+      _set(() {
+        _allVitalsPhase = AllVitalsPhase.failed;
+        _allVitalsMessage =
+            'Finish your active session before a full check-in.';
+      });
+      return;
+    }
+
+    _allVitalsRetakes.clear();
+    _set(() {
+      _allVitalsPhase = AllVitalsPhase.reconnecting;
+      _allVitalsDone = 0;
+      _allVitalsTotal = 0;
+      _allVitalsCurrentLabel = null;
+      _allVitalsFinishedAt = null;
+      _allVitalsMessage = 'Connecting to your ring…';
+    });
+    unawaited(VitalsNotificationService.instance.requestPermissions());
+    unawaited(VitalsNotificationService.instance.showProgress(done: 0, total: 0));
+
+    // 1) Make sure the ring is live, auto-reconnecting if it dropped.
+    if (!_isConnected) {
+      await reconnectSavedRing(force: true);
+    }
+    if (_disposed) return;
+    if (!_isConnected) {
+      _failAllVitals(
+        'Could not reach your ring. Make sure it is worn, charged, and nearby, '
+        'then try again.',
+      );
+      return;
+    }
+
+    // 2) Supported realtime measurements only — skip ECG.
+    final feature = _features;
+    final actions = realtimeMeasurementActions
+        .where((a) => feature?.supportsAny(a.featureKeys) ?? false)
+        .toList();
+
+    if (actions.isEmpty) {
+      // Nothing to measure on demand; still sync so Home refreshes.
+      _set(() {
+        _allVitalsPhase = AllVitalsPhase.syncing;
+        _allVitalsMessage = 'Syncing your latest data…';
+      });
+      await _syncDeviceData();
+      _finishAllVitals();
+      return;
+    }
+
+    _set(() {
+      _allVitalsPhase = AllVitalsPhase.running;
+      _allVitalsTotal = actions.length;
+      _allVitalsMessage = 'Reading your vitals…';
+    });
+
+    // 3) Run each measurement serially, retrying on loose contact so we never
+    //    record a zero/garbage reading, and noting anything that won't settle.
+    for (var i = 0; i < actions.length; i++) {
+      if (_disposed) return;
+      final action = actions[i];
+      var captured = false;
+      for (var attempt = 0; attempt <= _kMaxVitalRetries; attempt++) {
+        if (_disposed) return;
+        if (!_isConnected) {
+          _failAllVitals(
+            'Your ring disconnected partway through. Try again once it settles.',
+          );
+          return;
+        }
+        _set(() {
+          _allVitalsDone = i;
+          _allVitalsCurrentLabel = action.label;
+          _allVitalsMessage = attempt == 0
+              ? 'Reading ${action.label.toLowerCase()}…'
+              : 'Retrying ${action.label.toLowerCase()} — keep the ring snug…';
+        });
+        unawaited(
+          VitalsNotificationService.instance
+              .showProgress(done: i, total: actions.length),
+        );
+        await _runMeasurementAndWait(action);
+        // Captured a fresh reading, or we already hold a good value for it.
+        if (_measureCaptured || _plausibleVitalForType(action.type) != null) {
+          captured = true;
+          break;
+        }
+      }
+      if (!captured) _allVitalsRetakes.add(action.label);
+    }
+
+    if (_disposed) return;
+
+    // 4) Persist everything and refresh Home / widgets.
+    _set(() {
+      _allVitalsDone = actions.length;
+      _allVitalsCurrentLabel = null;
+      _allVitalsPhase = AllVitalsPhase.syncing;
+      _allVitalsMessage = 'Saving to your phone…';
+    });
+    unawaited(
+      VitalsNotificationService.instance
+          .showProgress(done: actions.length, total: actions.length),
+    );
+    await _syncDeviceData();
+    _finishAllVitals();
+  }
+
+  /// Starts [action] and awaits the ring reporting completion (or a backstop
+  /// timeout). Completion is signalled from the native-event/timeout paths via
+  /// [_maybeSignalStepFromState].
+  Future<void> _runMeasurementAndWait(MeasurementAction action) async {
+    final completer = Completer<void>();
+    _allVitalsStepCompleter = completer;
+    await runMeasurement(action);
+    // If the command never actually started measuring, don't wait on it.
+    if (!_isMeasuring) {
+      if (identical(_allVitalsStepCompleter, completer)) {
+        _allVitalsStepCompleter = null;
+      }
+      return;
+    }
+    try {
+      await completer.future.timeout(const Duration(seconds: 75));
+    } on TimeoutException {
+      // Keep whatever we captured and move to the next reading.
+    } finally {
+      if (identical(_allVitalsStepCompleter, completer)) {
+        _allVitalsStepCompleter = null;
+      }
+    }
+  }
+
+  /// Completes the in-flight all-vitals step once the controller is no longer
+  /// measuring (the reading finished, failed, or the ring disconnected).
+  void _maybeSignalStepFromState() {
+    if (_isMeasuring) return;
+    final completer = _allVitalsStepCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
+  }
+
+  void _failAllVitals(String message) {
+    _set(() {
+      _allVitalsPhase = AllVitalsPhase.failed;
+      _allVitalsCurrentLabel = null;
+      _allVitalsMessage = message;
+      _allVitalsFinishedAt = DateTime.now();
+    });
+    unawaited(VitalsNotificationService.instance.showFailure(message));
+    unawaited(_pushWidgetState());
+  }
+
+  void _finishAllVitals() {
+    final state = currentWellnessState();
+    final retakes = List<String>.of(_allVitalsRetakes);
+    final retakeNote = retakes.isEmpty
+        ? null
+        : '${_joinLabels(retakes)} needed a retake — keep the ring snug.';
+    _set(() {
+      _allVitalsPhase = AllVitalsPhase.done;
+      _allVitalsCurrentLabel = null;
+      _allVitalsFinishedAt = DateTime.now();
+      _allVitalsMessage = state.hasData
+          ? "You're feeling ${state.title.toLowerCase()}."
+              '${retakeNote == null ? '' : ' $retakeNote'}'
+          : retakeNote ??
+              'No clean readings came through. Make sure the ring is snug and '
+                  'try again.';
+    });
+    unawaited(
+      VitalsNotificationService.instance.showResult(state, retakeNote: retakeNote),
+    );
+    unawaited(_pushWidgetState());
+  }
+
+  static String _joinLabels(List<String> labels) {
+    if (labels.length == 1) return labels.first;
+    if (labels.length == 2) return '${labels[0]} and ${labels[1]}';
+    return '${labels.sublist(0, labels.length - 1).join(', ')}, '
+        'and ${labels.last}';
+  }
+
+  /// Push the latest state of being + biomarker readings to the widgets.
+  Future<void> _pushWidgetState() async {
+    try {
+      await HomeWidgetService.instance.pushState(
+        state: currentWellnessState(),
+        connected: _isConnected,
+        updatedAt: _vitals.updatedAt ?? DateTime.now(),
+        biomarkers: _widgetBiomarkers(),
+      );
+    } on Object catch (error) {
+      debugPrint('RING_WIDGET_PUSH failed: $error');
+    }
+  }
+
+  /// The biomarker readings shown as a grid on the home-screen widget.
+  List<(String, String)> _widgetBiomarkers() {
+    final v = _vitals;
+    final out = <(String, String)>[];
+    if (v.heartRate != null) out.add(('Heart', '${v.heartRate} bpm'));
+    if (v.bloodOxygen != null) out.add(('Oxygen', '${v.bloodOxygen}%'));
+    if (v.hrv != null) out.add(('HRV', '${v.hrv} ms'));
+    if (v.pressure != null) {
+      out.add((
+        'Stress',
+        stressZoneLabel(stressZoneForLevel((v.pressure! / 100).clamp(0.0, 1.0))),
+      ));
+    }
+    if (v.bloodGlucose != null) {
+      out.add(('Glucose', v.bloodGlucose!.toStringAsFixed(1)));
+    }
+    final steps = HomeDashboard.from(this).todaySteps;
+    if (steps > 0) out.add(('Steps', '$steps'));
+    if (v.temperature != null) {
+      out.add(('Temp', '${v.temperature!.toStringAsFixed(1)}°'));
+    }
+    return out.take(HomeWidgetService.biomarkerSlots).toList();
   }
 
   Future<void> startEcg() async {
@@ -1143,6 +1520,7 @@ class RingController extends ChangeNotifier {
       _testStatus = message;
     });
     _publishMeasurementSnapshot();
+    _maybeSignalStepFromState();
     if (sync) {
       unawaited(_syncDeviceData());
     }

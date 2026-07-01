@@ -34,34 +34,16 @@ class HomeScreen extends ConsumerWidget {
           _DiscoverRingPanel(controller: controller),
         const SizedBox(height: 16),
         if (hasRing)
-          _ReadinessHero(dashboard: dashboard)
+          _CheckInHero(
+            controller: controller,
+            dashboard: dashboard,
+            tiles: tiles,
+          )
         else
           _WelcomeHero(dashboard: dashboard),
         const SizedBox(height: 16),
         _PracticeHero(dashboard: dashboard),
         if (hasRing) ...[
-          const SizedBox(height: 22),
-          SectionHead(
-            eyebrow: 'Live now',
-            title: 'Your vitals',
-            action: 'See all',
-            onAction: () => openMeasurements(context, controller),
-          ),
-          if (tiles.isEmpty)
-            AccessDeniedPanel(
-              title: 'No vitals yet',
-              message:
-                  'Connect your PRANA ring and sync to populate daily vitals.',
-              icon: 'ring',
-              secondaryLabel: controller.isConnected && !controller.isSyncing
-                  ? 'Sync now'
-                  : 'Pair ring',
-              onSecondary: controller.isConnected && !controller.isSyncing
-                  ? () => syncRingWithFeedback(context, controller)
-                  : () => openScanner(context, controller),
-            )
-          else
-            _VitalsMiniGrid(controller: controller, tiles: tiles),
           if (dashboard.insights.isNotEmpty) ...[
             const SizedBox(height: 22),
             const SectionHead(
@@ -86,6 +68,295 @@ class HomeScreen extends ConsumerWidget {
             onSecondary: () => openScanner(context, controller),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// Maps a felt wellness tone to a brand-consistent hue.
+Color _toneColor(VyanaColors t, WellnessTone tone) {
+  switch (tone) {
+    case WellnessTone.good:
+      return t.green;
+    case WellnessTone.steady:
+      return t.gold;
+    case WellnessTone.watch:
+      return const Color(0xFFE08A4B); // warm amber — caring, not alarming
+    case WellnessTone.unknown:
+      return t.textMuted;
+  }
+}
+
+/// The Home centrepiece: your current state of being in plain language, felt
+/// signal chips instead of raw numbers, and the one-tap "Monitor all vitals"
+/// run with live progress. Rebuilds with the [RingController] it is handed.
+/// The one Home signal: readiness + worded state in a single card, felt signal
+/// chips, a scrollable biomarker strip, and the Check-vitals / Sync actions.
+/// Replaces the old duplicate State-of-being + Readiness pair.
+class _CheckInHero extends StatelessWidget {
+  const _CheckInHero({
+    required this.controller,
+    required this.dashboard,
+    required this.tiles,
+  });
+
+  final RingController controller;
+  final HomeDashboard dashboard;
+  final List<HomeVitalTile> tiles;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final running = controller.allVitalsRunning;
+    final justFailed = controller.allVitalsPhase == AllVitalsPhase.failed;
+    final state = controller.currentWellnessState();
+    final toneColor =
+        _toneColor(t, justFailed ? WellnessTone.watch : state.tone);
+    final score = dashboard.readinessScore;
+    final canSync = controller.isConnected && !controller.isSyncing && !running;
+
+    final body = running
+        ? (controller.allVitalsMessage ?? 'Reading your vitals…')
+        : justFailed
+            ? (controller.allVitalsMessage ?? state.summary)
+            : state.summary;
+
+    return Panel(
+      grad: true,
+      pad: 20,
+      accent: state.hasData || justFailed ? toneColor : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('HOW YOU’RE BEING',
+                  style: VyanaType.eyebrow.copyWith(color: t.gold)),
+              const Spacer(),
+              Text(
+                controller.isSyncing ? 'Syncing…' : 'Now',
+                style: VyanaType.caption.copyWith(color: t.textMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Single clear signal: readiness ring + worded state.
+          Row(
+            children: [
+              ProgressRing(
+                value: (score ?? 0).toDouble(),
+                max: 100,
+                size: 96,
+                stroke: 8,
+                color: toneColor,
+                track: t.isDark
+                    ? const Color(0xFF1F2630)
+                    : const Color(0xFFECE3D3),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(score == null ? '—' : '$score',
+                        style: VyanaType.displaySerif.copyWith(color: t.text)),
+                    Text('READY',
+                        style: VyanaType.mono10
+                            .copyWith(color: t.textSec, letterSpacing: 1.4)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      running ? 'Checking in…' : state.title,
+                      style: VyanaType.titleSerif
+                          .copyWith(color: t.text, fontSize: 24),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      body,
+                      style: VyanaType.bodySm
+                          .copyWith(color: t.textSec, height: 1.4),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (!running && state.signals.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [for (final s in state.signals) _SignalChip(signal: s)],
+            ),
+          ],
+          if (running) ...[
+            const SizedBox(height: 16),
+            _AllVitalsProgress(controller: controller),
+          ],
+          if (tiles.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Text('YOUR VITALS',
+                    style: VyanaType.eyebrow.copyWith(color: t.gold)),
+                const Spacer(),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => openMeasurements(context, controller),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('See all & test',
+                          style: VyanaType.caption.copyWith(
+                              color: t.gold, fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 3),
+                      VyanaIcon('chevR', size: 14, color: t.gold),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 116,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: EdgeInsets.zero,
+                physics: const BouncingScrollPhysics(),
+                itemCount: tiles.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (context, i) => SizedBox(
+                  width: 132,
+                  child: _MiniVital(
+                    tile: tiles[i],
+                    onTap: () =>
+                        openVitalDetail(context, controller, tiles[i].kind),
+                  ),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Cta(
+                  label: running
+                      ? 'Monitoring…'
+                      : state.hasData
+                          ? 'Check vitals again'
+                          : 'Monitor all vitals',
+                  icon: 'activity',
+                  disabled: running,
+                  onTap:
+                      running ? null : () => unawaited(controller.runAllVitals()),
+                ),
+              ),
+              const SizedBox(width: 10),
+              IconBtn(
+                icon: 'refresh',
+                size: 52,
+                onTap: canSync
+                    ? () => syncRingWithFeedback(context, controller)
+                    : null,
+              ),
+            ],
+          ),
+          if (!running) ...[
+            const SizedBox(height: 9),
+            Text(
+              'Reads every vital in turn — set the phone aside and Vyana pings '
+              'you when your check-in is ready.',
+              style: VyanaType.caption.copyWith(color: t.textMuted, height: 1.4),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A felt signal as a pill: concept + descriptor, coloured by tone (no numbers).
+class _SignalChip extends StatelessWidget {
+  const _SignalChip({required this.signal});
+  final WellnessSignal signal;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final c = _toneColor(t, signal.tone);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: t.isDark ? 0.14 : 0.10),
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: c.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 7),
+          Text(signal.label,
+              style: VyanaType.caption.copyWith(color: t.textSec)),
+          const SizedBox(width: 5),
+          Text(signal.reading,
+              style: VyanaType.caption
+                  .copyWith(color: c, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Live progress bar for a Monitor-all-vitals run.
+class _AllVitalsProgress extends StatelessWidget {
+  const _AllVitalsProgress({required this.controller});
+  final RingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final total = controller.allVitalsTotal;
+    final done = controller.allVitalsDone;
+    final value = total == 0 ? null : (done / total).clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(100),
+          child: LinearProgressIndicator(
+            value: value,
+            minHeight: 7,
+            backgroundColor:
+                t.isDark ? const Color(0xFF1F2630) : const Color(0xFFECE3D3),
+            valueColor: AlwaysStoppedAnimation<Color>(t.green),
+          ),
+        ),
+        const SizedBox(height: 9),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                controller.allVitalsMessage ?? 'Working…',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: VyanaType.caption.copyWith(color: t.textSec),
+              ),
+            ),
+            if (total > 0)
+              Text('$done/$total',
+                  style: VyanaType.mono10.copyWith(color: t.textMuted)),
+          ],
+        ),
       ],
     );
   }
@@ -301,141 +572,6 @@ class _RingStrip extends StatelessWidget {
   }
 }
 
-class _ReadinessHero extends StatelessWidget {
-  const _ReadinessHero({required this.dashboard});
-  final HomeDashboard dashboard;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.vyana;
-    final score = dashboard.readinessScore;
-    final hasScore = score != null;
-
-    return Panel(
-      grad: true,
-      pad: 20,
-      child: Column(
-        children: [
-          Row(
-            children: [
-              ProgressRing(
-                value: (score ?? 0).toDouble(),
-                max: 100,
-                size: 108,
-                stroke: 9,
-                color: t.green,
-                track: t.isDark ? const Color(0xFF1F2630) : const Color(0xFFECE3D3),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(hasScore ? '$score' : '—',
-                        style: VyanaType.displaySerif.copyWith(color: t.text)),
-                    Text('READY',
-                        style: VyanaType.mono10.copyWith(
-                            color: t.textSec, letterSpacing: 1.4)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 18),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('READINESS',
-                        style: VyanaType.eyebrow.copyWith(color: t.gold)),
-                    const SizedBox(height: 5),
-                    Text(dashboard.readinessLabel,
-                        style: VyanaType.titleSerif.copyWith(
-                            color: t.text, fontSize: 26)),
-                    if (dashboard.readinessDelta != null) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: (dashboard.readinessDelta! >= 0 ? t.green : t.gold)
-                              .withValues(alpha: t.isDark ? 0.16 : 0.1),
-                          borderRadius: BorderRadius.circular(100),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            VyanaIcon(
-                              dashboard.readinessDelta! >= 0 ? 'chevU' : 'chevD',
-                              size: 13,
-                              color: dashboard.readinessDelta! >= 0 ? t.green : t.gold,
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              '${dashboard.readinessDelta! >= 0 ? '+' : ''}${dashboard.readinessDelta} vs prior night',
-                              style: VyanaType.caption.copyWith(
-                                color: dashboard.readinessDelta! >= 0
-                                    ? t.green
-                                    : t.gold,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ] else if (!hasScore) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Sync sleep and HRV from your ring.',
-                        style: VyanaType.caption.copyWith(color: t.textMuted),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            // Without this, the grid inherits the shell's bottom inset
-            // (extendBody MediaQuery padding) and adds phantom space below.
-            padding: EdgeInsets.zero,
-            childAspectRatio: 3.4,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-            children: [
-              for (final d in dashboard.drivers)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                  decoration: BoxDecoration(
-                    color: t.isDark
-                        ? Colors.white.withValues(alpha: 0.03)
-                        : Colors.black.withValues(alpha: 0.02),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Text(d.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: VyanaType.caption.copyWith(color: t.textSec)),
-                      ),
-                      Text(d.value,
-                          style: VyanaType.caption.copyWith(
-                              color: d.good ? t.green : t.gold,
-                              fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _PracticeHero extends ConsumerWidget {
   const _PracticeHero({required this.dashboard});
   final HomeDashboard dashboard;
@@ -502,33 +638,6 @@ class _PracticeHero extends ConsumerWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _VitalsMiniGrid extends StatelessWidget {
-  const _VitalsMiniGrid({required this.controller, required this.tiles});
-  final RingController controller;
-  final List<HomeVitalTile> tiles;
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      // Drop the inherited extendBody bottom inset (phantom space below grid).
-      padding: EdgeInsets.zero,
-      childAspectRatio: 1.45,
-      crossAxisSpacing: 11,
-      mainAxisSpacing: 11,
-      children: [
-        for (final tile in tiles)
-          _MiniVital(
-            tile: tile,
-            onTap: () => openVitalDetail(context, controller, tile.kind),
-          ),
-      ],
     );
   }
 }

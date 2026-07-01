@@ -37,11 +37,15 @@ import 'src/theme/app_colors.dart';
 import 'src/theme/app_theme.dart';
 import 'src/theme/app_typography.dart';
 import 'src/theme/theme_mode_controller.dart';
+import 'src/wellness/wellness_state.dart';
+import 'src/services/vitals_notification_service.dart';
+import 'src/services/home_widget_service.dart';
 import 'src/widgets/widgets.dart';
 
 part 'src/repository.dart';
 part 'src/scan_screen.dart';
 part 'src/models.dart';
+part 'src/vitals_quality.dart';
 part 'src/dashboard_widgets.dart';
 part 'src/sleep_screen.dart';
 part 'src/measurements.dart';
@@ -81,6 +85,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EnvConfig.load();
   await VyanaStorageService.instance.ensureReady();
+  await VitalsNotificationService.instance.ensureInitialized();
+  await HomeWidgetService.instance.ensureInitialized();
   runApp(
     ProviderScope(
       child: RingApp(

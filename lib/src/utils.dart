@@ -691,7 +691,7 @@ String measureTypeIndexLabel(int index) {
     case 11:
       return 'PPG';
     case 12:
-      return 'Pressure';
+      return 'Stress';
     case 13:
       return 'VO2 max';
     default:
@@ -726,7 +726,7 @@ String measureTypeLabel(DeviceAppControlMeasureHealthDataType type) {
     case DeviceAppControlMeasureHealthDataType.ppg:
       return 'PPG';
     case DeviceAppControlMeasureHealthDataType.pressure:
-      return 'Pressure';
+      return 'Stress';
     case DeviceAppControlMeasureHealthDataType.vo2max:
       return 'VO2 max';
   }

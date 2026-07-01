@@ -624,4 +624,99 @@ void main() {
     expect(waiting.stateLabel, 'Waiting for contact');
     expect(waiting.canReadResult, isFalse);
   });
+
+  test('vitals plausibility gates reject loose-contact garbage', () {
+    // Grounded in real ring data: HRV artefact cluster ~175-179, zeros on no
+    // contact, glucose 0 = no contact.
+    expect(plausibleHrv(179), isNull);
+    expect(plausibleHrv(0), isNull);
+    expect(plausibleHrv(65), 65);
+    expect(plausibleSpo2(0), isNull);
+    expect(plausibleSpo2(97), 97);
+    expect(plausibleGlucose(0), isNull);
+    expect(plausibleGlucose(5.1), 5.1);
+    expect(plausibleHeartRate(0), isNull);
+    expect(plausibleHeartRate(72), 72);
+  });
+
+  test('no-contact record (all-zero vitals) is detected', () {
+    expect(
+      isNoContactRecord({
+        'heartRate': 0,
+        'bloodOxygen': 0,
+        'hrv': 0,
+        'temperature': 0.15,
+      }),
+      isTrue,
+    );
+    expect(
+      isNoContactRecord({
+        'heartRate': 72,
+        'bloodOxygen': 97,
+        'hrv': 65,
+        'temperature': 36.7,
+      }),
+      isFalse,
+    );
+  });
+
+  test('current vitals pick the latest plausible value, skipping artefacts', () {
+    final history = RingHistory(
+      steps: const [],
+      sleep: const [],
+      heartRate: const [],
+      bloodPressure: const [],
+      combined: [
+        // Oldest: good reading.
+        {
+          'startTimeStamp': 1000,
+          'heartRate': 70,
+          'bloodOxygen': 97,
+          'hrv': 60,
+          'temperature': 36.7,
+          'bloodGlucose': 5.1,
+        },
+        // Newer: HRV artefact but otherwise fine.
+        {
+          'startTimeStamp': 2000,
+          'heartRate': 74,
+          'bloodOxygen': 98,
+          'hrv': 179,
+          'temperature': 36.8,
+          'bloodGlucose': 5.4,
+        },
+        // Newest: no contact — everything zero.
+        {
+          'startTimeStamp': 3000,
+          'heartRate': 0,
+          'bloodOxygen': 0,
+          'hrv': 0,
+          'temperature': 0.15,
+          'bloodGlucose': 0,
+        },
+      ],
+      invasive: const [],
+      sport: const [],
+    );
+
+    final vitals = RingVitals.fromHistory(history, null);
+    // Newest plausible, not the zero record.
+    expect(vitals.heartRate, 74);
+    expect(vitals.bloodOxygen, 98);
+    expect(vitals.bloodGlucose, 5.4);
+    // 179 is rejected, so HRV falls back to the older good 60.
+    expect(vitals.hrv, 60);
+
+    // Charts drop the 179 artefact and the zero record entirely.
+    final hrvPoints = vitalHistoryPoints(history, VitalsMetricKind.hrv);
+    expect(hrvPoints.map((p) => p.value).toList(), [60.0]);
+  });
+
+  test('stress zones map inversely from HRV', () {
+    expect(stressZoneForHrv(80), StressZone.calm);
+    expect(stressZoneForHrv(50), StressZone.activated);
+    expect(stressZoneForHrv(20), StressZone.stressed);
+    expect(stressZoneLabel(StressZone.calm), 'Calm');
+    expect(stressZoneLabel(StressZone.stressed), 'Stressed');
+  });
 }

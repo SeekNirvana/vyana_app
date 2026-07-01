@@ -18,6 +18,7 @@ class VyanaShell extends ConsumerStatefulWidget {
 class _VyanaShellState extends ConsumerState<VyanaShell>
     with WidgetsBindingObserver {
   bool _profilePromptShown = false;
+  StreamSubscription<Uri?>? _widgetClickSub;
 
   static const _tabs = <Widget>[
     HomeScreen(),
@@ -36,6 +37,25 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
       if (!mounted) return;
       ref.read(reownWalletProvider.notifier).initIfNeeded(context);
     });
+    _listenForWidgetLaunch();
+  }
+
+  /// The action home-screen widget launches Vyana with a deep link; when we see
+  /// it (either on cold start or while running) we jump to Home and kick off a
+  /// hands-off Monitor-all-vitals run.
+  void _listenForWidgetLaunch() {
+    _widgetClickSub = HomeWidgetService.instance.clicks.listen(_handleWidgetUri);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final uri = await HomeWidgetService.instance.initialLaunchUri();
+      _handleWidgetUri(uri);
+    });
+  }
+
+  void _handleWidgetUri(Uri? uri) {
+    if (!mounted) return;
+    if (!HomeWidgetService.instance.isMonitorAllUri(uri)) return;
+    ref.read(tabIndexProvider.notifier).state = 0;
+    unawaited(ref.read(ringControllerProvider).runAllVitals());
   }
 
   void _showProfileLaunchSheet() {
@@ -57,6 +77,7 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
 
   @override
   void dispose() {
+    _widgetClickSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

@@ -33,6 +33,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications needs Java 8+ APIs backported on minSdk 26.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -112,6 +114,17 @@ flutter {
     source = "../.."
 }
 
+// home_widget pulls androidx.glance "1.+", which now resolves to a 1.3.0-alpha
+// that demands compileSdk 37 / AGP 9.1. We use the classic RemoteViews widget
+// API (not Glance), so pin glance to the last stable release compatible with
+// this toolchain.
+configurations.all {
+    resolutionStrategy {
+        force("androidx.glance:glance-appwidget:1.1.1")
+    }
+}
+
 dependencies {
     implementation("com.solanamobile:mobile-wallet-adapter-clientlib:1.1.0")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
