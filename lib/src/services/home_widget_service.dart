@@ -31,6 +31,9 @@ class HomeWidgetService {
   static const String monitorAllHost = 'monitor';
   static const String scheme = 'vyanawidget';
 
+  /// Eyebrow on the vitals widget header — must match native widget layouts.
+  static const String vitalsWidgetEyebrow = 'STATE OF BEING';
+
   bool _ready = false;
 
   Future<void> ensureInitialized() async {
@@ -74,6 +77,7 @@ class HomeWidgetService {
     if (!_ready) return;
     try {
       await Future.wait<void>([
+        _save('widget_eyebrow', vitalsWidgetEyebrow),
         _save('state_title', state.title),
         _save('state_summary', state.summary),
         _save('state_line', state.spokenLine),

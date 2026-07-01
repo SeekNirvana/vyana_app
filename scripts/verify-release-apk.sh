@@ -45,6 +45,24 @@ unzip -p "$APK" lib/arm64-v8a/libapp.so >"$LIBAPP" 2>/dev/null \
   || die "No lib/arm64-v8a/libapp.so in APK (wrong ABI or corrupt APK?)"
 LC_ALL=C strings "$LIBAPP" >"$STRINGS_FILE"
 
+# Flutter AOT stores many UI literals as UTF-16LE in libapp.so; `strings` only
+# extracts ASCII runs, so also scan the raw snapshot for UTF-8 and UTF-16LE.
+libapp_contains() {
+  local pattern="$1"
+  LC_ALL=C grep -Fq "$pattern" "$STRINGS_FILE" && return 0
+  python3 - "$LIBAPP" "$pattern" <<'PY'
+import sys
+
+libapp_path, pattern = sys.argv[1], sys.argv[2]
+data = open(libapp_path, "rb").read()
+encoded = (
+    pattern.encode("utf-8"),
+    pattern.encode("utf-16-le"),
+)
+sys.exit(0 if any(chunk in data for chunk in encoded) else 1)
+PY
+}
+
 echo "Verifying release APK:"
 echo "  $APK"
 echo "  manifest: $MANIFEST"
@@ -54,7 +72,7 @@ echo ""
 missing=0
 while IFS= read -r pattern || [[ -n "$pattern" ]]; do
   [[ -z "$pattern" || "$pattern" =~ ^[[:space:]]*# ]] && continue
-  if ! LC_ALL=C grep -Fq "$pattern" "$STRINGS_FILE"; then
+  if ! libapp_contains "$pattern"; then
     echo "  MISSING  $pattern"
     missing=$((missing + 1))
   else

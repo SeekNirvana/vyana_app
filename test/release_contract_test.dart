@@ -51,4 +51,24 @@ void main() {
     expect(text, contains('resetPranaRingToFactory'));
     expect(text, contains('Exit Vyana?'));
   });
+
+  test('v1.0.3 monitor-all vitals + state-of-being present in source', () {
+    final homeScreen = readLib('src/screens/home_screen.dart');
+    expect(homeScreen, contains('runAllVitals'));
+    expect(homeScreen, contains('Monitor all vitals'));
+    expect(homeScreen, contains('HOW YOU'));
+    expect(homeScreen, contains('Reads every vital in turn'));
+
+    final ringController = readLib('src/state/ring_controller.dart');
+    expect(ringController, contains('runAllVitals'));
+    expect(ringController, contains('keep the ring snug'));
+    expect(ringController, contains("Couldn't get a clean reading"));
+
+    final vitalsQuality = readLib('src/vitals_quality.dart');
+    expect(vitalsQuality, contains('isNoContactRecord'));
+    expect(vitalsQuality, contains('scrubRecordFields'));
+
+    final homeWidget = readLib('src/services/home_widget_service.dart');
+    expect(homeWidget, contains('STATE OF BEING'));
+  });
 }
