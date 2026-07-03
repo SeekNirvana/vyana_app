@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// Vyana × SeekNirvana design tokens, ported verbatim from the design handoff's
-/// `theme.js`. Theme-variant surface/text/border tokens live on the
+/// Vyana × SeekNirvana design tokens — the handoff palette retuned for calm:
+/// sage-tinted neutrals and de-saturated vital hues so no reading ever shouts.
+/// Theme-variant surface/text/border tokens live on the
 /// [VyanaColors] `ThemeExtension`; brand, per-vital and HR-zone hues are
 /// theme-invariant and exposed as getters / statics.
 ///
@@ -98,71 +99,74 @@ class VyanaColors extends ThemeExtension<VyanaColors> {
   /// HR training zones Z1–Z5.
   List<Color> get hrZones => const [
         Color(0xFF5AA37A), // Z1
-        Color(0xFF32C5D2), // Z2
+        Color(0xFF54B8C2), // Z2
         Color(0xFFC9A227), // Z3
-        Color(0xFFE08A4B), // Z4
-        Color(0xFFE85D75), // Z5
+        Color(0xFFDC9A6A), // Z4
+        Color(0xFFD97A8C), // Z5
       ];
 
   static const Map<String, Color> _vit = {
-    'hr': Color(0xFFE85D75),
-    'spo2': Color(0xFF32C5D2),
+    'hr': Color(0xFFD97A8C),
+    'spo2': Color(0xFF5BB8C4),
     'hrv': Color(0xFF5AA37A),
-    'stress': Color(0xFFC66B37),
-    'temp': Color(0xFFF39C5A),
+    'stress': Color(0xFFC98B62),
+    'temp': Color(0xFFE0A878),
     'steps': Color(0xFF00A86B),
-    'sleep': Color(0xFF4E5CA8),
+    'sleep': Color(0xFF6E7BBF),
     'bp': Color(0xFFC9A227),
-    'glucose': Color(0xFFEE7D52),
-    'ecg': Color(0xFF00D4FF),
-    'readiness': Color(0xFF2DCC90),
-    'cal': Color(0xFFD87C43),
-    'sleepDeep': Color(0xFF245C7A),
-    'sleepLight': Color(0xFF4B7AA3),
-    'sleepREM': Color(0xFF8361B5),
-    'sleepAwake': Color(0xFFC88A4B),
-    'luna': Color(0xFF4E5CA8),
+    'glucose': Color(0xFFDD9270),
+    'ecg': Color(0xFF63C3D8),
+    'readiness': Color(0xFF4CBD92),
+    'cal': Color(0xFFD69A6E),
+    'sleepDeep': Color(0xFF33657B),
+    'sleepLight': Color(0xFF5C84A8),
+    'sleepREM': Color(0xFF8F73BD),
+    'sleepAwake': Color(0xFFC79A66),
+    'luna': Color(0xFF6E7BBF),
     'nova': Color(0xFF5AA37A),
   };
 
+  // Dark: deep forest twilight — green-tinted charcoal instead of cold
+  // blue-black, with softer text contrast and gentler shadows.
   static const VyanaColors dark = VyanaColors(
     isDark: true,
-    bg: Color(0xFF0A0A0F),
-    bgGradTop: Color(0xFF0A0A0F),
-    bgGradMid: Color(0xFF0D1117),
-    bgGradBottom: Color(0xFF101723),
-    surface: Color(0xFF11141A),
-    card: Color(0xFF151A22),
-    cardGradTop: Color(0xFF151A22),
-    cardGradBottom: Color(0xFF1C222C),
-    elevated: Color(0xFF1C222C),
-    border: Color(0xFF233041),
-    borderSoft: Color(0x99233041), // rgba(35,48,65,0.6)
-    text: Color(0xFFF6F3EE),
-    textSec: Color(0xFF98A2B3),
-    textMuted: Color(0xFF667085),
-    shadowColor: Color(0x73000000), // rgba(0,0,0,0.45)
-    shadowSoftColor: Color(0x52000000), // rgba(0,0,0,0.32)
+    bg: Color(0xFF0B100F),
+    bgGradTop: Color(0xFF0B100F),
+    bgGradMid: Color(0xFF0E1414),
+    bgGradBottom: Color(0xFF111B18),
+    surface: Color(0xFF121817),
+    card: Color(0xFF161D1C),
+    cardGradTop: Color(0xFF161D1C),
+    cardGradBottom: Color(0xFF1C2523),
+    elevated: Color(0xFF1C2523),
+    border: Color(0xFF263430),
+    borderSoft: Color(0x99263430), // rgba(38,52,48,0.6)
+    text: Color(0xFFF1F0E9),
+    textSec: Color(0xFF9CA9A1),
+    textMuted: Color(0xFF6B7871),
+    shadowColor: Color(0x66000000), // rgba(0,0,0,0.40)
+    shadowSoftColor: Color(0x47000000), // rgba(0,0,0,0.28)
   );
 
+  // Light: misty sage-sand — a touch of green in the warm paper tones.
   static const VyanaColors light = VyanaColors(
     isDark: false,
-    bg: Color(0xFFF6F2E8),
-    bgGradTop: Color(0xFFF8F4EC),
-    bgGradMid: Color(0xFFF5EFE4),
-    bgGradBottom: Color(0xFFF2ECE0),
-    surface: Color(0xFFFFFCF7),
-    card: Color(0xFFFFFCF7),
-    cardGradTop: Color(0xFFFFFCF7),
-    cardGradBottom: Color(0xFFF2EBDD),
-    elevated: Color(0xFFF2EBDD),
-    border: Color(0xFFE7DDCB),
-    borderSoft: Color(0xFFECE3D3),
-    text: Color(0xFF171B20),
-    textSec: Color(0xFF5F6B7A),
-    textMuted: Color(0xFF7A8593),
-    shadowColor: Color(0x1A281E0A), // rgba(40,30,10,0.10)
-    shadowSoftColor: Color(0x12281E0A), // rgba(40,30,10,0.07)
+    bg: Color(0xFFF4F3EA),
+    bgGradTop: Color(0xFFF7F5ED),
+    bgGradMid: Color(0xFFF2F1E6),
+    bgGradBottom: Color(0xFFECEFE0),
+    surface: Color(0xFFFDFCF5),
+    card: Color(0xFFFDFCF5),
+    cardGradTop: Color(0xFFFDFCF5),
+    cardGradBottom: Color(0xFFEFF0E2),
+    elevated: Color(0xFFEFF0E2),
+    border: Color(0xFFE0E3CF),
+    borderSoft: Color(0xFFE8EADB),
+    text: Color(0xFF1B201D),
+    textSec: Color(0xFF5E6E66),
+    textMuted: Color(0xFF7D8A82),
+    shadowColor: Color(0x141E2814), // rgba(30,40,20,0.08)
+    shadowSoftColor: Color(0x0F1E2814), // rgba(30,40,20,0.06)
   );
 
   @override

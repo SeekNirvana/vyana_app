@@ -507,10 +507,10 @@ class EcgWaveformPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final minorGridPaint = Paint()
-      ..color = const Color(0xFF1C222C)
+      ..color = const Color(0xFF1C2523)
       ..strokeWidth = 0.7;
     final majorGridPaint = Paint()
-      ..color = const Color(0xFF233041)
+      ..color = const Color(0xFF263430)
       ..strokeWidth = 1;
 
     for (var x = 0.0; x <= size.width; x += 16) {
@@ -821,7 +821,7 @@ class TimeSeriesPainter extends CustomPainter {
     final timeSpan = end == start ? 1 : end - start;
 
     final gridPaint = Paint()
-      ..color = const Color(0xFF233041)
+      ..color = const Color(0xFF263430)
       ..strokeWidth = 1;
     for (var i = 0; i < 3; i += 1) {
       final y = top + plotHeight * i / 2;

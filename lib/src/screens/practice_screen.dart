@@ -53,7 +53,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
           ],
         ),
         const SizedBox(height: 18),
-        Text('${category.eyebrow.toUpperCase()} · ${activities.length} PRACTICES',
+        Text(category.eyebrow.toUpperCase(),
             style: VyanaType.eyebrow.copyWith(color: t.gold)),
         const SizedBox(height: 12),
         for (final a in activities)

@@ -67,6 +67,7 @@ part 'src/screens/session_screen.dart';
 part 'src/screens/session_bodies.dart';
 part 'src/screens/weekly_screen.dart';
 part 'src/screens/home_screen.dart';
+part 'src/screens/trends_screen.dart';
 part 'src/screens/vitals_detail_screen.dart';
 part 'src/screens/practice_screen.dart';
 part 'src/screens/journal_screen.dart';

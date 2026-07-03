@@ -16,11 +16,9 @@ Exit Vyana?
 
 # v1.0.3 — Monitor all vitals + Combined home signal card + state-of-being home + widgets
 runAllVitals
-Monitor all vitals
 STATE OF BEING
 Vitals check-in complete
 
-Reads every vital in turn
 isNoContactRecord
 keep the ring snug
 Stress rhythm
@@ -28,5 +26,13 @@ Activated
 Couldn't get a clean reading
 
 HOW YOU’RE BEING
-Check vitals again
 scrubRecordFields
+
+# v1.0.4 — Calm redesign: number-free Home + "Your numbers" (Trends) screen
+Check in with your body
+Check in again
+reads each vital in turn
+Your numbers
+TODAY'S MOVEMENT
+Moving in a steady rhythm
+Battery getting low

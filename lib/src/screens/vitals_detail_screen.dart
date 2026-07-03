@@ -678,7 +678,7 @@ class _StressBandChart extends StatelessWidget {
     var values = points.map((p) => p.value).toList();
     // Keep the rhythm readable — show the most recent stretch.
     if (values.length > 60) values = values.sublist(values.length - 60);
-    const stressed = Color(0xFFE08A4B);
+    const stressed = Color(0xFFD9975F);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

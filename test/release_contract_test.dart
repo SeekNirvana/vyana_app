@@ -55,9 +55,15 @@ void main() {
   test('v1.0.3 monitor-all vitals + state-of-being present in source', () {
     final homeScreen = readLib('src/screens/home_screen.dart');
     expect(homeScreen, contains('runAllVitals'));
-    expect(homeScreen, contains('Monitor all vitals'));
+    expect(homeScreen, contains('Check in with your body'));
     expect(homeScreen, contains('HOW YOU'));
-    expect(homeScreen, contains('Reads every vital in turn'));
+    expect(homeScreen, contains('reads each vital in turn'));
+
+    // Calm redesign: Home stays number-free; numbers live on TrendsScreen.
+    final trendsScreen = readLib('src/screens/trends_screen.dart');
+    expect(trendsScreen, contains('openVitalDetail'));
+    expect(trendsScreen, contains('openMeasurements'));
+    expect(trendsScreen, contains('READINESS'));
 
     final ringController = readLib('src/state/ring_controller.dart');
     expect(ringController, contains('runAllVitals'));

@@ -443,7 +443,7 @@ class VSwitch extends StatelessWidget {
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(100),
-          color: on ? c : (t.isDark ? const Color(0xFF2A3441) : const Color(0xFFD8D0C0)),
+          color: on ? c : (t.isDark ? const Color(0xFF2A3833) : const Color(0xFFD9DCC7)),
         ),
         alignment: on ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
