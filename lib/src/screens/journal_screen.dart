@@ -158,18 +158,19 @@ class JournalScreen extends ConsumerWidget {
   }
 }
 
-class _EntryCard extends StatelessWidget {
+class _EntryCard extends ConsumerWidget {
   const _EntryCard({required this.entry});
   final JournalEntryRow entry;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = context.vyana;
     final ac = t.vit(_entryAccent(entry.type));
     final tags = splitTags(entry.tags);
     return Panel(
       pad: 16,
       accent: ac,
+      onTap: () => _showEntrySheet(context, ref, entry),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -206,41 +207,33 @@ class _EntryCard extends StatelessWidget {
   }
 }
 
-class _MealCard extends StatelessWidget {
+class _MealCard extends ConsumerWidget {
   const _MealCard({required this.meal});
   final MealRow meal;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = context.vyana;
+    final ac = t.vit('steps');
     final photoPath = meal.photoPath;
     final hasPhoto =
         photoPath != null && photoPath.isNotEmpty && File(photoPath).existsSync();
-    return Panel(
-      pad: 14,
+
+    final info = Padding(
+      padding: const EdgeInsets.all(13),
       child: Row(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(11),
-            child: hasPhoto
-                ? Image.file(
-                    File(photoPath),
-                    width: 40,
-                    height: 40,
-                    fit: BoxFit.cover,
-                  )
-                : Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: t.vit('steps')
-                          .withValues(alpha: t.isDark ? 0.2 : 0.13),
-                      borderRadius: BorderRadius.circular(11),
-                    ),
-                    child: Center(
-                      child: VyanaIcon('bowl', size: 19, color: t.vit('steps')),
-                    ),
-                  ),
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: ac.withValues(alpha: t.isDark ? 0.2 : 0.13),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Center(
+              child: VyanaIcon(mealTypeIcon(meal.mealType),
+                  size: 17, color: ac),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -249,6 +242,8 @@ class _MealCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(meal.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: VyanaType.label.copyWith(color: t.text)),
                 Text(
                   '${meal.mealType} · ${_timeLabel(meal.createdAt)}'
@@ -258,6 +253,249 @@ class _MealCard extends StatelessWidget {
                   style: VyanaType.caption.copyWith(color: t.textSec),
                 ),
               ],
+            ),
+          ),
+          VyanaIcon('chevR', size: 16, color: t.textMuted),
+        ],
+      ),
+    );
+
+    return Panel(
+      pad: 0,
+      onTap: () => _showMealSheet(context, ref, meal),
+      child: hasPhoto
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Image.file(
+                  File(photoPath),
+                  height: 132,
+                  fit: BoxFit.cover,
+                ),
+                info,
+              ],
+            )
+          : info,
+    );
+  }
+}
+
+/// Bottom sheet with the full meal — large photo (tap to zoom), note, and
+/// delete. Keeps the journal list itself quiet.
+Future<void> _showMealSheet(
+    BuildContext context, WidgetRef ref, MealRow meal) {
+  final t = context.vyana;
+  final photoPath = meal.photoPath;
+  final hasPhoto = photoPath != null &&
+      photoPath.isNotEmpty &&
+      File(photoPath).existsSync();
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.fromLTRB(
+          16, 0, 16, 16 + MediaQuery.paddingOf(sheetContext).bottom),
+      child: Panel(
+        pad: 18,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (hasPhoto) ...[
+              GestureDetector(
+                onTap: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => MealPhotoViewer(path: photoPath),
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      Image.file(
+                        File(photoPath),
+                        height: 220,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(100),
+                          ),
+                          child: Text('Tap to zoom',
+                              style: VyanaType.mono10
+                                  .copyWith(color: Colors.white)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+            Row(
+              children: [
+                VyanaIcon(mealTypeIcon(meal.mealType),
+                    size: 16, color: t.vit('steps')),
+                const SizedBox(width: 7),
+                Text('${meal.mealType.toUpperCase()} · ${_timeLabel(meal.createdAt)}',
+                    style: VyanaType.mono10.copyWith(color: t.textSec)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(meal.label,
+                style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 22)),
+            if (meal.note != null && meal.note!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(meal.note!,
+                  style: VyanaType.bodySm
+                      .copyWith(color: t.textSec, height: 1.5)),
+            ],
+            const SizedBox(height: 18),
+            Cta(
+              label: 'Remove this meal',
+              icon: 'x',
+              solid: false,
+              onTap: () async {
+                final confirmed = await showVyanaConfirmDialog<bool>(
+                  context: sheetContext,
+                  title: 'Remove meal?',
+                  message:
+                      'This removes "${meal.label}" and its photo from your journal.',
+                  confirmLabel: 'Remove',
+                  destructive: true,
+                );
+                if (confirmed != true) return;
+                await ref.read(databaseProvider).deleteMeal(meal.id);
+                if (hasPhoto) {
+                  try {
+                    await File(photoPath).delete();
+                  } catch (_) {
+                    // Photo file already gone — nothing to clean up.
+                  }
+                }
+                if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+              },
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Bottom sheet with the full journal entry text, tags, and delete.
+Future<void> _showEntrySheet(
+    BuildContext context, WidgetRef ref, JournalEntryRow entry) {
+  final t = context.vyana;
+  final ac = t.vit(_entryAccent(entry.type));
+  final tags = splitTags(entry.tags);
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.fromLTRB(
+          16, 0, 16, 16 + MediaQuery.paddingOf(sheetContext).bottom),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.8,
+        ),
+        child: Panel(
+          pad: 18,
+          accent: ac,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  VyanaIcon(_entryIcon(entry.type), size: 15, color: ac),
+                  const SizedBox(width: 7),
+                  Text(
+                      '${_entryLabel(entry.type).toUpperCase()} · ${_timeLabel(entry.createdAt)}',
+                      style: VyanaType.mono10.copyWith(color: ac)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(entry.title,
+                  style:
+                      VyanaType.titleSerif.copyWith(color: t.text, fontSize: 22)),
+              const SizedBox(height: 10),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Text(entry.body,
+                      style: VyanaType.body
+                          .copyWith(color: t.textSec, height: 1.55)),
+                ),
+              ),
+              if (tags.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [for (final tag in tags) _TagChip(label: '#$tag')],
+                ),
+              ],
+              const SizedBox(height: 18),
+              Cta(
+                label: 'Remove this entry',
+                icon: 'x',
+                solid: false,
+                onTap: () async {
+                  final confirmed = await showVyanaConfirmDialog<bool>(
+                    context: sheetContext,
+                    title: 'Remove entry?',
+                    message: 'This removes "${entry.title}" from your journal.',
+                    confirmLabel: 'Remove',
+                    destructive: true,
+                  );
+                  if (confirmed != true) return;
+                  await ref
+                      .read(databaseProvider)
+                      .deleteJournalEntry(entry.id);
+                  if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Full-screen, pinch-zoomable meal photo.
+class MealPhotoViewer extends StatelessWidget {
+  const MealPhotoViewer({super.key, required this.path});
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: InteractiveViewer(
+              maxScale: 5,
+              child: Center(child: Image.file(File(path))),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: IconBtn(
+                icon: 'x',
+                onTap: () => Navigator.of(context).pop(),
+              ),
             ),
           ),
         ],

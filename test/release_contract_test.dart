@@ -77,4 +77,35 @@ void main() {
     final homeWidget = readLib('src/services/home_widget_service.dart');
     expect(homeWidget, contains('STATE OF BEING'));
   });
+
+  test('v1.0.4 live sessions (map, 10-min splits, terrain cues) + meal polish',
+      () {
+    final sessionBodies = readLib('src/screens/session_bodies.dart');
+    expect(sessionBodies, contains('FlutterMap'));
+    expect(sessionBodies, contains('tile.openstreetmap.org'));
+    expect(sessionBodies, contains('PolylineLayer'));
+
+    final sessionController = readLib('src/state/session_controller.dart');
+    expect(sessionController, contains('% 600'),
+        reason: 'spoken splits every 10 minutes');
+    expect(sessionController, contains('Kilometre'));
+    expect(sessionController, contains('Steep climb'));
+    expect(sessionController, contains('gpsPermissionDenied'));
+
+    final journalScreen = readLib('src/screens/journal_screen.dart');
+    expect(journalScreen, contains('deleteMeal'));
+    expect(journalScreen, contains('MealPhotoViewer'));
+
+    final journalEditors = readLib('src/screens/journal_editors.dart');
+    expect(journalEditors, contains('Add a photo of your plate'));
+
+    // GPS must work on Android 12+: FINE_LOCATION may not carry maxSdkVersion.
+    final manifest = File('android/app/src/main/AndroidManifest.xml')
+        .readAsStringSync();
+    expect(
+      manifest,
+      contains(
+          '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />'),
+    );
+  });
 }

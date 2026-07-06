@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.0.4 — 2026-07-06
+
+### Added
+
+- **Calm redesign** — every screen retuned for mindfulness. The palette softens
+  to sage/twilight neutrals with de-saturated vital hues; Home is now number-free
+  (a slow **breathing orb** and worded state replace the numeric readiness ring)
+  and all scores, tiles, charts, and insights live one tap away on the new
+  **"Your numbers"** screen (readiness with drivers, vitals grid, movement stats,
+  AI insights, and doorways to sleep, weekly patterns, and the data log).
+- **Live outdoor sessions with a real map** — GPS runs/walks/rides now show an
+  OpenStreetMap route map (pure Dart, no Google services, dark-mode tinted) with
+  a live position marker, follow/recenter, live + average **pace**, elevation
+  gain, and heart rate with zone bar on one screen.
+- **Spoken 10-minute splits** — during movement sessions Vyana speaks time,
+  distance, pace, heart rate + zone, and elevation gain every 10 minutes (as the
+  practice catalog promised), plus a callout at **every completed kilometre**
+  with average pace. Trail runs get steep-climb and descent-care cues; indoor
+  and strength sessions get zone-matched encouragement.
+- **Meal logging polish** — a proper photo flow: large capture card with camera
+  or library, change/remove overlay chips, meal-type pills with icons
+  (breakfast/lunch/dinner/snack/hydration), photo-banner meal cards in the
+  journal, a detail sheet with pinch-to-zoom **full-screen photo viewer**, and
+  the ability to remove meals (photo file cleaned up) and journal entries.
+
+### Fixed
+
+- **GPS on Android 12+** — location permissions were declared with
+  `maxSdkVersion="30"` (a BLE-scanning legacy), so modern devices — including
+  every Solana Seeker — could never grant location and outdoor sessions recorded
+  no route, pace, or elevation. Permissions are now declared for all versions.
+- Live session screens show a clear "Location is off" panel with a settings
+  shortcut when permission is declined; heart rate keeps recording regardless.
+
 ## v1.0.3 — 2026-06-30
 
 ### Added

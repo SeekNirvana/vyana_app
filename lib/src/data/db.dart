@@ -469,6 +469,9 @@ class VyanaDatabase extends _$VyanaDatabase {
     );
   }
 
+  Future<void> deleteMeal(String id) =>
+      (delete(meals)..where((t) => t.id.equals(id))).go();
+
   Stream<List<MealRow>> watchMeals() =>
       (select(meals)..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).watch();
 

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.3+4
+version: 1.0.4+5
 
 environment:
   sdk: ^3.12.0
@@ -54,6 +54,10 @@ dependencies:
   drift_flutter: ^0.3.0
   path_provider: ^2.1.4
   geolocator: ^14.0.3
+  # Live session map (outdoor runs/walks/rides): OSM raster tiles via
+  # flutter_map — pure Dart, no Google Play Services, no API key.
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
   flutter_tts: ^4.2.5
   flutter_dotenv: ^6.0.1
 

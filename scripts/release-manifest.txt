@@ -36,3 +36,19 @@ Your numbers
 TODAY'S MOVEMENT
 Moving in a steady rhythm
 Battery getting low
+
+# v1.0.4 — Live outdoor sessions: real map, 10-min spoken splits, km + terrain cues
+tile.openstreetmap.org
+Acquiring GPS
+Kilometre
+minutes in.
+Steep climb
+Descending — soft knees, easy control.
+Location is off
+
+# v1.0.4 — Meal logging polish: photo capture, viewer, delete
+Add a photo of your plate
+Tap to zoom
+Remove this meal
+Remove this entry
+MEAL PHOTO

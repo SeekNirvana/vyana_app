@@ -186,19 +186,61 @@ class IndoorBody extends StatelessWidget {
   }
 }
 
-// ── GPS (outdoor) — striped map placeholder; route polyline lands in M5 ──────
-class GpsBody extends StatelessWidget {
+// ── GPS (outdoor) — live map, route polyline, pace & HR ─────────────────────
+
+/// Softens OSM's light tiles into the app's twilight palette in dark mode.
+const _darkTileMatrix = <double>[
+  -0.86, 0, 0, 0, 238,
+  0, -0.86, 0, 0, 244,
+  0, 0, -0.86, 0, 240,
+  0, 0, 0, 1, 0,
+];
+
+class GpsBody extends StatefulWidget {
   const GpsBody({super.key, required this.controller, required this.accent});
   final SessionController controller;
   final Color accent;
 
   @override
+  State<GpsBody> createState() => _GpsBodyState();
+}
+
+class _GpsBodyState extends State<GpsBody> {
+  final MapController _map = MapController();
+  bool _mapReady = false;
+  bool _follow = true;
+  int _followedLen = 0;
+
+  void _recenter() {
+    final route = widget.controller.route;
+    if (!_mapReady || route.isEmpty) return;
+    _map.move(LatLng(route.last.lat, route.last.lng), 16);
+    setState(() => _follow = true);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final t = context.vyana;
-    final v = controller.heartRate;
-    final route = controller.route;
-    final km = controller.distanceMeters / 1000;
-    final paceLabel = _paceLabel(controller.elapsed, controller.distanceMeters);
+    final c = widget.controller;
+    final v = c.heartRate;
+    final route = c.route;
+    final km = c.distanceMeters / 1000;
+    final avgPace = _paceLabel(c.elapsed, c.distanceMeters);
+    final livePace = _livePaceLabel(c.currentSpeed) ?? avgPace;
+
+    // Follow the runner: glide to the newest fix after this frame renders.
+    if (_mapReady &&
+        _follow &&
+        route.isNotEmpty &&
+        route.length != _followedLen) {
+      _followedLen = route.length;
+      final last = route.last;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_mapReady || !_follow) return;
+        _map.move(LatLng(last.lat, last.lng), _map.camera.zoom);
+      });
+    }
+
     return Column(
       children: [
         Expanded(
@@ -209,42 +251,195 @@ class GpsBody extends StatelessWidget {
               border: Border.all(color: t.border),
             ),
             clipBehavior: Clip.antiAlias,
-            child: CustomPaint(
-              painter: _StripePainter(t.border, t.surface),
-              child: route.length < 2
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
+            child: c.gpsPermissionDenied
+                ? _GpsDeniedPanel(accent: widget.accent)
+                : route.isEmpty
+                    ? CustomPaint(
+                        painter: _StripePainter(t.border, t.surface),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              VyanaIcon('mapPin', size: 26, color: t.textMuted),
+                              const SizedBox(height: 8),
+                              Text('Acquiring GPS · keep the sky in view',
+                                  style: VyanaType.caption
+                                      .copyWith(color: t.textMuted)),
+                            ],
+                          ),
+                        ),
+                      )
+                    : Stack(
                         children: [
-                          VyanaIcon('mapPin', size: 26, color: t.textMuted),
-                          const SizedBox(height: 8),
-                          Text('Acquiring GPS · phone',
-                              style: VyanaType.caption.copyWith(color: t.textMuted)),
+                          FlutterMap(
+                            mapController: _map,
+                            options: MapOptions(
+                              initialCenter:
+                                  LatLng(route.last.lat, route.last.lng),
+                              initialZoom: 16,
+                              backgroundColor: t.surface,
+                              interactionOptions: const InteractionOptions(
+                                flags: InteractiveFlag.all &
+                                    ~InteractiveFlag.rotate,
+                              ),
+                              onMapReady: () =>
+                                  setState(() => _mapReady = true),
+                              onPositionChanged: (camera, hasGesture) {
+                                if (hasGesture && _follow) {
+                                  setState(() => _follow = false);
+                                }
+                              },
+                            ),
+                            children: [
+                              t.isDark
+                                  ? ColorFiltered(
+                                      colorFilter: const ColorFilter.matrix(
+                                          _darkTileMatrix),
+                                      child: _osmTiles(),
+                                    )
+                                  : _osmTiles(),
+                              if (route.length >= 2)
+                                PolylineLayer(
+                                  polylines: [
+                                    Polyline(
+                                      points: [
+                                        for (final p in route)
+                                          LatLng(p.lat, p.lng),
+                                      ],
+                                      strokeWidth: 5,
+                                      color: widget.accent,
+                                      borderStrokeWidth: 2,
+                                      borderColor:
+                                          Colors.white.withValues(alpha: 0.75),
+                                    ),
+                                  ],
+                                ),
+                              MarkerLayer(
+                                markers: [
+                                  Marker(
+                                    point: LatLng(
+                                        route.first.lat, route.first.lng),
+                                    width: 14,
+                                    height: 14,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: widget.accent
+                                            .withValues(alpha: 0.55),
+                                        border: Border.all(
+                                            color: Colors.white, width: 2),
+                                      ),
+                                    ),
+                                  ),
+                                  Marker(
+                                    point:
+                                        LatLng(route.last.lat, route.last.lng),
+                                    width: 18,
+                                    height: 18,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: widget.accent,
+                                        border: Border.all(
+                                            color: Colors.white, width: 2.5),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: widget.accent
+                                                .withValues(alpha: 0.55),
+                                            blurRadius: 10,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          Positioned(
+                            left: 8,
+                            bottom: 6,
+                            child: Text('© OpenStreetMap',
+                                style: VyanaType.mono10.copyWith(
+                                  color: t.isDark
+                                      ? Colors.white70
+                                      : Colors.black54,
+                                )),
+                          ),
+                          Positioned(
+                            right: 10,
+                            top: 10,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: t.bg.withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(100),
+                                border: Border.all(color: t.border),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 7,
+                                    height: 7,
+                                    decoration: BoxDecoration(
+                                      color: t.green,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text('GPS · ${km.toStringAsFixed(2)} km',
+                                      style: VyanaType.mono10
+                                          .copyWith(color: t.text)),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (!_follow)
+                            Positioned(
+                              right: 10,
+                              bottom: 10,
+                              child: IconBtn(
+                                icon: 'mapPin',
+                                active: true,
+                                onTap: _recenter,
+                              ),
+                            ),
                         ],
                       ),
-                    )
-                  : CustomPaint(
-                      painter: _RoutePainter(route, accent),
-                      size: Size.infinite,
-                    ),
-            ),
           ),
         ),
+        // Pace and heart rate lead — the two numbers a runner glances at.
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              _BigStat(
+                value: livePace,
+                unit: '/km',
+                label: c.currentSpeed != null ? 'Pace · live' : 'Pace · avg',
+                icon: 'gauge',
+                accent: widget.accent,
+              ),
+              const SizedBox(width: 8),
+              _BigStat(
+                value: v == null ? '—' : '$v',
+                unit: 'bpm',
+                label: 'Heart rate',
+                icon: 'heart',
+                accent: context.vyana.vit('hr'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: MetricTrio(items: [
             (km.toStringAsFixed(2), 'km'),
-            (paceLabel, 'pace /km'),
-            ('${controller.elevationGain.round()}', 'elev m'),
-          ]),
-        ),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: MetricTrio(items: [
-            (_fmtDuration(controller.elapsed), 'Time'),
-            (v == null ? '—' : '$v', 'HR bpm'),
-            ('${controller.sampleCount}', 'Samples'),
+            ('${c.elevationGain.round()}', 'elev gain m'),
+            (_fmtDuration(c.elapsed), 'time'),
           ]),
         ),
         const SizedBox(height: 12),
@@ -257,6 +452,11 @@ class GpsBody extends StatelessWidget {
     );
   }
 
+  static TileLayer _osmTiles() => TileLayer(
+        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        userAgentPackageName: 'com.seeknirvana.vyana',
+      );
+
   static String _paceLabel(Duration elapsed, double meters) {
     if (meters < 20) return '—';
     final secPerKm = elapsed.inSeconds / (meters / 1000);
@@ -264,56 +464,117 @@ class GpsBody extends StatelessWidget {
     final s = (secPerKm % 60).round();
     return '$m:${s.toString().padLeft(2, '0')}';
   }
+
+  /// Instantaneous pace from the GPS speed; null below walking pace so we
+  /// fall back to the average.
+  static String? _livePaceLabel(double? speedMs) {
+    if (speedMs == null || speedMs < 0.5) return null;
+    final secPerKm = 1000 / speedMs;
+    if (secPerKm > 30 * 60) return null;
+    final m = secPerKm ~/ 60;
+    final s = (secPerKm % 60).round();
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
 }
 
-/// Draws the captured GPS route auto-scaled to the box (no tile provider — the
-/// striped placeholder is the backdrop, per the design).
-class _RoutePainter extends CustomPainter {
-  _RoutePainter(this.route, this.color);
-  final List<({double lat, double lng})> route;
-  final Color color;
+/// Large glanceable stat card used for pace and heart rate on the GPS body.
+class _BigStat extends StatelessWidget {
+  const _BigStat({
+    required this.value,
+    required this.unit,
+    required this.label,
+    required this.icon,
+    required this.accent,
+  });
+
+  final String value;
+  final String unit;
+  final String label;
+  final String icon;
+  final Color accent;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    if (route.length < 2) return;
-    var minLat = route.first.lat, maxLat = route.first.lat;
-    var minLng = route.first.lng, maxLng = route.first.lng;
-    for (final p in route) {
-      if (p.lat < minLat) minLat = p.lat;
-      if (p.lat > maxLat) maxLat = p.lat;
-      if (p.lng < minLng) minLng = p.lng;
-      if (p.lng > maxLng) maxLng = p.lng;
-    }
-    const pad = 24.0;
-    final spanLat = (maxLat - minLat).abs() < 1e-6 ? 1e-6 : (maxLat - minLat);
-    final spanLng = (maxLng - minLng).abs() < 1e-6 ? 1e-6 : (maxLng - minLng);
-    Offset project(({double lat, double lng}) p) {
-      final x = pad + (p.lng - minLng) / spanLng * (size.width - pad * 2);
-      // Invert latitude so north is up.
-      final y = pad + (maxLat - p.lat) / spanLat * (size.height - pad * 2);
-      return Offset(x, y);
-    }
-
-    final path = Path()..moveTo(project(route.first).dx, project(route.first).dy);
-    for (final p in route.skip(1)) {
-      final o = project(p);
-      path.lineTo(o.dx, o.dy);
-    }
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.5
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..color = color,
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: t.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Flexible(
+                  child: Text(value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: VyanaType.titleSerif
+                          .copyWith(color: t.text, fontSize: 30)),
+                ),
+                const SizedBox(width: 4),
+                Text(unit,
+                    style: VyanaType.caption.copyWith(color: t.textMuted)),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                VyanaIcon(icon, size: 13, color: accent),
+                const SizedBox(width: 5),
+                Text(label,
+                    style: VyanaType.caption.copyWith(color: t.textSec)),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
-    canvas.drawCircle(project(route.first), 5, Paint()..color = color.withValues(alpha: 0.5));
-    canvas.drawCircle(project(route.last), 6, Paint()..color = color);
   }
+}
+
+/// Shown in the map slot when location permission was declined mid-session.
+class _GpsDeniedPanel extends StatelessWidget {
+  const _GpsDeniedPanel({required this.accent});
+  final Color accent;
 
   @override
-  bool shouldRepaint(_RoutePainter old) => old.route.length != route.length;
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Container(
+      color: t.surface,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          VyanaIcon('mapPin', size: 28, color: accent),
+          const SizedBox(height: 12),
+          Text('Location is off',
+              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 20)),
+          const SizedBox(height: 6),
+          Text(
+            'Allow location for Vyana to see your route, pace, and elevation. '
+            'Heart rate keeps recording either way.',
+            textAlign: TextAlign.center,
+            style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45),
+          ),
+          const SizedBox(height: 16),
+          Cta(
+            label: 'Open settings',
+            icon: 'settings',
+            solid: false,
+            onTap: () => unawaited(Geolocator.openAppSettings()),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _StripePainter extends CustomPainter {

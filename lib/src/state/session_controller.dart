@@ -34,6 +34,12 @@ class SessionController extends ChangeNotifier {
   double? _currentSpeed;
   double? _lastAltitude;
   ({double lat, double lng})? _lastPoint;
+  bool _gpsDenied = false;
+  int _lastKmAnnounced = 0;
+  // Terrain cues (steep climb / descent care) — grade sampled over ~80 m.
+  double? _gradeRefDist;
+  double? _gradeRefAlt;
+  Duration _lastTerrainCue = const Duration(minutes: -10);
 
   bool get active => _active;
   bool get paused => _paused;
@@ -52,6 +58,10 @@ class SessionController extends ChangeNotifier {
 
   /// Current speed in m/s, or null if unknown.
   double? get currentSpeed => _currentSpeed;
+
+  /// True when the user declined location for a GPS session — the live screen
+  /// shows how to enable it.
+  bool get gpsPermissionDenied => _gpsDenied;
 
   /// The voice cue currently showing in the banner (auto-clears).
   String? get activeCue => _activeCue;
@@ -99,6 +109,11 @@ class SessionController extends ChangeNotifier {
     _currentSpeed = null;
     _lastAltitude = null;
     _lastPoint = null;
+    _gpsDenied = false;
+    _lastKmAnnounced = 0;
+    _gradeRefDist = null;
+    _gradeRefAlt = null;
+    _lastTerrainCue = const Duration(minutes: -10);
 
     // Take ownership of the ring (serializes one-shot measurements) and start
     // capturing raw frames.
@@ -124,7 +139,12 @@ class SessionController extends ChangeNotifier {
 
   Future<void> _startLocation(String sessionId) async {
     final ok = await _ref.read(locationServiceProvider).ensurePermission();
-    if (!ok || _disposed || !_active) return;
+    if (_disposed || !_active) return;
+    if (!ok) {
+      _gpsDenied = true;
+      _notify();
+      return;
+    }
     _posSub = _ref.read(locationServiceProvider).positions().listen((pos) {
       if (!_active || _paused || _disposed) return;
       final point = (lat: pos.latitude, lng: pos.longitude);
@@ -141,6 +161,16 @@ class SessionController extends ChangeNotifier {
       _currentSpeed = pos.speed >= 0 ? pos.speed : null;
       _route.add(point);
       if (_route.length > 3000) _route.removeAt(0);
+      // Announce each completed kilometre with the average pace so far.
+      final km = _distanceMeters ~/ 1000;
+      if (km > _lastKmAnnounced) {
+        _lastKmAnnounced = km;
+        final pace = _spokenPace();
+        emitCue(
+          'Kilometre $km.${pace == null ? '' : ' Average pace $pace per kilometre.'}',
+        );
+      }
+      _maybeEmitTerrainCue(pos.altitude);
       unawaited(_db.addRoutePoint(
         sessionId: sessionId,
         timestamp: DateTime.now(),
@@ -164,11 +194,12 @@ class SessionController extends ChangeNotifier {
     }
     _sampleCount++;
 
-    // Spoken split every 5 minutes for movement sessions.
+    // Spoken split every 10 minutes for movement sessions — time, pace,
+    // heart rate, and elevation, as the practice catalog promises.
     final kind = _activity?.kind;
     if ((kind == 'gps' || kind == 'indoor' || kind == 'strength') &&
         _elapsed.inSeconds > 0 &&
-        _elapsed.inSeconds % 300 == 0) {
+        _elapsed.inSeconds % 600 == 0) {
       _emitSplitCue();
     }
 
@@ -195,17 +226,62 @@ class SessionController extends ChangeNotifier {
     _notify();
   }
 
-  void _emitSplitCue() {
-    final parts = <String>['${_elapsed.inMinutes} minutes.'];
-    if ((_activity?.gps ?? false) && _distanceMeters > 50) {
-      final secPerKm = _elapsed.inSeconds / (_distanceMeters / 1000);
-      final m = secPerKm ~/ 60;
-      final s = (secPerKm % 60).round().toString().padLeft(2, '0');
-      parts.add('Pace $m $s per kilometre.');
+  /// Speaks a care cue on sustained steep climbs and descents (≥8% grade over
+  /// ~80 m), at most once every three minutes.
+  void _maybeEmitTerrainCue(double altitude) {
+    _gradeRefDist ??= _distanceMeters;
+    _gradeRefAlt ??= altitude;
+    final dDist = _distanceMeters - _gradeRefDist!;
+    if (dDist < 80) return;
+    final grade = (altitude - _gradeRefAlt!) / dDist;
+    _gradeRefDist = _distanceMeters;
+    _gradeRefAlt = altitude;
+    if ((_elapsed - _lastTerrainCue).inSeconds < 180) return;
+    if (grade >= 0.08) {
+      _lastTerrainCue = _elapsed;
+      emitCue('Steep climb — shorten your stride and keep the breath steady.');
+    } else if (grade <= -0.08) {
+      _lastTerrainCue = _elapsed;
+      emitCue('Descending — soft knees, easy control.');
     }
-    if (_heartRate != null) parts.add('Heart rate $_heartRate.');
-    if ((_activity?.gps ?? false) && _elevationGain > 5) {
+  }
+
+  /// Average pace so far as a spoken "M SS" string, or null before there is
+  /// enough distance to be meaningful.
+  String? _spokenPace() {
+    if (_distanceMeters < 50 || _elapsed.inSeconds == 0) return null;
+    final secPerKm = _elapsed.inSeconds / (_distanceMeters / 1000);
+    final m = secPerKm ~/ 60;
+    final s = (secPerKm % 60).round().toString().padLeft(2, '0');
+    return '$m $s';
+  }
+
+  void _emitSplitCue() {
+    final isGps = _activity?.gps ?? false;
+    final parts = <String>['${_elapsed.inMinutes} minutes in.'];
+    if (isGps) {
+      if (_distanceMeters > 50) {
+        parts.add(
+            '${(_distanceMeters / 1000).toStringAsFixed(1)} kilometres.');
+      }
+      final pace = _spokenPace();
+      if (pace != null) parts.add('Pace $pace per kilometre.');
+    }
+    if (_heartRate != null) {
+      parts.add('Heart rate $_heartRate.');
+      final zone = hrZoneIndex(_heartRate);
+      if (zone >= 0) parts.add('Zone ${zone + 1}.');
+    }
+    if (isGps) {
       parts.add('Elevation gain ${_elevationGain.round()} metres.');
+    } else {
+      // Indoor and strength sessions get a short zone-matched encouragement.
+      final zone = hrZoneIndex(_heartRate);
+      parts.add(zone >= 3
+          ? 'Working hard — stay smooth.'
+          : zone >= 2
+              ? 'Strong rhythm — keep it here.'
+              : 'Easy and steady. Well done.');
     }
     emitCue(parts.join(' '));
   }

@@ -482,6 +482,15 @@ class _WakeCaptureScreenState extends ConsumerState<WakeCaptureScreen> {
 // ── Meal log ─────────────────────────────────────────────────────────────────
 const _mealTypes = ['Breakfast', 'Lunch', 'Dinner', 'Snack', 'Hydration'];
 
+/// Icon per meal type — used by the editor pills and the journal meal cards.
+String mealTypeIcon(String type) => switch (type) {
+      'Breakfast' => 'sunDim',
+      'Lunch' => 'sun',
+      'Dinner' => 'moon',
+      'Hydration' => 'drop',
+      _ => 'leaf', // snack
+    };
+
 class MealLogScreen extends ConsumerStatefulWidget {
   const MealLogScreen({super.key});
 
@@ -513,29 +522,39 @@ class _MealLogScreenState extends ConsumerState<MealLogScreen> {
       ),
       builder: (sheetContext) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: VyanaIcon('camera', size: 20, color: t.text),
-                title: Text('Take photo',
-                    style: VyanaType.label.copyWith(color: t.text)),
-                onTap: () => Navigator.pop(sheetContext, 'camera'),
-              ),
-              ListTile(
-                leading: VyanaIcon('bowl', size: 20, color: t.text),
-                title: Text('Choose from library',
-                    style: VyanaType.label.copyWith(color: t.text)),
-                onTap: () => Navigator.pop(sheetContext, 'gallery'),
-              ),
-              if (_photoPath != null)
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('MEAL PHOTO',
+                    style: VyanaType.eyebrow.copyWith(color: t.gold)),
+                const SizedBox(height: 6),
                 ListTile(
-                  leading: VyanaIcon('x', size: 20, color: t.vit('hr')),
-                  title: Text('Remove photo',
-                      style: VyanaType.label.copyWith(color: t.vit('hr'))),
-                  onTap: () => Navigator.pop(sheetContext, 'remove'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: VyanaIcon('camera', size: 20, color: t.text),
+                  title: Text('Take photo',
+                      style: VyanaType.label.copyWith(color: t.text)),
+                  onTap: () => Navigator.pop(sheetContext, 'camera'),
                 ),
-            ],
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: VyanaIcon('image', size: 20, color: t.text),
+                  title: Text('Choose from library',
+                      style: VyanaType.label.copyWith(color: t.text)),
+                  onTap: () => Navigator.pop(sheetContext, 'gallery'),
+                ),
+                if (_photoPath != null)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: VyanaIcon('x', size: 20, color: t.vit('hr')),
+                    title: Text('Remove photo',
+                        style: VyanaType.label.copyWith(color: t.vit('hr'))),
+                    onTap: () => Navigator.pop(sheetContext, 'remove'),
+                  ),
+              ],
+            ),
           ),
         );
       },
@@ -590,10 +609,11 @@ class _MealLogScreenState extends ConsumerState<MealLogScreen> {
         GestureDetector(
           onTap: _choosePhoto,
           child: Container(
-            height: 150,
+            height: 210,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: t.border),
+              boxShadow: t.shadowSoft,
             ),
             clipBehavior: Clip.antiAlias,
             child: _photoPath != null
@@ -604,23 +624,39 @@ class _MealLogScreenState extends ConsumerState<MealLogScreen> {
                         File(_photoPath!),
                         fit: BoxFit.cover,
                       ),
+                      // Soft gradient so the overlay chips stay readable.
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.25),
+                                Colors.transparent,
+                              ],
+                              stops: const [0, 0.4],
+                            ),
+                          ),
+                        ),
+                      ),
                       Positioned(
                         right: 10,
                         top: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: t.bg.withValues(alpha: 0.82),
-                            borderRadius: BorderRadius.circular(100),
-                            border: Border.all(color: t.border),
-                          ),
-                          child: Text(
-                            'Change',
-                            style: VyanaType.mono10.copyWith(color: t.text),
-                          ),
+                        child: Row(
+                          children: [
+                            _PhotoChip(
+                              label: 'Change',
+                              icon: 'camera',
+                              onTap: _choosePhoto,
+                            ),
+                            const SizedBox(width: 8),
+                            _PhotoChip(
+                              label: 'Remove',
+                              icon: 'x',
+                              onTap: () => setState(() => _photoPath = null),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -631,9 +667,27 @@ class _MealLogScreenState extends ConsumerState<MealLogScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          VyanaIcon('camera', size: 26, color: t.textMuted),
-                          const SizedBox(height: 8),
-                          Text('Tap to photograph',
+                          Container(
+                            width: 54,
+                            height: 54,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: t.vit('steps')
+                                  .withValues(alpha: t.isDark ? 0.18 : 0.12),
+                              border: Border.all(
+                                  color:
+                                      t.vit('steps').withValues(alpha: 0.4)),
+                            ),
+                            child: Center(
+                              child: VyanaIcon('camera',
+                                  size: 24, color: t.vit('steps')),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text('Add a photo of your plate',
+                              style: VyanaType.label.copyWith(color: t.text)),
+                          const SizedBox(height: 3),
+                          Text('Camera or library',
                               style:
                                   VyanaType.caption.copyWith(color: t.textMuted)),
                         ],
@@ -669,6 +723,8 @@ class _MealLogScreenState extends ConsumerState<MealLogScreen> {
           ),
         ),
         const SizedBox(height: 14),
+        Text('WHEN', style: VyanaType.eyebrow.copyWith(color: t.gold)),
+        const SizedBox(height: 10),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -676,6 +732,7 @@ class _MealLogScreenState extends ConsumerState<MealLogScreen> {
             for (final type in _mealTypes)
               Pill(
                 label: type,
+                icon: mealTypeIcon(type),
                 active: _mealType == type,
                 accent: t.vit('steps'),
                 onTap: () => setState(() => _mealType = type),
@@ -683,6 +740,38 @@ class _MealLogScreenState extends ConsumerState<MealLogScreen> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Small frosted action chip overlaid on the meal photo.
+class _PhotoChip extends StatelessWidget {
+  const _PhotoChip({required this.label, required this.icon, this.onTap});
+  final String label;
+  final String icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: t.bg.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(100),
+          border: Border.all(color: t.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            VyanaIcon(icon, size: 13, color: t.text),
+            const SizedBox(width: 5),
+            Text(label, style: VyanaType.mono10.copyWith(color: t.text)),
+          ],
+        ),
+      ),
     );
   }
 }
