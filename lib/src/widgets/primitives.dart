@@ -506,6 +506,41 @@ class VAppBar extends StatelessWidget {
   }
 }
 
+/// Tinted circular badge for an icon — used for list-row and onboarding
+/// step icons to add color and lift.
+class VyanaIconBadge extends StatelessWidget {
+  const VyanaIconBadge({
+    super.key,
+    required this.name,
+    required this.color,
+    this.size = 36,
+    this.iconSize = 19,
+    this.borderRadius = 12,
+  });
+
+  final String name;
+  final Color color;
+  final double size;
+  final double iconSize;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: t.isDark ? 0.18 : 0.12),
+        borderRadius: BorderRadius.circular(borderRadius),
+      ),
+      child: Center(
+        child: VyanaIcon(name, size: iconSize, color: color),
+      ),
+    );
+  }
+}
+
 /// Round icon button with optional gold badge dot.
 class IconBtn extends StatelessWidget {
   const IconBtn({

@@ -168,6 +168,7 @@ class YouScreen extends ConsumerWidget {
           rows: [
             _SettingsRow(
               icon: 'user',
+              iconColor: t.textSec,
               label: 'Edit profile',
               onTap: () => openProfileEditor(context),
             ),
@@ -180,11 +181,13 @@ class YouScreen extends ConsumerWidget {
             rows: [
               _SettingsRow(
                 icon: 'ring',
+                iconColor: t.gold,
                 label: c.pairedRing == null ? 'Scan & pair' : 'Manage ring',
                 onTap: c.isReady ? () => openScanner(context, c) : null,
               ),
               _SettingsRow(
                 icon: 'refresh',
+                iconColor: t.green,
                 label: 'Sync vitals & data',
                 trailing: c.isSyncing
                     ? Text('Syncing…',
@@ -196,11 +199,13 @@ class YouScreen extends ConsumerWidget {
               ),
               _SettingsRow(
                 icon: 'heart',
+                iconColor: t.vit('hr'),
                 label: 'Measurements (HR, SpO₂, ECG…)',
                 onTap: () => openMeasurements(context, c),
               ),
               _SettingsRow(
                 icon: 'moon',
+                iconColor: t.vit('sleep'),
                 label: 'Sleep detail',
                 onTap: () => openSleep(context, c),
               ),
@@ -212,7 +217,9 @@ class YouScreen extends ConsumerWidget {
               if (c.supportsHealthMonitoring)
                 _SettingsRow(
                   icon: 'activity',
+                  iconColor: t.green,
                   label: 'Health monitoring',
+                  subtitle: 'Periodic background checks on the ring',
                   trailing: Text(
                     c.healthMonitoring.enabled
                         ? c.healthMonitoring.summaryLabel
@@ -227,7 +234,8 @@ class YouScreen extends ConsumerWidget {
                   onTap: () => openHealthMonitoring(context, c),
                 ),
               _SettingsRow(
-                icon: 'refresh',
+                icon: 'timer',
+                iconColor: t.gold,
                 label: 'Ring sync interval',
                 trailing: Text(
                   '${c.periodicSyncIntervalMinutes} min',
@@ -238,24 +246,25 @@ class YouScreen extends ConsumerWidget {
               if (Platform.isAndroid)
                 _SettingsRow(
                   icon: 'bell',
+                  iconColor: t.gold,
                   label: 'Foreground service',
+                  subtitle: 'Android foreground notification',
                   trailing: VSwitch(
                     on: c.foregroundServiceEnabled,
-                    onTap: c.foregroundServiceAllowed
-                        ? () => unawaited(
-                              c.setForegroundServiceEnabled(!c.foregroundServiceEnabled),
-                            )
-                        : null,
+                    color: t.gold,
+                    onTap: null,
                   ),
                   onTap: c.foregroundServiceAllowed
                       ? () => unawaited(
                             c.setForegroundServiceEnabled(!c.foregroundServiceEnabled),
                           )
                       : null,
+                  chevron: false,
                 ),
               if (c.supportsFindRing)
                 _SettingsRow(
-                  icon: 'bell',
+                  icon: 'target',
+                  iconColor: t.gold,
                   label: 'Find my ring',
                   onTap: c.isConnected ? c.findRing : null,
                 ),
@@ -266,11 +275,13 @@ class YouScreen extends ConsumerWidget {
               ),
               _SettingsRow(
                 icon: 'bluetooth',
+                iconColor: t.cyan,
                 label: 'Disconnect',
                 onTap: c.isConnected ? c.disconnect : null,
               ),
               _SettingsRow(
-                icon: 'refresh',
+                icon: 'alert',
+                iconColor: t.vit('hr'),
                 label: 'Reset PRANA ring',
                 onTap: c.isConnected
                     ? () => _confirmResetRing(context, ref, c)
@@ -282,7 +293,8 @@ class YouScreen extends ConsumerWidget {
           _SettingsGroup(
             rows: [
               _SettingsRow(
-                icon: 'bluetooth',
+                icon: 'ring',
+                iconColor: t.gold,
                 label: 'Scan & pair',
                 onTap: c.isReady ? () => openScanner(context, c) : null,
               ),
@@ -293,12 +305,14 @@ class YouScreen extends ConsumerWidget {
           rows: [
             _SettingsRow(
               icon: 'ring',
+              iconColor: t.gold,
               label: 'Buy PRANA ring',
               onTap: () => openRingOrder(context),
             ),
             if (ref.watch(hasRingOrdersProvider).valueOrNull ?? false)
               _SettingsRow(
                 icon: 'db',
+                iconColor: t.textSec,
                 label: 'Your orders',
                 onTap: () => openRingOrders(context),
               ),
@@ -310,6 +324,7 @@ class YouScreen extends ConsumerWidget {
           rows: [
             _SettingsRow(
               icon: 'award',
+              iconColor: t.gold,
               label: 'Chakra & rewards',
               trailing: Text('${HomeSeed.chakraBalance}',
                   style: VyanaType.label.copyWith(color: t.gold)),
@@ -317,6 +332,7 @@ class YouScreen extends ConsumerWidget {
             ),
             _SettingsRow(
               icon: 'wallet',
+              iconColor: t.gold,
               label: 'Wallet',
               trailing: wallet.isConnected
                   ? Text(
@@ -332,6 +348,7 @@ class YouScreen extends ConsumerWidget {
         const SectionHead(eyebrow: 'Appearance', title: 'Theme'),
         Panel(
           pad: 14,
+          grad: true,
           child: Row(
             children: [
               for (final m in ThemeMode.values)
@@ -350,9 +367,10 @@ class YouScreen extends ConsumerWidget {
         const SectionHead(eyebrow: 'Sovereignty', title: 'Your data'),
         Panel(
           pad: 14,
+          grad: true,
           child: Row(
             children: [
-              VyanaIcon('shield', size: 19, color: t.green),
+              VyanaIconBadge(name: 'shield', color: t.green),
               const SizedBox(width: 13),
               Expanded(
                 child: Column(
@@ -370,6 +388,7 @@ class YouScreen extends ConsumerWidget {
               const SizedBox(width: 10),
               VSwitch(
                 on: ref.watch(sessionSyncEnabledProvider),
+                color: t.green,
                 onTap: () => ref
                     .read(sessionSyncEnabledProvider.notifier)
                     .set(!ref.read(sessionSyncEnabledProvider)),
@@ -380,9 +399,10 @@ class YouScreen extends ConsumerWidget {
         const SizedBox(height: 12),
         Panel(
           pad: 14,
+          grad: true,
           child: Row(
             children: [
-              VyanaIcon('speaker', size: 19, color: t.green),
+              VyanaIconBadge(name: 'speaker', color: t.green),
               const SizedBox(width: 13),
               Expanded(
                 child: GestureDetector(
@@ -406,6 +426,7 @@ class YouScreen extends ConsumerWidget {
               const SizedBox(width: 10),
               VSwitch(
                 on: ref.watch(voiceCuesEnabledProvider),
+                color: t.green,
                 onTap: () => ref
                     .read(voiceCuesEnabledProvider.notifier)
                     .set(!ref.read(voiceCuesEnabledProvider)),
@@ -418,11 +439,13 @@ class YouScreen extends ConsumerWidget {
           rows: [
             _SettingsRow(
               icon: 'info',
+              iconColor: t.textSec,
               label: 'About Vyana',
               onTap: () => openAbout(context, c),
             ),
             _SettingsRow(
               icon: 'shield',
+              iconColor: t.textSec,
               label: 'Privacy & sovereignty',
               onTap: () => openPrivacy(context),
             ),
@@ -582,17 +605,24 @@ class _SettingsRow extends StatelessWidget {
     required this.label,
     this.onTap,
     this.trailing,
+    this.iconColor,
+    this.subtitle,
+    this.chevron = true,
   });
 
   final String icon;
   final String label;
   final VoidCallback? onTap;
   final Widget? trailing;
+  final Color? iconColor;
+  final String? subtitle;
+  final bool chevron;
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
     final enabled = onTap != null;
+    final color = iconColor ?? t.textSec;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
@@ -602,14 +632,31 @@ class _SettingsRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
           child: Row(
             children: [
-              VyanaIcon(icon, size: 19, color: t.textSec),
+              VyanaIconBadge(name: icon, color: color),
               const SizedBox(width: 13),
               Expanded(
-                child: Text(label,
-                    style: VyanaType.bodySm.copyWith(color: t.text)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(label,
+                        style: VyanaType.bodySm.copyWith(color: t.text)),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle!,
+                        style: VyanaType.caption.copyWith(
+                          color: t.textSec,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
               if (trailing != null) ...[trailing!, const SizedBox(width: 8)],
-              VyanaIcon('chevR', size: 17, color: t.textMuted),
+              if (chevron)
+                VyanaIcon('chevR', size: 17, color: t.textMuted),
             ],
           ),
         ),

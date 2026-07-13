@@ -170,25 +170,69 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
     return AnimatedBuilder(
       animation: _pulseAnimation,
       builder: (context, child) {
-        return Transform.scale(
-          scale: _pulseAnimation.value,
-          child: Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: t.surface,
-              boxShadow: [
-                BoxShadow(
-                  color: t.gold.withValues(alpha: 0.12),
-                  blurRadius: 24,
-                  spreadRadius: 4,
+        final v = _pulseAnimation.value;
+        final scale1 = 1.0 + (v - 0.96) * 3.0;
+        final scale2 = 1.0 + (v - 0.96) * 5.0;
+        final opacity1 = (0.18 - (v - 0.96) * 1.8).clamp(0.0, 1.0);
+        final opacity2 = (0.10 - (v - 0.96) * 1.0).clamp(0.0, 1.0);
+        return SizedBox(
+          width: 132,
+          height: 132,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Opacity(
+                opacity: opacity2,
+                child: Transform.scale(
+                  scale: scale2,
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: t.gold.withValues(alpha: 0.08),
+                    ),
+                  ),
                 ),
-              ],
-            ),
-            child: Center(
-              child: VyanaIcon('ring', size: 58, color: t.gold),
-            ),
+              ),
+              Opacity(
+                opacity: opacity1,
+                child: Transform.scale(
+                  scale: scale1,
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: t.gold.withValues(alpha: 0.14),
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: t.cardGradient,
+                  border: Border.all(
+                    color: t.gold.withValues(alpha: 0.25),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: t.gold.withValues(alpha: 0.18),
+                      blurRadius: 28,
+                      spreadRadius: 4,
+                    ),
+                    ...t.shadowSoft,
+                  ],
+                ),
+                child: Center(
+                  child: VyanaIcon('ring', size: 64, color: t.gold),
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -198,7 +242,11 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
   Widget _stepTitle(String title, VyanaColors t) {
     return Text(
       title,
-      style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 26),
+      style: VyanaType.titleSerif.copyWith(
+        color: t.text,
+        fontSize: 28,
+        height: 1.05,
+      ),
       textAlign: TextAlign.center,
     );
   }
@@ -206,7 +254,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
   Widget _stepCaption(String caption, VyanaColors t) {
     return Text(
       caption,
-      style: VyanaType.caption.copyWith(color: t.textSec, height: 1.45),
+      style: VyanaType.body.copyWith(color: t.textSec, height: 1.5),
       textAlign: TextAlign.center,
     );
   }
@@ -216,7 +264,9 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         for (var i = 0; i < count; i++) ...[
-          Container(
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
             width: i == active ? 18 : 7,
             height: 7,
             decoration: BoxDecoration(
@@ -260,16 +310,41 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
         ),
         const SizedBox(height: 28),
         Panel(
-          pad: 14,
+          pad: 0,
+          radius: 22,
           child: TextField(
             controller: _nameController,
             style: VyanaType.body.copyWith(color: t.text),
             maxLength: kRingNameMaxLength,
+            autofocus: true,
             decoration: InputDecoration(
               counterText: '',
+              filled: true,
+              fillColor: t.surface,
               labelText: 'Ring name',
               suffixText: '· $suffix',
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide: BorderSide(color: t.gold, width: 1.5),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide: BorderSide(color: t.vit('hr'), width: 1.5),
+              ),
+              labelStyle: VyanaType.label.copyWith(color: t.textMuted),
+              floatingLabelStyle: VyanaType.label.copyWith(color: t.gold),
               suffixStyle: VyanaType.caption.copyWith(color: t.textMuted),
+              errorStyle: VyanaType.caption.copyWith(color: t.vit('hr')),
               errorText: _nameError,
             ),
             onChanged: _validateName,
@@ -295,9 +370,10 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
         const SizedBox(height: 24),
         Panel(
           pad: 14,
+          grad: true,
           child: Row(
             children: [
-              VyanaIcon('activity', size: 19, color: t.green),
+              VyanaIconBadge(name: 'activity', color: t.green),
               const SizedBox(width: 13),
               Expanded(
                 child: Column(
@@ -321,6 +397,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
               const SizedBox(width: 10),
               VSwitch(
                 on: _monitorEnabled,
+                color: t.green,
                 onTap: () => setState(() => _monitorEnabled = !_monitorEnabled),
               ),
             ],
@@ -335,6 +412,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
           const SizedBox(height: 8),
           Panel(
             pad: 14,
+            grad: true,
             child: Row(
               children: [
                 IconBtn(
@@ -409,12 +487,14 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
         if (_wipeMessage != null)
           Panel(
             pad: 14,
+            grad: true,
+            accent: _wipeSuccess ? t.green : t.gold,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 VyanaIcon(
                   _wipeSuccess ? 'checkCircle' : 'info',
-                  size: 18,
+                  size: 20,
                   color: _wipeSuccess ? t.green : t.gold,
                 ),
                 const SizedBox(width: 12),
@@ -448,9 +528,10 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
         const SizedBox(height: 24),
         Panel(
           pad: 14,
+          grad: true,
           child: Row(
             children: [
-              VyanaIcon('bell', size: 19, color: t.gold),
+              VyanaIconBadge(name: 'bell', color: t.gold),
               const SizedBox(width: 13),
               Expanded(
                 child: Column(
@@ -474,6 +555,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
               const SizedBox(width: 10),
               VSwitch(
                 on: _foregroundEnabled,
+                color: t.gold,
                 onTap: () => setState(() => _foregroundEnabled = !_foregroundEnabled),
               ),
             ],

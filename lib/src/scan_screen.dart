@@ -308,12 +308,15 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
               else
                 Panel(
                   pad: 14,
+                  grad: true,
                   child: Row(
                     children: [
-                      VyanaIcon(
-                        _isScanning ? 'refresh' : 'bluetooth',
-                        size: 20,
+                      VyanaIconBadge(
+                        name: _isScanning ? 'refresh' : 'bluetooth',
                         color: t.green,
+                        size: 40,
+                        iconSize: 20,
+                        borderRadius: 13,
                       ),
                       const SizedBox(width: 12),
                       Expanded(

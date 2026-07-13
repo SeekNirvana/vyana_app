@@ -207,6 +207,7 @@ class DevicePanel extends StatelessWidget {
     final t = context.vyana;
     return Panel(
       pad: 14,
+      grad: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -328,21 +329,18 @@ class PairedPranaPanel extends StatelessWidget {
     final ac = connected ? t.green : t.gold;
     return Panel(
       pad: 14,
+      grad: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: ac.withValues(alpha: t.isDark ? 0.2 : 0.13),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Center(
-                  child: VyanaIcon(connected ? 'ring' : 'bluetooth', size: 20, color: ac),
-                ),
+              VyanaIconBadge(
+                name: connected ? 'ring' : 'bluetooth',
+                color: ac,
+                size: 42,
+                iconSize: 20,
+                borderRadius: 13,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -449,25 +447,27 @@ class DeviceTile extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: t.green.withValues(alpha: t.isDark ? 0.18 : 0.1),
-                    borderRadius: BorderRadius.circular(12),
+                if (busy)
+                  SizedBox.square(
+                    dimension: 38,
+                    child: Center(
+                      child: SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: t.green,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  VyanaIconBadge(
+                    name: 'bluetooth',
+                    color: t.green,
+                    size: 38,
+                    iconSize: 18,
+                    borderRadius: 12,
                   ),
-                  child: Center(
-                    child: busy
-                        ? SizedBox.square(
-                            dimension: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: t.green,
-                            ),
-                          )
-                        : VyanaIcon('bluetooth', size: 18, color: t.green),
-                  ),
-                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
