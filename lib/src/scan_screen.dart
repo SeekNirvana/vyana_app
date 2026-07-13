@@ -12,6 +12,7 @@ class DeviceScanScreen extends StatefulWidget {
     required this.onReconnectPaired,
     required this.onUnpair,
     required this.onConnectedDeviceDetected,
+    this.onFirstConnected,
     super.key,
   });
 

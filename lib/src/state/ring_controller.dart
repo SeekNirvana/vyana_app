@@ -1087,20 +1087,20 @@ class RingController extends ChangeNotifier {
   }
 
   String get ringNameSuffix {
-    final id = _pairedRing?.macAddress ??
+    String? id = _pairedRing?.macAddress ??
         _pairedRing?.deviceId ??
         _pairedRing?.deviceIdentifier ??
-        _pairedRing?.address ??
-        _selectedDevice != null
-            ? readAny(_selectedDevice, const [
-                'mac',
-                'macAddress',
-                'address',
-                'deviceIdentifier',
-                'deviceId',
-                'id',
-              ])?.toString()
-            : null;
+        _pairedRing?.address;
+    if (id == null && _selectedDevice != null) {
+      id = readAny(_selectedDevice, const [
+        'mac',
+        'macAddress',
+        'address',
+        'deviceIdentifier',
+        'deviceId',
+        'id',
+      ])?.toString();
+    }
     final clean = _cleanText(id);
     if (clean == null || clean.isEmpty) return '????';
     return clean.length > 4 ? clean.substring(clean.length - 4) : clean;

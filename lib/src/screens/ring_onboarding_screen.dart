@@ -166,7 +166,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
-  Widget _ringIcon(AppColors t) {
+  Widget _ringIcon(VyanaColors t) {
     return AnimatedBuilder(
       animation: _pulseAnimation,
       builder: (context, child) {
@@ -180,7 +180,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
               color: t.surface,
               boxShadow: [
                 BoxShadow(
-                  color: t.gold.withOpacity(0.12),
+                  color: t.gold.withValues(alpha: 0.12),
                   blurRadius: 24,
                   spreadRadius: 4,
                 ),
@@ -195,7 +195,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
     );
   }
 
-  Widget _stepTitle(String title, AppColors t) {
+  Widget _stepTitle(String title, VyanaColors t) {
     return Text(
       title,
       style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 26),
@@ -203,7 +203,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
     );
   }
 
-  Widget _stepCaption(String caption, AppColors t) {
+  Widget _stepCaption(String caption, VyanaColors t) {
     return Text(
       caption,
       style: VyanaType.caption.copyWith(color: t.textSec, height: 1.45),
@@ -211,7 +211,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
     );
   }
 
-  Widget _dots(int count, int active, AppColors t) {
+  Widget _dots(int count, int active, VyanaColors t) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -231,7 +231,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
   }
 
   Widget _continueButton(
-    AppColors t,
+    VyanaColors t,
     String label,
     VoidCallback? onTap, {
     bool busy = false,
@@ -246,7 +246,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
     );
   }
 
-  Widget _buildRenameStep(AppColors t) {
+  Widget _buildRenameStep(VyanaColors t) {
     final suffix = widget.controller.ringNameSuffix;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -281,7 +281,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
     );
   }
 
-  Widget _buildHealthMonitoringStep(AppColors t) {
+  Widget _buildHealthMonitoringStep(VyanaColors t) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -394,7 +394,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
     );
   }
 
-  Widget _buildWipeStep(AppColors t) {
+  Widget _buildWipeStep(VyanaColors t) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -434,7 +434,7 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
     );
   }
 
-  Widget _buildForegroundStep(AppColors t) {
+  Widget _buildForegroundStep(VyanaColors t) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
