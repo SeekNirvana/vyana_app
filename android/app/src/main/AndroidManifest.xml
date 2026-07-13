@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
     <!-- On-device AI guides: voice prompts (mic), keep awake during model
          downloads, and download-complete notifications. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -70,6 +72,12 @@
             android:value="2" />
         <service
             android:name="com.realsil.sdk.dfu.DfuService"
+            android:exported="false" />
+
+        <!-- Foreground service for continuous ring vitals tracking. -->
+        <service
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:foregroundServiceType="dataSync|remoteMessaging"
             android:exported="false" />
 
         <!-- Home-screen widgets: live "state of being" tile + one-tap

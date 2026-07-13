@@ -236,6 +236,7 @@ class RingController extends ChangeNotifier {
       });
       _startConnectionStateWatcher();
       _publishMeasurementSnapshot();
+      _syncForegroundService();
       unawaited(_refreshHistoryLogStatus());
       await _hydrateHistoryFromCache();
       if (connected) {
@@ -1016,6 +1017,7 @@ class RingController extends ChangeNotifier {
     _foregroundServiceAllowed = enableForegroundService;
     await _persistRingOnboarding();
     _set(() {});
+    _syncForegroundService();
   }
 
   Future<void> setForegroundServiceEnabled(bool enabled) async {
@@ -1023,6 +1025,7 @@ class RingController extends ChangeNotifier {
     _foregroundServiceEnabled = enabled;
     await _persistRingOnboarding();
     _set(() {});
+    _syncForegroundService();
   }
 
   Future<void> applyPeriodicSyncInterval(int minutes) async {
@@ -1899,6 +1902,43 @@ class RingController extends ChangeNotifier {
 
   void _publishMeasurementSnapshot() {
     measurementSnapshot.value = _currentMeasurementSnapshot();
+    _syncForegroundService();
+  }
+
+  void _syncForegroundService() {
+    if (!Platform.isAndroid) return;
+    if (_foregroundServiceEnabled && _isConnected) {
+      unawaited(
+        RingForegroundService.start().then((_) => _updateForegroundNotification()),
+      );
+    } else {
+      unawaited(RingForegroundService.stop());
+    }
+  }
+
+  void _updateForegroundNotification() {
+    if (!Platform.isAndroid || !_foregroundServiceEnabled || !_isConnected) return;
+    final battery = _vitals.battery != null && _vitals.battery! > 0
+        ? _vitals.battery
+        : _basicInfo?.batteryPower;
+    final heartRate = _vitals.heartRate != null && _vitals.heartRate! > 0 ? _vitals.heartRate : null;
+    final spO2 = _vitals.bloodOxygen != null && _vitals.bloodOxygen! > 0 ? _vitals.bloodOxygen : null;
+    final hrv = _vitals.hrv != null && _vitals.hrv! > 0 ? _vitals.hrv : null;
+
+    final parts = <String>[
+      if (battery != null && battery > 0) 'Battery $battery%',
+      if (heartRate != null) 'HR $heartRate',
+      if (spO2 != null) 'SpO₂ $spO2%',
+      if (hrv != null) 'HRV $hrv',
+    ];
+    final body = parts.isEmpty ? 'Ring connected' : parts.join(' · ');
+
+    unawaited(
+      RingForegroundService.update(
+        title: _pairedRing?.displayName ?? 'Vyana',
+        body: body,
+      ),
+    );
   }
 }
 

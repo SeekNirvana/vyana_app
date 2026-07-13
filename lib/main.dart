@@ -15,6 +15,7 @@ import 'package:reown_appkit/reown_appkit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:vyana_sdk/vyana_sdk.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'src/config/env_config.dart';
 import 'src/services/device_capability_service.dart';
@@ -56,6 +57,7 @@ part 'src/cloud.dart';
 part 'src/utils.dart';
 part 'src/data/catalog.dart';
 part 'src/services/ring_history_cache_service.dart';
+part 'src/services/ring_foreground_service.dart';
 part 'src/state/ring_controller.dart';
 part 'src/state/session_controller.dart';
 part 'src/state/guide_service.dart';
@@ -92,6 +94,7 @@ Future<void> main() async {
   await VyanaStorageService.instance.ensureReady();
   await VitalsNotificationService.instance.ensureInitialized();
   await HomeWidgetService.instance.ensureInitialized();
+  RingForegroundService.init();
   runApp(
     ProviderScope(
       child: RingApp(

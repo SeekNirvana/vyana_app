@@ -75,6 +75,7 @@ dependencies:
   # plus home-screen widgets (action button + live "state of being").
   flutter_local_notifications: ^19.4.0
   home_widget: ^0.8.0
+  flutter_foreground_task: ^9.2.2
 
 dev_dependencies:
   flutter_test:
