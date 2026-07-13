@@ -86,6 +86,9 @@ class RingController extends ChangeNotifier {
   static const _healthMonitoringIntervalKey = 'health_monitoring_interval_v1';
   static const _healthMonitoringAckKey = 'health_monitoring_ring_ack_v1';
   static const _periodicSyncIntervalMinutesKey = 'ring_sync_interval_minutes_v1';
+  static const _ringOnboardingCompletedKey = 'ring_onboarding_completed_v1';
+  static const _foregroundServiceEnabledKey = 'foreground_service_enabled_v1';
+  static const _foregroundServiceAllowedKey = 'foreground_service_allowed_v1';
 
   HealthMonitoringSettings _healthMonitoring = const HealthMonitoringSettings(
     enabled: true,
@@ -94,6 +97,9 @@ class RingController extends ChangeNotifier {
   );
   bool _healthMonitoringApplying = false;
   int _periodicSyncIntervalMinutes = kPeriodicSyncDefaultIntervalMinutes;
+  bool _ringOnboardingCompleted = false;
+  bool _foregroundServiceEnabled = false;
+  bool _foregroundServiceAllowed = true;
 
   bool _disposed = false;
 
@@ -182,6 +188,12 @@ class RingController extends ChangeNotifier {
 
   int get periodicSyncIntervalMinutes => _periodicSyncIntervalMinutes;
 
+  bool get ringOnboardingCompleted => _ringOnboardingCompleted;
+
+  bool get foregroundServiceEnabled => _foregroundServiceEnabled;
+
+  bool get foregroundServiceAllowed => _foregroundServiceAllowed;
+
   void _set(VoidCallback fn) {
     fn();
     if (!_disposed) notifyListeners();
@@ -207,6 +219,7 @@ class RingController extends ChangeNotifier {
       final pairedRing = await PranaRingStore.load();
       await _loadHealthMonitoringPrefs();
       await _loadPeriodicSyncIntervalPrefs();
+      await _loadRingOnboardingPrefs();
       await _repo.initialize(_handleNativeEvent);
       final connected = await _repo.isConnected();
       if (_disposed) return;
@@ -970,6 +983,48 @@ class RingController extends ChangeNotifier {
     _set(() => _periodicSyncIntervalMinutes = interval);
   }
 
+  Future<void> _loadRingOnboardingPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final onboardingCompleted =
+        prefs.getBool(_ringOnboardingCompletedKey) ?? false;
+    final foregroundEnabled =
+        prefs.getBool(_foregroundServiceEnabledKey) ?? false;
+    final foregroundAllowed =
+        prefs.getBool(_foregroundServiceAllowedKey) ?? true;
+    if (_disposed) return;
+    _set(() {
+      _ringOnboardingCompleted = onboardingCompleted;
+      _foregroundServiceEnabled = foregroundEnabled;
+      _foregroundServiceAllowed = foregroundAllowed;
+    });
+  }
+
+  Future<void> _persistRingOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_ringOnboardingCompletedKey, _ringOnboardingCompleted);
+    await prefs.setBool(
+        _foregroundServiceEnabledKey, _foregroundServiceEnabled);
+    await prefs.setBool(
+        _foregroundServiceAllowedKey, _foregroundServiceAllowed);
+  }
+
+  Future<void> completeRingOnboarding({
+    required bool enableForegroundService,
+  }) async {
+    _ringOnboardingCompleted = true;
+    _foregroundServiceEnabled = enableForegroundService;
+    _foregroundServiceAllowed = enableForegroundService;
+    await _persistRingOnboarding();
+    _set(() {});
+  }
+
+  Future<void> setForegroundServiceEnabled(bool enabled) async {
+    if (!_foregroundServiceAllowed) return;
+    _foregroundServiceEnabled = enabled;
+    await _persistRingOnboarding();
+    _set(() {});
+  }
+
   Future<void> applyPeriodicSyncInterval(int minutes) async {
     final clamped = clampPeriodicSyncIntervalMinutes(minutes);
     final prefs = await SharedPreferences.getInstance();
@@ -1028,6 +1083,85 @@ class RingController extends ChangeNotifier {
     return result;
   }
 
+  String get ringNameSuffix {
+    final id = _pairedRing?.macAddress ??
+        _pairedRing?.deviceId ??
+        _pairedRing?.deviceIdentifier ??
+        _pairedRing?.address ??
+        _selectedDevice != null
+            ? readAny(_selectedDevice, const [
+                'mac',
+                'macAddress',
+                'address',
+                'deviceIdentifier',
+                'deviceId',
+                'id',
+              ])?.toString()
+            : null;
+    final clean = _cleanText(id);
+    if (clean == null || clean.isEmpty) return '????';
+    return clean.length > 4 ? clean.substring(clean.length - 4) : clean;
+  }
+
+  Future<RingResetResult> deleteRingHealthData() async {
+    if (!_isConnected) {
+      return const RingResetResult(
+        success: false,
+        message: 'Connect your ring first.',
+      );
+    }
+    if (_sessionActive) {
+      return const RingResetResult(
+        success: false,
+        message: 'Finish your practice session before erasing ring data.',
+      );
+    }
+    if (_isSyncing) {
+      return const RingResetResult(
+        success: false,
+        message: 'Wait for the current sync to finish.',
+      );
+    }
+    if (_isMeasuring || _activeMeasurementLabel != null) {
+      return const RingResetResult(
+        success: false,
+        message: 'Finish the current measurement before erasing ring data.',
+      );
+    }
+
+    _set(() => _status = 'Erasing ring health data…');
+    final ringOk = await _repo.deleteAllSupportedRingHealthData(_features);
+    if (_disposed) {
+      return const RingResetResult(success: false, message: 'Erase cancelled.');
+    }
+
+    if (!ringOk) {
+      _set(() => _status = 'Ring data erase failed — stay close and try again');
+      return const RingResetResult(
+        success: false,
+        message: 'The ring did not confirm data erase. Stay nearby and try again.',
+      );
+    }
+
+    await _historyCache?.clearAll();
+    await _historyLogger.clear();
+    if (_disposed) {
+      return const RingResetResult(success: false, message: 'Erase cancelled.');
+    }
+
+    _set(() {
+      _history = RingHistory.empty();
+      _historyHydratedFromCache = false;
+      _cachedHistorySyncedAt = null;
+      _historyLogStatus = HistoryLogStatus.empty();
+    });
+    _publishMeasurementSnapshot();
+    return const RingResetResult(
+      success: true,
+      message: 'Ring data erased and local history cleared.',
+    );
+  }
+
   Future<void> findRing() async {
     _set(() => _status = 'Sending find ring command');
     final response = await _repo.findDevice();
@@ -1037,9 +1171,19 @@ class RingController extends ChangeNotifier {
 
   Future<void> renameRing(String name) async {
     if (!_isConnected) return;
+    final validationError = validateRingName(name);
+    if (validationError != null) {
+      _set(() => _status = validationError);
+      return;
+    }
     _set(() => _status = 'Updating ring name');
     final result = await _repo.renameConnectedRing(name);
     if (_disposed) return;
+    if (result.successful && _pairedRing != null) {
+      final updated = _pairedRing!.copyWith(name: result.name);
+      await PranaRingStore.save(updated);
+      _set(() => _pairedRing = updated);
+    }
     _set(() => _status = result.message);
   }
 

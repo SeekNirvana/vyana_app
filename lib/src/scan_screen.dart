@@ -25,6 +25,7 @@ class DeviceScanScreen extends StatefulWidget {
   final Future<bool> Function() onReconnectPaired;
   final Future<bool> Function() onUnpair;
   final ValueChanged<dynamic> onConnectedDeviceDetected;
+  final VoidCallback? onFirstConnected;
 
   @override
   State<DeviceScanScreen> createState() => _DeviceScanScreenState();
@@ -190,7 +191,9 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
           previous: _pairedRing,
         );
       });
-      unawaited(_syncConnectedDeviceDetails());
+      await _syncConnectedDeviceDetails();
+      if (!mounted) return;
+      widget.onFirstConnected?.call();
     }
   }
 

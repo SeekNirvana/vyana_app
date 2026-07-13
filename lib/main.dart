@@ -81,6 +81,7 @@ part 'src/screens/you_screen.dart';
 part 'src/screens/profile_screen.dart';
 part 'src/screens/health_monitoring_screen.dart';
 part 'src/screens/sync_settings_screen.dart';
+part 'src/screens/ring_onboarding_screen.dart';
 part 'src/mwa_wallet_picker.dart';
 part 'src/screens/wallet_screen.dart';
 part 'src/screens/ring_order_screen.dart';

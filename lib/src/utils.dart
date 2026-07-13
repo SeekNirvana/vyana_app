@@ -31,8 +31,24 @@ String deviceAddress(dynamic device) {
 }
 
 String? normalizeRingName(String value) {
-  final cleanName = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  var cleanName = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  cleanName = cleanName.replaceAll(RegExp(kRingNameDisallowedCharsPattern, unicode: true), '');
+  if (cleanName.length > kRingNameMaxLength) {
+    cleanName = cleanName.substring(0, kRingNameMaxLength);
+  }
   return cleanName.isEmpty ? null : cleanName;
+}
+
+String? validateRingName(String value) {
+  final cleanName = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (cleanName.isEmpty) return 'Ring name is required';
+  if (cleanName.length > kRingNameMaxLength) {
+    return 'Ring name must be $kRingNameMaxLength characters or fewer';
+  }
+  if (!RegExp(kRingNameAllowedPattern, unicode: true).hasMatch(cleanName)) {
+    return 'Ring name can only contain letters, numbers, spaces, - and \'';
+  }
+  return null;
 }
 
 String? _deviceIdentity(dynamic device) {

@@ -16,6 +16,9 @@ Future<void> openScanner(BuildContext context, RingController c) {
         onReconnectPaired: () => c.reconnectSavedRing(force: true),
         onUnpair: c.unpairCurrentRing,
         onConnectedDeviceDetected: c.handleScannerDetectedConnection,
+        onFirstConnected: c.pairedRing == null
+            ? () => unawaited(openRingOnboarding(context, c))
+            : null,
       ),
     ),
   );
@@ -232,6 +235,24 @@ class YouScreen extends ConsumerWidget {
                 ),
                 onTap: () => openSyncSettings(context, c),
               ),
+              if (Platform.isAndroid)
+                _SettingsRow(
+                  icon: 'bell',
+                  label: 'Foreground service',
+                  trailing: VSwitch(
+                    on: c.foregroundServiceEnabled,
+                    onTap: c.foregroundServiceAllowed
+                        ? () => unawaited(
+                              c.setForegroundServiceEnabled(!c.foregroundServiceEnabled),
+                            )
+                        : null,
+                  ),
+                  onTap: c.foregroundServiceAllowed
+                      ? () => unawaited(
+                            c.setForegroundServiceEnabled(!c.foregroundServiceEnabled),
+                          )
+                      : null,
+                ),
               if (c.supportsFindRing)
                 _SettingsRow(
                   icon: 'bell',

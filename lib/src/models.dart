@@ -144,6 +144,11 @@ int clampPeriodicSyncIntervalMinutes(int minutes) {
   return minutes.clamp(kPeriodicSyncMinIntervalMinutes, kPeriodicSyncMaxIntervalMinutes);
 }
 
+/// Ring name constraints.
+const kRingNameMaxLength = 20;
+const kRingNameAllowedPattern = r"^[\p{L}0-9 _'-]+$";
+const kRingNameDisallowedCharsPattern = r"[^\p{L}0-9 _'-]";
+
 class HealthMonitoringSettings {
   const HealthMonitoringSettings({
     required this.enabled,
@@ -600,6 +605,36 @@ class SavedPranaRing {
       if (batteryStatus != null) 'batteryStatus': batteryStatus,
       if (firmwareVersion != null) 'firmwareVersion': firmwareVersion,
     };
+  }
+
+  SavedPranaRing copyWith({
+    String? name,
+    String? address,
+    String? macAddress,
+    String? deviceIdentifier,
+    String? deviceId,
+    String? deviceType,
+    int? rssi,
+    int? batteryPower,
+    String? batteryStatus,
+    String? firmwareVersion,
+    DateTime? lastSeenAt,
+    DateTime? lastConnectedAt,
+  }) {
+    return SavedPranaRing(
+      name: name ?? this.name,
+      address: address ?? this.address,
+      macAddress: macAddress ?? this.macAddress,
+      deviceIdentifier: deviceIdentifier ?? this.deviceIdentifier,
+      deviceId: deviceId ?? this.deviceId,
+      deviceType: deviceType ?? this.deviceType,
+      rssi: rssi ?? this.rssi,
+      batteryPower: batteryPower ?? this.batteryPower,
+      batteryStatus: batteryStatus ?? this.batteryStatus,
+      firmwareVersion: firmwareVersion ?? this.firmwareVersion,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      lastConnectedAt: lastConnectedAt ?? this.lastConnectedAt,
+    );
   }
 
   bool matches(dynamic device) {
