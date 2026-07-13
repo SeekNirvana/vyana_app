@@ -223,6 +223,15 @@ class YouScreen extends ConsumerWidget {
                   ),
                   onTap: () => openHealthMonitoring(context, c),
                 ),
+              _SettingsRow(
+                icon: 'refresh',
+                label: 'Ring sync interval',
+                trailing: Text(
+                  '${c.periodicSyncIntervalMinutes} min',
+                  style: VyanaType.label.copyWith(color: t.textMuted),
+                ),
+                onTap: () => openSyncSettings(context, c),
+              ),
               if (c.supportsFindRing)
                 _SettingsRow(
                   icon: 'bell',

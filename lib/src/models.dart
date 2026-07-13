@@ -127,11 +127,21 @@ bool ringHealthDeleteSucceeded(
 /// SDK-allowed automatic health monitoring interval (minutes).
 const kHealthMonitoringMinInterval = 1;
 const kHealthMonitoringMaxInterval = 60;
-const kHealthMonitoringDefaultInterval = 30;
-const kHealthMonitoringPresetIntervals = [5, 10, 15, 30, 45, 60];
+const kHealthMonitoringDefaultInterval = 15;
+const kHealthMonitoringPresetIntervals = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
 
 int clampHealthMonitoringInterval(int minutes) {
   return minutes.clamp(kHealthMonitoringMinInterval, kHealthMonitoringMaxInterval);
+}
+
+/// App-side periodic ring sync interval (minutes).
+const kPeriodicSyncMinIntervalMinutes = 5;
+const kPeriodicSyncMaxIntervalMinutes = 60;
+const kPeriodicSyncDefaultIntervalMinutes = 20;
+const kPeriodicSyncPresetIntervals = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+
+int clampPeriodicSyncIntervalMinutes(int minutes) {
+  return minutes.clamp(kPeriodicSyncMinIntervalMinutes, kPeriodicSyncMaxIntervalMinutes);
 }
 
 class HealthMonitoringSettings {

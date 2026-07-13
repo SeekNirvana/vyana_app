@@ -32,6 +32,9 @@ class RingController extends ChangeNotifier {
   Timer? _ecgSnapshotTicker;
   DateTime? _lastReconnectAttempt;
   DateTime? _lastConnectionConfirmedAt;
+  DateTime? _lastBatteryPoll;
+  DateTime? _lastPeriodicSync;
+  bool _isBatteryPolling = false;
   int? _ecgPreStartRemainingSeconds;
   bool _ecgWaitingForContact = false;
   bool _ecgSdkStarted = false;
@@ -82,6 +85,7 @@ class RingController extends ChangeNotifier {
   static const _healthMonitoringEnabledKey = 'health_monitoring_enabled_v1';
   static const _healthMonitoringIntervalKey = 'health_monitoring_interval_v1';
   static const _healthMonitoringAckKey = 'health_monitoring_ring_ack_v1';
+  static const _periodicSyncIntervalMinutesKey = 'ring_sync_interval_minutes_v1';
 
   HealthMonitoringSettings _healthMonitoring = const HealthMonitoringSettings(
     enabled: true,
@@ -89,6 +93,7 @@ class RingController extends ChangeNotifier {
     ringAcknowledged: false,
   );
   bool _healthMonitoringApplying = false;
+  int _periodicSyncIntervalMinutes = kPeriodicSyncDefaultIntervalMinutes;
 
   bool _disposed = false;
 
@@ -175,6 +180,8 @@ class RingController extends ChangeNotifier {
 
   bool get healthMonitoringApplying => _healthMonitoringApplying;
 
+  int get periodicSyncIntervalMinutes => _periodicSyncIntervalMinutes;
+
   void _set(VoidCallback fn) {
     fn();
     if (!_disposed) notifyListeners();
@@ -199,6 +206,7 @@ class RingController extends ChangeNotifier {
     try {
       final pairedRing = await PranaRingStore.load();
       await _loadHealthMonitoringPrefs();
+      await _loadPeriodicSyncIntervalPrefs();
       await _repo.initialize(_handleNativeEvent);
       final connected = await _repo.isConnected();
       if (_disposed) return;
@@ -257,6 +265,55 @@ class RingController extends ChangeNotifier {
         bluetoothState != BluetoothState.off) {
       unawaited(reconnectSavedRing());
     }
+
+    unawaited(_maybeRefreshBattery());
+    unawaited(_maybePeriodicSync());
+  }
+
+  Future<void> _maybeRefreshBattery() async {
+    if (!_isReady || !_isConnected || _isSyncing || _isBatteryPolling) return;
+    final now = DateTime.now();
+    if (_lastBatteryPoll != null &&
+        now.difference(_lastBatteryPoll!) < _batteryPollInterval) {
+      return;
+    }
+    _isBatteryPolling = true;
+    _lastBatteryPoll = now;
+    try {
+      final basicInfo = await _repo.probeConnectedBasicInfo();
+      if (_disposed || basicInfo == null) return;
+      final battery = basicInfo.batteryPower;
+      if (_basicInfo?.batteryPower == battery &&
+          _vitals.battery == battery &&
+          _basicInfo != null) {
+        return;
+      }
+      _set(() {
+        _basicInfo = basicInfo;
+        _vitals = RingVitals(battery: battery).merge(_vitals);
+      });
+    } on Object catch (error) {
+      debugPrint('Battery poll failed: $error');
+    } finally {
+      _isBatteryPolling = false;
+    }
+  }
+
+  Future<void> _maybePeriodicSync() async {
+    if (!_isReady ||
+        !_isConnected ||
+        _isSyncing ||
+        _isAutoReconnecting ||
+        _isMeasuring) {
+      return;
+    }
+    final now = DateTime.now();
+    if (_lastPeriodicSync != null &&
+        now.difference(_lastPeriodicSync!) <
+            Duration(minutes: _periodicSyncIntervalMinutes)) {
+      return;
+    }
+    unawaited(_syncDeviceData());
   }
 
   bool _applyBluetoothStateToModel(
@@ -791,6 +848,7 @@ class RingController extends ChangeNotifier {
 
   Future<RingSyncFeedback?> _syncDeviceData() async {
     if (!_isReady || !_isConnected || _isSyncing) return null;
+    _lastPeriodicSync = DateTime.now();
     _set(() {
       _isSyncing = true;
       _status = _historyHydratedFromCache
@@ -900,6 +958,23 @@ class RingController extends ChangeNotifier {
         ringAcknowledged: acked,
       );
     });
+  }
+
+  Future<void> _loadPeriodicSyncIntervalPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final interval = clampPeriodicSyncIntervalMinutes(
+      prefs.getInt(_periodicSyncIntervalMinutesKey) ??
+          kPeriodicSyncDefaultIntervalMinutes,
+    );
+    if (_disposed) return;
+    _set(() => _periodicSyncIntervalMinutes = interval);
+  }
+
+  Future<void> applyPeriodicSyncInterval(int minutes) async {
+    final clamped = clampPeriodicSyncIntervalMinutes(minutes);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_periodicSyncIntervalMinutesKey, clamped);
+    _set(() => _periodicSyncIntervalMinutes = clamped);
   }
 
   Future<void> _persistHealthMonitoring(HealthMonitoringSettings settings) async {

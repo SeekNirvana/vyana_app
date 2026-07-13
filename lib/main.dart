@@ -80,6 +80,7 @@ part 'src/screens/guide_persona_settings_screen.dart';
 part 'src/screens/you_screen.dart';
 part 'src/screens/profile_screen.dart';
 part 'src/screens/health_monitoring_screen.dart';
+part 'src/screens/sync_settings_screen.dart';
 part 'src/mwa_wallet_picker.dart';
 part 'src/screens/wallet_screen.dart';
 part 'src/screens/ring_order_screen.dart';
@@ -177,8 +178,9 @@ class _StorageUnavailableScreen extends StatelessWidget {
 
 const _ecgContactDetectionTimeout = Duration(seconds: 20);
 const _connectionStatePollInterval = Duration(seconds: 2);
-const _reconnectAttemptInterval = Duration(seconds: 30);
+const _reconnectAttemptInterval = Duration(seconds: 5);
 const _connectionStateGracePeriod = Duration(seconds: 20);
+const _batteryPollInterval = Duration(seconds: 5);
 
 class _EcgEventUpdate {
   const _EcgEventUpdate({
