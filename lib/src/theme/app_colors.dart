@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Vyana × SeekNirvana design tokens — the handoff palette retuned for calm:
-/// sage-tinted neutrals and de-saturated vital hues so no reading ever shouts.
+/// Vyana × SeekNirvana design tokens — a clean wearable palette with fresh
+/// emerald, luminous data accents, and warm premium neutrals.
 /// Theme-variant surface/text/border tokens live on the
 /// [VyanaColors] `ThemeExtension`; brand, per-vital and HR-zone hues are
 /// theme-invariant and exposed as getters / statics.
@@ -48,13 +48,13 @@ class VyanaColors extends ThemeExtension<VyanaColors> {
   final Color shadowSoftColor;
 
   // ── Brand (theme-invariant) ───────────────────────────────────────────────
-  Color get green => const Color(0xFF00A86B);
-  Color get greenLight => const Color(0xFF2DCC90);
-  Color get greenDark => const Color(0xFF007E50);
-  Color get gold => const Color(0xFFC9A227);
-  Color get goldLight => const Color(0xFFE0BF56);
-  Color get goldDark => const Color(0xFF9C7A16);
-  Color get cyan => const Color(0xFF00D4FF);
+  Color get green => const Color(0xFF20AD78);
+  Color get greenLight => const Color(0xFF55C99A);
+  Color get greenDark => const Color(0xFF087A55);
+  Color get gold => const Color(0xFFE3A448);
+  Color get goldLight => const Color(0xFFF2C676);
+  Color get goldDark => const Color(0xFFAA6A1E);
+  Color get cyan => const Color(0xFF5D9FE8);
 
   // ── Derived gradients & shadows ───────────────────────────────────────────
   LinearGradient get bgGradient => LinearGradient(
@@ -106,18 +106,18 @@ class VyanaColors extends ThemeExtension<VyanaColors> {
       ];
 
   static const Map<String, Color> _vit = {
-    'hr': Color(0xFFD97A8C),
-    'spo2': Color(0xFF5BB8C4),
-    'hrv': Color(0xFF5AA37A),
-    'stress': Color(0xFFC98B62),
-    'temp': Color(0xFFE0A878),
-    'steps': Color(0xFF00A86B),
-    'sleep': Color(0xFF6E7BBF),
-    'bp': Color(0xFFC9A227),
-    'glucose': Color(0xFFDD9270),
-    'ecg': Color(0xFF63C3D8),
-    'readiness': Color(0xFF4CBD92),
-    'cal': Color(0xFFD69A6E),
+    'hr': Color(0xFFE16E80),
+    'spo2': Color(0xFF45AFC2),
+    'hrv': Color(0xFF20AD78),
+    'stress': Color(0xFFE18B58),
+    'temp': Color(0xFFF09B66),
+    'steps': Color(0xFF20AD78),
+    'sleep': Color(0xFF668BE3),
+    'bp': Color(0xFFE3A448),
+    'glucose': Color(0xFFE98562),
+    'ecg': Color(0xFF42B5CF),
+    'readiness': Color(0xFF31B883),
+    'cal': Color(0xFFE99162),
     'sleepDeep': Color(0xFF33657B),
     'sleepLight': Color(0xFF5C84A8),
     'sleepREM': Color(0xFF8F73BD),
@@ -126,47 +126,46 @@ class VyanaColors extends ThemeExtension<VyanaColors> {
     'nova': Color(0xFF5AA37A),
   };
 
-  // Dark: deep forest twilight — green-tinted charcoal instead of cold
-  // blue-black, with softer text contrast and gentler shadows.
+  // Dark: crisp blue-black with fresh emerald depth.
   static const VyanaColors dark = VyanaColors(
     isDark: true,
-    bg: Color(0xFF0B100F),
-    bgGradTop: Color(0xFF0B100F),
-    bgGradMid: Color(0xFF0E1414),
-    bgGradBottom: Color(0xFF111B18),
-    surface: Color(0xFF121817),
-    card: Color(0xFF161D1C),
-    cardGradTop: Color(0xFF161D1C),
-    cardGradBottom: Color(0xFF1C2523),
-    elevated: Color(0xFF1C2523),
-    border: Color(0xFF263430),
-    borderSoft: Color(0x99263430), // rgba(38,52,48,0.6)
-    text: Color(0xFFF1F0E9),
-    textSec: Color(0xFF9CA9A1),
-    textMuted: Color(0xFF6B7871),
+    bg: Color(0xFF071211),
+    bgGradTop: Color(0xFF071211),
+    bgGradMid: Color(0xFF091817),
+    bgGradBottom: Color(0xFF0C211D),
+    surface: Color(0xFF0D1A18),
+    card: Color(0xFF10201D),
+    cardGradTop: Color(0xFF10201D),
+    cardGradBottom: Color(0xFF142A25),
+    elevated: Color(0xFF17302A),
+    border: Color(0xFF24433A),
+    borderSoft: Color(0x9924433A),
+    text: Color(0xFFF6F7F3),
+    textSec: Color(0xFFA8B8B2),
+    textMuted: Color(0xFF71847D),
     shadowColor: Color(0x66000000), // rgba(0,0,0,0.40)
     shadowSoftColor: Color(0x47000000), // rgba(0,0,0,0.28)
   );
 
-  // Light: misty sage-sand — a touch of green in the warm paper tones.
+  // Light: luminous warm ivory with porcelain surfaces and crisp type.
   static const VyanaColors light = VyanaColors(
     isDark: false,
-    bg: Color(0xFFF4F3EA),
-    bgGradTop: Color(0xFFF7F5ED),
-    bgGradMid: Color(0xFFF2F1E6),
-    bgGradBottom: Color(0xFFECEFE0),
-    surface: Color(0xFFFDFCF5),
-    card: Color(0xFFFDFCF5),
-    cardGradTop: Color(0xFFFDFCF5),
-    cardGradBottom: Color(0xFFEFF0E2),
-    elevated: Color(0xFFEFF0E2),
-    border: Color(0xFFE0E3CF),
-    borderSoft: Color(0xFFE8EADB),
-    text: Color(0xFF1B201D),
-    textSec: Color(0xFF5E6E66),
-    textMuted: Color(0xFF7D8A82),
-    shadowColor: Color(0x141E2814), // rgba(30,40,20,0.08)
-    shadowSoftColor: Color(0x0F1E2814), // rgba(30,40,20,0.06)
+    bg: Color(0xFFF8F5F0),
+    bgGradTop: Color(0xFFFFFCF8),
+    bgGradMid: Color(0xFFF8F4EF),
+    bgGradBottom: Color(0xFFF1F7F3),
+    surface: Color(0xFFFFFCF8),
+    card: Color(0xFFFFFFFF),
+    cardGradTop: Color(0xFFFFFFFF),
+    cardGradBottom: Color(0xFFFFF8F2),
+    elevated: Color(0xFFF2EDE7),
+    border: Color(0xFFE8E0D8),
+    borderSoft: Color(0xFFF0E9E2),
+    text: Color(0xFF172128),
+    textSec: Color(0xFF65717A),
+    textMuted: Color(0xFF8C969C),
+    shadowColor: Color(0x1FD29A74),
+    shadowSoftColor: Color(0x14C68B65),
   );
 
   @override

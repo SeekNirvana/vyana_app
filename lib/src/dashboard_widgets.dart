@@ -222,7 +222,10 @@ class DevicePanel extends StatelessWidget {
               if (isScanning)
                 SizedBox.square(
                   dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: t.green),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: t.green,
+                  ),
                 )
               else
                 TextButton(
@@ -232,7 +235,10 @@ class DevicePanel extends StatelessWidget {
                     minimumSize: const Size(0, 36),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text('Scan', style: VyanaType.label.copyWith(color: t.green)),
+                  child: Text(
+                    'Scan',
+                    style: VyanaType.label.copyWith(color: t.green),
+                  ),
                 ),
             ],
           ),
@@ -273,7 +279,10 @@ class _ScanEmptyState extends StatelessWidget {
         VyanaIcon('ring', size: 18, color: t.textMuted),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(text, style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5)),
+          child: Text(
+            text,
+            style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
+          ),
         ),
       ],
     );
@@ -351,7 +360,10 @@ class PairedPranaPanel extends StatelessWidget {
                       ring.displayName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: VyanaType.label.copyWith(color: t.text, fontSize: 15),
+                      style: VyanaType.label.copyWith(
+                        color: t.text,
+                        fontSize: 15,
+                      ),
                     ),
                     const SizedBox(height: 3),
                     Text(
@@ -486,25 +498,25 @@ class DeviceTile extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: VyanaType.mono10.copyWith(color: t.textMuted),
                       ),
-                    if (showConnectedDetails) ...[
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          SmallMetric(label: 'Battery', value: battery),
-                          SmallMetric(label: 'Firmware', value: firmware),
-                        ],
-                      ),
+                      if (showConnectedDetails) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            SmallMetric(label: 'Battery', value: battery),
+                            SmallMetric(label: 'Firmware', value: firmware),
+                          ],
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              SmallMetric(label: 'RSSI', value: '${deviceRssi(device)}'),
-            ],
+                SmallMetric(label: 'RSSI', value: '${deviceRssi(device)}'),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -603,7 +615,7 @@ class VitalsGrid extends StatelessWidget {
         'Sleep',
         vitals.sleepSummary ?? '-',
         '',
-        Icons.bedtime,
+        Icons.airline_seat_individual_suite_rounded,
         feature == null || feature.supports('isSupportSleep'),
         onSleepTap,
       ),

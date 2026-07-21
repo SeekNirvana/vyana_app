@@ -57,8 +57,8 @@ class JournalScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 104),
               children: [
                 VAppBar(
-                  title: 'Antara',
-                  sub: 'inner journal',
+                  title: 'Journal',
+                  sub: 'Your private space',
                   actions: [
                     IconBtn(
                       icon: 'calendar',

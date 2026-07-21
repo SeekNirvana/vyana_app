@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// Type system from the handoff: Cormorant Garamond (serif headings/numerals),
-/// Manrope (sans UI), Space Mono (mono labels).
+/// Calm, readable product typography. Manrope is the default for navigation,
+/// headings, body copy, and health data. Cormorant Garamond is reserved for
+/// intentionally reflective/editorial moments; Space Mono is for technical IDs.
 ///
 /// Styles are colorless — callers apply color from [VyanaColors] via `copyWith`,
 /// or inherit the default text color from the active theme.
@@ -12,74 +13,84 @@ class VyanaType {
   static const String sans = 'Manrope';
   static const String mono = 'Space Mono';
 
-  /// Gold uppercase eyebrow above section titles. Apply `.toUpperCase()` to text.
+  /// Quiet section label. Sentence case is preferred.
   static const TextStyle eyebrow = TextStyle(
     fontFamily: sans,
     fontWeight: FontWeight.w600,
     fontSize: 11,
-    letterSpacing: 1.9, // ~0.18em of 11px
-    height: 1.0,
+    letterSpacing: 0.8,
+    height: 1.2,
   );
 
-  /// Large serif numerals/hero figures (readiness score, big clocks).
+  /// Large health metrics and hero figures.
   static const TextStyle displaySerif = TextStyle(
-    fontFamily: serif,
+    fontFamily: sans,
     fontWeight: FontWeight.w600,
     fontSize: 34,
-    height: 1.02,
+    height: 1.08,
+    letterSpacing: -0.6,
   );
 
-  /// Serif section title.
+  /// Product section title. Kept under the existing name to avoid churn.
   static const TextStyle titleSerif = TextStyle(
+    fontFamily: sans,
+    fontWeight: FontWeight.w600,
+    fontSize: 23,
+    height: 1.18,
+    letterSpacing: -0.2,
+  );
+
+  /// Product app-bar title. Kept under the existing name to avoid churn.
+  static const TextStyle appBarSerif = TextStyle(
+    fontFamily: sans,
+    fontWeight: FontWeight.w600,
+    fontSize: 22,
+    height: 1.2,
+    letterSpacing: -0.2,
+  );
+
+  /// Explicit opt-in for quotes, reflections, and other editorial copy.
+  static const TextStyle editorialSerif = TextStyle(
     fontFamily: serif,
     fontWeight: FontWeight.w600,
     fontSize: 23,
-    height: 1.05,
-    letterSpacing: 0.2,
-  );
-
-  /// Serif app-bar title.
-  static const TextStyle appBarSerif = TextStyle(
-    fontFamily: serif,
-    fontWeight: FontWeight.w600,
-    fontSize: 22,
     height: 1.15,
   );
 
   static const TextStyle bodyLg = TextStyle(
     fontFamily: sans,
     fontWeight: FontWeight.w500,
-    fontSize: 15.5,
-    height: 1.35,
+    fontSize: 16,
+    height: 1.45,
   );
 
   static const TextStyle body = TextStyle(
     fontFamily: sans,
     fontWeight: FontWeight.w500,
-    fontSize: 14,
-    height: 1.4,
+    fontSize: 15,
+    height: 1.45,
   );
 
   static const TextStyle bodySm = TextStyle(
     fontFamily: sans,
     fontWeight: FontWeight.w500,
-    fontSize: 13,
-    height: 1.4,
+    fontSize: 14,
+    height: 1.45,
   );
 
   /// Emphasised sans label (pills, buttons, tab labels).
   static const TextStyle label = TextStyle(
     fontFamily: sans,
     fontWeight: FontWeight.w600,
-    fontSize: 13,
+    fontSize: 13.5,
     height: 1.2,
   );
 
   static const TextStyle caption = TextStyle(
     fontFamily: sans,
     fontWeight: FontWeight.w500,
-    fontSize: 12,
-    height: 1.3,
+    fontSize: 12.5,
+    height: 1.4,
   );
 
   /// Primary CTA label.
@@ -90,7 +101,7 @@ class VyanaType {
     height: 1.1,
   );
 
-  /// Mono micro-label (metrics, units, codes).
+  /// Mono micro-label for technical identifiers and codes only.
   static const TextStyle mono10 = TextStyle(
     fontFamily: mono,
     fontWeight: FontWeight.w400,

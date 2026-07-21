@@ -7,6 +7,8 @@ class HomeDashboard {
     required this.todaySteps,
     required this.todayDistanceMeters,
     required this.todayCalories,
+    required this.todayActiveMinutes,
+    required this.lastSleepDuration,
     required this.readinessScore,
     required this.readinessLabel,
     required this.readinessDelta,
@@ -20,6 +22,8 @@ class HomeDashboard {
   final int todaySteps;
   final int todayDistanceMeters;
   final int todayCalories;
+  final int todayActiveMinutes;
+  final String? lastSleepDuration;
   final int? readinessScore;
   final String readinessLabel;
   final int? readinessDelta;
@@ -36,6 +40,7 @@ class HomeDashboard {
     final today = DateTime.now();
     final todayDay = DateTime(today.year, today.month, today.day);
     final todaySteps = stepDayForDate(history.steps, todayDay);
+    final todayActiveMinutes = activeMinutesForDay(history.sport, todayDay);
     final streak = computeStepStreak(stepDays);
     final hasHistory = history.totalRecords > 0;
 
@@ -45,18 +50,23 @@ class HomeDashboard {
     final priorSleepScore = priorSleep?.score;
 
     final hrvPoints = vitalHistoryPoints(history, VitalsMetricKind.hrv);
-    final latestHrv = vitals.hrv ?? (hrvPoints.isEmpty ? null : hrvPoints.last.value.round());
+    final latestHrv =
+        vitals.hrv ?? (hrvPoints.isEmpty ? null : hrvPoints.last.value.round());
     final avgHrv = hrvPoints.isEmpty
         ? null
-        : (hrvPoints.map((p) => p.value).reduce((a, b) => a + b) / hrvPoints.length)
-            .round();
+        : (hrvPoints.map((p) => p.value).reduce((a, b) => a + b) /
+                  hrvPoints.length)
+              .round();
 
     int? readiness;
     if (sleepScore != null) {
       final hrvComponent = latestHrv == null
           ? 50
           : (latestHrv.clamp(20, 90) / 90 * 100).round();
-      readiness = ((sleepScore * 0.65) + (hrvComponent * 0.35)).round().clamp(0, 100);
+      readiness = ((sleepScore * 0.65) + (hrvComponent * 0.35)).round().clamp(
+        0,
+        100,
+      );
     } else if (latestHrv != null) {
       readiness = (latestHrv.clamp(20, 90) / 90 * 100).round();
     }
@@ -101,7 +111,7 @@ class HomeDashboard {
         ? 'Sync your ring to see readiness and tailor today\'s practice.'
         : readiness >= 75
         ? 'You look well recovered. A few quiet minutes of breath, or a walk in '
-            'the light — whatever steadies you.'
+              'the light — whatever steadies you.'
         : readiness >= 55
         ? 'Recovery is moderate. Favour gentle movement and breath over intensity today.'
         : 'Take it easy today — rest, breathwork, or an early night will help most.';
@@ -109,8 +119,13 @@ class HomeDashboard {
     return HomeDashboard(
       stepStreak: streak,
       todaySteps: todaySteps?.steps ?? vitals.steps ?? 0,
-      todayDistanceMeters: todaySteps?.distanceMeters ?? vitals.distanceMeters ?? 0,
+      todayDistanceMeters:
+          todaySteps?.distanceMeters ?? vitals.distanceMeters ?? 0,
       todayCalories: todaySteps?.calories ?? vitals.calories ?? 0,
+      todayActiveMinutes: todayActiveMinutes,
+      lastSleepDuration: latestSleep == null
+          ? null
+          : durationText(latestSleep.breakdown.asleepSeconds),
       readinessScore: readiness,
       readinessLabel: _readinessLabel(readiness),
       readinessDelta: delta,
@@ -232,6 +247,18 @@ class HomeDashboard {
   }
 }
 
+int activeMinutesForDay(List<dynamic> sportRecords, DateTime day) {
+  final target = DateTime(day.year, day.month, day.day);
+  var seconds = 0;
+  for (final record in sportRecords) {
+    final timestamp = timestampOf(record);
+    if (timestamp != null && localDayFromEpochSeconds(timestamp) == target) {
+      seconds += readInt(record, const ['sportTime']) ?? 0;
+    }
+  }
+  return (seconds / 60).round();
+}
+
 class HomeVitalTile {
   const HomeVitalTile({
     required this.kind,
@@ -244,7 +271,7 @@ class HomeVitalTile {
 
   final VitalsMetricKind kind;
   final String label;
-  final String icon;
+  final IconData icon;
   final String value;
   final String unit;
   final String accent;
@@ -264,7 +291,7 @@ List<HomeVitalTile> homeVitalTiles({
   void add(
     VitalsMetricKind kind,
     String label,
-    String icon,
+    IconData icon,
     String value,
     String unit,
     String accent, {
@@ -290,20 +317,42 @@ List<HomeVitalTile> homeVitalTiles({
       HomeVitalTile(
         kind: VitalsMetricKind.steps,
         label: 'Steps today',
-        icon: 'walk',
-        value: '${dashboard.todaySteps > 0 ? dashboard.todaySteps : (vitals.steps ?? 0)}',
+        icon: Icons.directions_walk_rounded,
+        value:
+            '${dashboard.todaySteps > 0 ? dashboard.todaySteps : (vitals.steps ?? 0)}',
         unit: 'steps',
         accent: 'steps',
       ),
     );
   }
-  add(VitalsMetricKind.heartRate, 'Heart rate', 'heart', dash(vitals.heartRate), 'bpm', 'hr');
-  add(VitalsMetricKind.hrv, 'HRV', 'pulse', dash(vitals.hrv), 'ms', 'hrv');
-  add(VitalsMetricKind.spo2, 'Blood oxygen', 'drop', dash(vitals.bloodOxygen), '%', 'spo2');
+  add(
+    VitalsMetricKind.heartRate,
+    'Heart rate',
+    Icons.favorite_rounded,
+    dash(vitals.heartRate),
+    'bpm',
+    'hr',
+  );
+  add(
+    VitalsMetricKind.hrv,
+    'HRV',
+    Icons.monitor_heart_rounded,
+    dash(vitals.hrv),
+    'ms',
+    'hrv',
+  );
+  add(
+    VitalsMetricKind.spo2,
+    'Blood oxygen',
+    Icons.bloodtype_rounded,
+    dash(vitals.bloodOxygen),
+    '%',
+    'spo2',
+  );
   add(
     VitalsMetricKind.sleep,
     'Sleep',
-    'moon',
+    Icons.airline_seat_individual_suite_rounded,
     vitals.sleepSummary ?? '—',
     '',
     'sleep',
@@ -311,15 +360,17 @@ List<HomeVitalTile> homeVitalTiles({
   add(
     VitalsMetricKind.calories,
     'Calories',
-    'flame',
-    dashboard.todayCalories > 0 ? '${dashboard.todayCalories}' : dash(vitals.calories),
+    Icons.local_fire_department_rounded,
+    dashboard.todayCalories > 0
+        ? '${dashboard.todayCalories}'
+        : dash(vitals.calories),
     'cal',
     'cal',
   );
   add(
     VitalsMetricKind.distance,
     'Distance',
-    'walk',
+    Icons.near_me_rounded,
     dashboard.todayDistanceMeters > 0
         ? formatDistanceMeters(dashboard.todayDistanceMeters)
         : vitals.distanceMeters == null
@@ -331,7 +382,7 @@ List<HomeVitalTile> homeVitalTiles({
   add(
     VitalsMetricKind.bloodPressure,
     'Blood pressure',
-    'activity',
+    Icons.health_and_safety_rounded,
     vitals.bloodPressure ?? '—',
     'mmHg',
     'bp',
@@ -339,7 +390,7 @@ List<HomeVitalTile> homeVitalTiles({
   add(
     VitalsMetricKind.temperature,
     'Temperature',
-    'thermo',
+    Icons.thermostat_rounded,
     dashD(vitals.temperature),
     'C',
     'temp',
@@ -347,7 +398,7 @@ List<HomeVitalTile> homeVitalTiles({
   add(
     VitalsMetricKind.glucose,
     'Glucose',
-    'drop',
+    Icons.water_drop_rounded,
     dashD(vitals.bloodGlucose),
     'mmol/L',
     'glucose',
@@ -355,7 +406,7 @@ List<HomeVitalTile> homeVitalTiles({
   add(
     VitalsMetricKind.uricAcid,
     'Uric acid',
-    'drop',
+    Icons.science_rounded,
     dash(vitals.uricAcid),
     'µmol/L',
     'glucose',
@@ -363,7 +414,7 @@ List<HomeVitalTile> homeVitalTiles({
   add(
     VitalsMetricKind.cholesterol,
     'Cholesterol',
-    'activity',
+    Icons.biotech_rounded,
     dashD(vitals.totalCholesterol),
     'mmol/L',
     'bp',
@@ -371,7 +422,7 @@ List<HomeVitalTile> homeVitalTiles({
   add(
     VitalsMetricKind.stress,
     'Stress',
-    'brain',
+    Icons.psychology_rounded,
     vitals.pressure == null
         ? '—'
         : stressZoneLabel(

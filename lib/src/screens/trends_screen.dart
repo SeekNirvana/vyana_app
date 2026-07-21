@@ -1,12 +1,12 @@
 part of '../../main.dart';
 
 Future<void> openTrends(BuildContext context) {
-  return Navigator.of(context).push<void>(
-    MaterialPageRoute(builder: (_) => const TrendsScreen()),
-  );
+  return Navigator.of(
+    context,
+  ).push<void>(MaterialPageRoute(builder: (_) => const TrendsScreen()));
 }
 
-/// "Your numbers" — the one place where Vyana speaks in figures. Hosts the
+/// "Health metrics" — the one place where Vyana speaks in figures. Hosts the
 /// readiness score, live vital tiles, today's movement stats, and numeric
 /// insights that used to crowd the Home tab, plus doorways into every deeper
 /// data view (measurements, sleep, weekly patterns, data log).
@@ -33,16 +33,23 @@ class TrendsScreen extends ConsumerWidget {
             children: [
               Row(
                 children: [
-                  IconBtn(icon: 'chevL', onTap: () => Navigator.of(context).pop()),
+                  IconBtn(
+                    icon: 'chevL',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
                   const SizedBox(width: 11),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('IN DEPTH',
-                            style: VyanaType.eyebrow.copyWith(color: t.gold)),
-                        Text('Your numbers',
-                            style: VyanaType.appBarSerif.copyWith(color: t.text)),
+                        Text(
+                          'IN DEPTH',
+                          style: VyanaType.eyebrow.copyWith(color: t.gold),
+                        ),
+                        Text(
+                          'Health metrics',
+                          style: VyanaType.appBarSerif.copyWith(color: t.text),
+                        ),
                       ],
                     ),
                   ),
@@ -100,14 +107,16 @@ class TrendsScreen extends ConsumerWidget {
                 if (dashboard.insights.isNotEmpty) ...[
                   const SizedBox(height: 22),
                   const SectionHead(
-                      eyebrow: 'On-device AI', title: 'Insights for you'),
+                    eyebrow: 'On-device AI',
+                    title: 'Insights for you',
+                  ),
                   for (final ins in dashboard.insights)
                     _InsightCard(insight: ins),
                 ],
                 const SizedBox(height: 20),
                 const SectionHead(eyebrow: 'Go deeper', title: 'Explore'),
                 _ExploreRow(
-                  icon: 'moon',
+                  icon: 'sleep',
                   accent: t.vit('sleep'),
                   label: 'Sleep detail',
                   blurb: 'Stages, timing, and night-by-night scores.',
@@ -149,10 +158,10 @@ class _ReadinessPanel extends StatelessWidget {
     final color = score == null
         ? t.textMuted
         : score >= 65
-            ? t.green
-            : score >= 50
-                ? t.gold
-                : const Color(0xFFD9975F);
+        ? t.green
+        : score >= 50
+        ? t.gold
+        : const Color(0xFFD9975F);
 
     return Panel(
       grad: true,
@@ -174,11 +183,17 @@ class _ReadinessPanel extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(score == null ? '—' : '$score',
-                        style: VyanaType.displaySerif.copyWith(color: t.text)),
-                    Text('OF 100',
-                        style: VyanaType.mono10
-                            .copyWith(color: t.textSec, letterSpacing: 1.4)),
+                    Text(
+                      score == null ? '—' : '$score',
+                      style: VyanaType.displaySerif.copyWith(color: t.text),
+                    ),
+                    Text(
+                      'OF 100',
+                      style: VyanaType.mono10.copyWith(
+                        color: t.textSec,
+                        letterSpacing: 1.4,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -188,9 +203,13 @@ class _ReadinessPanel extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(dashboard.readinessLabel,
-                        style: VyanaType.titleSerif
-                            .copyWith(color: t.text, fontSize: 22)),
+                    Text(
+                      dashboard.readinessLabel,
+                      style: VyanaType.titleSerif.copyWith(
+                        color: t.text,
+                        fontSize: 22,
+                      ),
+                    ),
                     if (delta != null) ...[
                       const SizedBox(height: 5),
                       Text(
@@ -198,14 +217,17 @@ class _ReadinessPanel extends StatelessWidget {
                             ? 'Level with last night'
                             : '${delta > 0 ? '+' : ''}$delta vs last night',
                         style: VyanaType.caption.copyWith(
-                            color: delta >= 0 ? t.green : t.textSec),
+                          color: delta >= 0 ? t.green : t.textSec,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 5),
                     Text(
                       'Blended from last night\'s sleep and your HRV.',
-                      style: VyanaType.caption
-                          .copyWith(color: t.textMuted, height: 1.4),
+                      style: VyanaType.caption.copyWith(
+                        color: t.textMuted,
+                        height: 1.4,
+                      ),
                     ),
                   ],
                 ),
@@ -250,12 +272,18 @@ class _DriverChip extends StatelessWidget {
             decoration: BoxDecoration(color: c, shape: BoxShape.circle),
           ),
           const SizedBox(width: 7),
-          Text(driver.label,
-              style: VyanaType.caption.copyWith(color: t.textSec)),
+          Text(
+            driver.label,
+            style: VyanaType.caption.copyWith(color: t.textSec),
+          ),
           const SizedBox(width: 5),
-          Text(driver.value,
-              style: VyanaType.caption
-                  .copyWith(color: t.text, fontWeight: FontWeight.w700)),
+          Text(
+            driver.value,
+            style: VyanaType.caption.copyWith(
+              color: t.text,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
     );
@@ -275,8 +303,10 @@ class _MovementPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('TODAY\'S MOVEMENT',
-              style: VyanaType.eyebrow.copyWith(color: t.gold)),
+          Text(
+            'TODAY\'S MOVEMENT',
+            style: VyanaType.eyebrow.copyWith(color: t.gold),
+          ),
           const SizedBox(height: 14),
           Row(
             children: [
@@ -328,17 +358,22 @@ class _MovementStat extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 22)),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 22),
+          ),
           const SizedBox(height: 3),
           Row(
             children: [
               Container(
                 width: 7,
                 height: 7,
-                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: accent,
+                  shape: BoxShape.circle,
+                ),
               ),
               const SizedBox(width: 6),
               Text(label, style: VyanaType.caption.copyWith(color: t.textSec)),
@@ -371,13 +406,13 @@ class _MiniVital extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: ac.withValues(alpha: t.isDark ? 0.2 : 0.13),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Center(child: VyanaIcon(tile.icon, size: 17, color: ac)),
+                child: Icon(tile.icon, size: 22, color: ac),
               ),
               const Spacer(),
               VyanaIcon('chevR', size: 15, color: t.textMuted),
@@ -388,22 +423,28 @@ class _MiniVital extends StatelessWidget {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Flexible(
-                child: Text(tile.value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: VyanaType.titleSerif.copyWith(color: t.text)),
+                child: Text(
+                  tile.value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: VyanaType.titleSerif.copyWith(color: t.text),
+                ),
               ),
               if (tile.unit.isNotEmpty) ...[
                 const SizedBox(width: 4),
-                Text(tile.unit,
-                    style: VyanaType.caption.copyWith(color: t.textMuted)),
+                Text(
+                  tile.unit,
+                  style: VyanaType.caption.copyWith(color: t.textMuted),
+                ),
               ],
             ],
           ),
-          Text(tile.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: VyanaType.caption.copyWith(color: t.textSec)),
+          Text(
+            tile.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: VyanaType.caption.copyWith(color: t.textSec),
+          ),
         ],
       ),
     );
@@ -441,27 +482,40 @@ class _InsightCard extends ConsumerWidget {
                     color: ac.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
                   ),
-                  child: Center(child: VyanaIcon('sparkles', size: 13, color: ac)),
+                  child: Center(
+                    child: VyanaIcon('sparkles', size: 13, color: ac),
+                  ),
                 ),
                 const SizedBox(width: 8),
-                Text(guide?.name ?? 'Guide',
-                    style: VyanaType.caption.copyWith(
-                        color: t.text, fontWeight: FontWeight.w700)),
+                Text(
+                  guide?.name ?? 'Guide',
+                  style: VyanaType.caption.copyWith(
+                    color: t.text,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: ac.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text(insight.tag.toUpperCase(),
-                      style: VyanaType.mono10.copyWith(color: ac)),
+                  child: Text(
+                    insight.tag.toUpperCase(),
+                    style: VyanaType.mono10.copyWith(color: ac),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(insight.text,
-                style: VyanaType.body.copyWith(color: t.textSec, height: 1.5)),
+            Text(
+              insight.text,
+              style: VyanaType.body.copyWith(color: t.textSec, height: 1.5),
+            ),
           ],
         ),
       ),
@@ -510,14 +564,20 @@ class _ExploreRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(label,
-                      style: VyanaType.label
-                          .copyWith(color: t.text, fontSize: 15)),
+                  Text(
+                    label,
+                    style: VyanaType.label.copyWith(
+                      color: t.text,
+                      fontSize: 15,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(blurb,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: VyanaType.caption.copyWith(color: t.textSec)),
+                  Text(
+                    blurb,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: VyanaType.caption.copyWith(color: t.textSec),
+                  ),
                 ],
               ),
             ),

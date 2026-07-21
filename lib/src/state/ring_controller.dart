@@ -22,7 +22,7 @@ class RingController extends ChangeNotifier {
   bool _isMeasuring = false;
   bool _isConnected = false;
   String _status = 'Initializing SDK';
-  String _testStatus = 'No ad hoc test running';
+  String _testStatus = 'No measurement in progress';
   String? _activeMeasurementLabel;
   ParsedEcgResult? _ecgResult;
   Timer? _measurementTimeout;
@@ -867,7 +867,7 @@ class RingController extends ChangeNotifier {
       _isSyncing = true;
       _status = _historyHydratedFromCache
           ? 'Updating ring data…'
-          : 'Syncing vitals and device data';
+          : 'Updating your health data…';
     });
 
     RingSyncFeedback? feedback;
@@ -932,7 +932,7 @@ class RingController extends ChangeNotifier {
       feedback = RingSyncFeedback(
         success: false,
         recordCount: 0,
-        errorMessage: 'Could not sync vitals and data. Try again.',
+        errorMessage: 'We couldn’t update your ring data. Try again.',
       );
       _set(() {
         if (_isConnected) {
