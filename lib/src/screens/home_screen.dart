@@ -1,49 +1,39 @@
 part of '../../main.dart';
 
-/// The calm daily sanctuary (Home tab). No raw numbers live here — the ring's
-/// readings are translated into felt, worded signals ([WellnessState]), and
-/// everything numeric (scores, tiles, charts, insights) lives one tap away on
-/// [TrendsScreen]. Live ring status and vitals come from [RingController].
+/// The daily glance screen. A short morning or night window surfaces the few
+/// numbers that matter in that moment; the full history stays in Trends.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final t = context.vyana;
     final controller = ref.watch(ringControllerProvider);
     final dashboard = HomeDashboard.from(controller);
-
+    final state = controller.currentWellnessState();
     final hasRing = controller.hasRingContext;
+    final moment = homeMomentAt(DateTime.now());
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 104),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 104),
       children: [
-        _HomeAppBar(
-          controller: controller,
-          dashboard: dashboard,
-          hasRingContext: hasRing,
-        ),
+        _HomeAppBar(controller: controller, hasRingContext: hasRing),
+        if (!hasRing) ...[
+          const SizedBox(height: 8),
+          _DiscoverRingPanel(controller: controller),
+        ],
         const SizedBox(height: 4),
         if (hasRing)
-          _RingStrip(controller: controller)
-        else
-          _DiscoverRingPanel(controller: controller),
-        const SizedBox(height: 16),
-        if (hasRing)
-          _CheckInHero(controller: controller, dashboard: dashboard)
+          _CheckInHero(
+            controller: controller,
+            dashboard: dashboard,
+            state: state,
+            moment: moment,
+          )
         else
           _WelcomeHero(dashboard: dashboard),
-        const SizedBox(height: 16),
-        _PracticeHero(dashboard: dashboard),
-        if (hasRing) ...[
-          const SizedBox(height: 16),
-          const _NumbersCard(),
-          const SizedBox(height: 14),
-          Text(
-            controller.status,
-            style: VyanaType.caption.copyWith(color: t.textMuted),
-          ),
-        ] else ...[
+        const SizedBox(height: 10),
+        _PracticeHero(moment: moment, dashboard: dashboard, state: state),
+        if (!hasRing) ...[
           const SizedBox(height: 22),
           AccessDeniedPanel(
             title: 'Vitals with PRANA',
@@ -61,266 +51,366 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-/// Maps a felt wellness tone to a brand-consistent hue.
-Color _toneColor(VyanaColors t, WellnessTone tone) {
-  switch (tone) {
-    case WellnessTone.good:
-      return t.green;
-    case WellnessTone.steady:
-      return t.gold;
-    case WellnessTone.watch:
-      return const Color(0xFFD9975F); // warm amber — caring, not alarming
-    case WellnessTone.unknown:
-      return t.textMuted;
-  }
+enum HomeMoment { morning, day, night }
+
+HomeMoment homeMomentAt(DateTime time) {
+  if (time.hour >= 5 && time.hour < 12) return HomeMoment.morning;
+  if (time.hour >= 18 || time.hour < 5) return HomeMoment.night;
+  return HomeMoment.day;
 }
 
-/// A slow "breathing" orb — expands and settles on a ~4s rhythm, inviting the
-/// user to match their breath. Replaces the numeric readiness ring on Home.
-class _BreathingOrb extends StatefulWidget {
-  const _BreathingOrb({required this.color});
+/// Readiness first, with contextual numbers only when they help the current
+/// morning or night decision.
+class _CheckInHero extends StatelessWidget {
+  const _CheckInHero({
+    required this.controller,
+    required this.dashboard,
+    required this.state,
+    required this.moment,
+  });
 
-  final Color color;
-
-  static const double size = 104;
-
-  @override
-  State<_BreathingOrb> createState() => _BreathingOrbState();
-}
-
-class _BreathingOrbState extends State<_BreathingOrb>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 4),
-  )..repeat(reverse: true);
-
-  late final Animation<double> _breath = CurvedAnimation(
-    parent: _controller,
-    curve: Curves.easeInOutSine,
-  );
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  final RingController controller;
+  final HomeDashboard dashboard;
+  final WellnessState state;
+  final HomeMoment moment;
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
-    final c = widget.color;
-    return RepaintBoundary(
-      child: SizedBox(
-        width: _BreathingOrb.size,
-        height: _BreathingOrb.size,
-        child: AnimatedBuilder(
-          animation: _breath,
-          builder: (context, child) {
-            final v = _breath.value;
-            return Stack(
-              alignment: Alignment.center,
+    final running = controller.allVitalsRunning;
+    final body = running
+        ? (controller.allVitalsMessage ?? 'Reading your vitals…')
+        : state.summary;
+    final score = dashboard.readinessScore;
+    final metrics = _momentMetrics(t, controller, dashboard, moment);
+    final signals = _homeSignals(state, dashboard);
+    final foreground = t.isDark ? t.text : const Color(0xFF172128);
+    final secondary = t.isDark ? t.textSec : const Color(0xFF65717A);
+
+    return SizedBox(
+      height: running ? 464 : (metrics.isEmpty ? 384 : 484),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                // Outer halo that swells with the in-breath.
-                Container(
-                  width: _BreathingOrb.size * (0.82 + 0.18 * v),
-                  height: _BreathingOrb.size * (0.82 + 0.18 * v),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        c.withValues(alpha: t.isDark ? 0.26 : 0.18),
-                        c.withValues(alpha: 0.03),
-                      ],
+                Expanded(
+                  child: Text(
+                    'How you’re being',
+                    style: VyanaType.label.copyWith(
+                      color: t.green,
+                      fontSize: 15,
                     ),
                   ),
                 ),
-                // Steady inner circle holding the lotus.
-                Container(
-                  width: _BreathingOrb.size * 0.62,
-                  height: _BreathingOrb.size * 0.62,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: c.withValues(alpha: t.isDark ? 0.16 : 0.10),
-                    border: Border.all(
-                      color: c.withValues(alpha: 0.35 + 0.2 * v),
-                      width: 1.5,
-                    ),
+                TextButton(
+                  onPressed: running
+                      ? null
+                      : () => unawaited(controller.runAllVitals()),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(44, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    foregroundColor: t.green,
                   ),
-                  child: Center(
-                    child: VyanaIcon('lotus',
-                        size: _BreathingOrb.size * 0.28, color: c, stroke: 1.6),
-                  ),
+                  child: Text(running ? 'Checking…' : 'Check vitals'),
                 ),
               ],
-            );
-          },
+            ),
+            const SizedBox(height: 18),
+            Text(
+              score == null ? '—' : '$score',
+              style: VyanaType.displaySerif.copyWith(
+                color: foreground,
+                fontSize: 84,
+                fontWeight: FontWeight.w400,
+                height: 0.9,
+                letterSpacing: -3.2,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              running ? 'Checking in…' : _recoveryTitle(score, state.title),
+              style: VyanaType.titleSerif.copyWith(
+                color: foreground,
+                fontSize: 29,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              body,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: VyanaType.bodySm.copyWith(color: secondary),
+            ),
+            if (!running && signals.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final signal in signals) _SignalChip(signal: signal),
+                ],
+              ),
+            ],
+            if (running) ...[
+              const SizedBox(height: 14),
+              _AllVitalsProgress(controller: controller),
+            ],
+            if (metrics.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  VyanaIcon(
+                    moment == HomeMoment.morning ? 'sun' : 'moon',
+                    size: 17,
+                    color: t.vit('sleep'),
+                  ),
+                  const SizedBox(width: 7),
+                  Text(
+                    moment == HomeMoment.morning ? 'This morning' : 'Tonight',
+                    style: VyanaType.label.copyWith(color: t.vit('sleep')),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 13),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < metrics.length; i++) ...[
+                    if (i > 0)
+                      Container(
+                        width: 1,
+                        height: 58,
+                        margin: const EdgeInsets.symmetric(horizontal: 9),
+                        color: t.border,
+                      ),
+                    Expanded(child: _MomentStat(metric: metrics[i])),
+                  ],
+                ],
+              ),
+            ],
+            const Spacer(),
+            InkWell(
+              onTap: () => openTrends(context),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    VyanaIcon('chart', size: 18, color: t.green),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'View health metrics',
+                        style: VyanaType.label.copyWith(color: t.green),
+                      ),
+                    ),
+                    VyanaIcon('chevR', size: 17, color: t.textMuted),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// The Home centrepiece: your current state of being in plain language, felt
-/// signal chips instead of raw numbers, a breathing orb to settle with, and
-/// the one-tap "Monitor all vitals" run with live progress. Everything
-/// numeric now lives on [TrendsScreen].
-class _CheckInHero extends StatelessWidget {
-  const _CheckInHero({
-    required this.controller,
-    required this.dashboard,
-  });
+Color _toneColor(VyanaColors t, WellnessTone tone) => switch (tone) {
+  WellnessTone.good => t.green,
+  WellnessTone.steady => t.gold,
+  WellnessTone.watch => const Color(0xFFD97745),
+  WellnessTone.unknown => t.textMuted,
+};
 
-  final RingController controller;
-  final HomeDashboard dashboard;
+List<WellnessSignal> _homeSignals(
+  WellnessState state,
+  HomeDashboard dashboard,
+) {
+  final signals = <WellnessSignal>[];
+  for (final label in const ['Calm', 'Recovery']) {
+    for (final signal in state.signals) {
+      if (signal.label == label) signals.add(signal);
+    }
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    final t = context.vyana;
-    final running = controller.allVitalsRunning;
-    final justFailed = controller.allVitalsPhase == AllVitalsPhase.failed;
-    final state = controller.currentWellnessState();
-    final toneColor =
-        _toneColor(t, justFailed ? WellnessTone.watch : state.tone);
-    final canSync = controller.isConnected && !controller.isSyncing && !running;
-
-    final body = running
-        ? (controller.allVitalsMessage ?? 'Reading your vitals…')
-        : justFailed
-            ? (controller.allVitalsMessage ?? state.summary)
-            : state.summary;
-
-    return Panel(
-      grad: true,
-      pad: 20,
-      accent: state.hasData || justFailed ? toneColor : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text('HOW YOU’RE BEING',
-                  style: VyanaType.eyebrow.copyWith(color: t.gold)),
-              const Spacer(),
-              Text(
-                controller.isSyncing ? 'Syncing…' : 'Now',
-                style: VyanaType.caption.copyWith(color: t.textMuted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // A single felt signal: breathing orb + worded state. Numbers wait
-          // on the Trends screen for when you choose to look.
-          Row(
-            children: [
-              _BreathingOrb(color: toneColor),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      running ? 'Checking in…' : state.title,
-                      style: VyanaType.titleSerif
-                          .copyWith(color: t.text, fontSize: 24),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      body,
-                      style: VyanaType.bodySm
-                          .copyWith(color: t.textSec, height: 1.4),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (!running && state.signals.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [for (final s in state.signals) _SignalChip(signal: s)],
-            ),
-          ],
-          if (running) ...[
-            const SizedBox(height: 16),
-            _AllVitalsProgress(controller: controller),
-          ],
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Cta(
-                  label: running
-                      ? 'Monitoring…'
-                      : state.hasData
-                          ? 'Check in again'
-                          : 'Check in with your body',
-                  icon: 'activity',
-                  disabled: running,
-                  onTap:
-                      running ? null : () => unawaited(controller.runAllVitals()),
-                ),
-              ),
-              const SizedBox(width: 10),
-              IconBtn(
-                icon: 'refresh',
-                size: 52,
-                onTap: canSync
-                    ? () => syncRingWithFeedback(context, controller)
-                    : null,
-              ),
-            ],
-          ),
-          if (!running) ...[
-            const SizedBox(height: 9),
-            Text(
-              'Set the phone aside — Vyana reads each vital in turn and lets '
-              'you know, gently, when your check-in is ready.',
-              style: VyanaType.caption.copyWith(color: t.textMuted, height: 1.4),
-            ),
-          ],
-        ],
+  final sleep = dashboard.drivers.where((driver) => driver.label == 'Sleep');
+  if (sleep.isNotEmpty && sleep.first.value != '—') {
+    final value = sleep.first.value;
+    signals.add(
+      WellnessSignal(
+        label: 'Sleep',
+        reading: switch (value) {
+          'Good' => 'Well recovered',
+          'Fair' => 'Fair',
+          _ => 'Needs recovery',
+        },
+        tone: value == 'Good'
+            ? WellnessTone.good
+            : value == 'Fair'
+            ? WellnessTone.steady
+            : WellnessTone.watch,
       ),
     );
   }
+
+  for (final signal in state.signals) {
+    if (signals.length == 3) break;
+    if (!signals.any((item) => item.label == signal.label)) {
+      signals.add(signal);
+    }
+  }
+  return signals.take(3).toList(growable: false);
 }
 
-/// A felt signal as a pill: concept + descriptor, coloured by tone (no numbers).
 class _SignalChip extends StatelessWidget {
   const _SignalChip({required this.signal});
+
   final WellnessSignal signal;
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
-    final c = _toneColor(t, signal.tone);
+    final color = _toneColor(t, signal.tone);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: c.withValues(alpha: t.isDark ? 0.14 : 0.10),
+        color: color.withValues(alpha: t.isDark ? 0.14 : 0.09),
         borderRadius: BorderRadius.circular(100),
-        border: Border.all(color: c.withValues(alpha: 0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+      child: Text.rich(
+        TextSpan(
+          text: '${signal.label}  ',
+          style: VyanaType.caption.copyWith(color: t.textSec),
+          children: [
+            TextSpan(
+              text: signal.reading,
+              style: VyanaType.caption.copyWith(
+                color: color,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _recoveryTitle(int? score, String fallback) {
+  if (score == null) return fallback;
+  if (score >= 80) return 'Well recovered';
+  if (score >= 65) return 'Ready for today';
+  if (score >= 50) return 'Take it steady';
+  return 'Recovery first';
+}
+
+String _countLabel(int value) {
+  final text = '$value';
+  if (text.length <= 3) return text;
+  return '${text.substring(0, text.length - 3)},${text.substring(text.length - 3)}';
+}
+
+List<({String label, String value, String unit, String icon, Color color})>
+_momentMetrics(
+  VyanaColors t,
+  RingController controller,
+  HomeDashboard dashboard,
+  HomeMoment moment,
+) {
+  if (moment == HomeMoment.day) return const [];
+  if (moment == HomeMoment.morning) {
+    return [
+      (
+        label: 'Sleep',
+        value: dashboard.lastSleepDuration ?? '—',
+        unit: '',
+        icon: 'sleep',
+        color: t.vit('sleep'),
+      ),
+      (
+        label: 'Readiness',
+        value: dashboard.readinessScore?.toString() ?? '—',
+        unit: '',
+        icon: 'gauge',
+        color: t.vit('readiness'),
+      ),
+      (
+        label: 'Resting HR',
+        value: controller.vitals.heartRate?.toString() ?? '—',
+        unit: 'bpm',
+        icon: 'heart',
+        color: t.vit('hr'),
+      ),
+    ];
+  }
+  return [
+    (
+      label: 'Sleep goal',
+      value: '8',
+      unit: 'h',
+      icon: 'sleep',
+      color: t.vit('sleep'),
+    ),
+    (
+      label: 'Steps',
+      value: _countLabel(dashboard.todaySteps),
+      unit: '',
+      icon: 'walk',
+      color: t.vit('steps'),
+    ),
+    (
+      label: 'Active time',
+      value: '${dashboard.todayActiveMinutes}',
+      unit: 'min',
+      icon: 'timer',
+      color: t.cyan,
+    ),
+  ];
+}
+
+class _MomentStat extends StatelessWidget {
+  const _MomentStat({required this.metric});
+
+  final ({String label, String value, String unit, String icon, Color color})
+  metric;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        VyanaIcon(metric.icon, size: 17, color: metric.color),
+        const SizedBox(height: 5),
+        Text(
+          metric.label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: VyanaType.caption.copyWith(color: t.textSec, fontSize: 11.5),
+        ),
+        const SizedBox(height: 2),
+        Text.rich(
+          TextSpan(
+            text: metric.value,
+            children: [
+              if (metric.unit.isNotEmpty)
+                TextSpan(
+                  text: ' ${metric.unit}',
+                  style: VyanaType.caption.copyWith(color: t.textSec),
+                ),
+            ],
           ),
-          const SizedBox(width: 7),
-          Text(signal.label,
-              style: VyanaType.caption.copyWith(color: t.textSec)),
-          const SizedBox(width: 5),
-          Text(signal.reading,
-              style: VyanaType.caption
-                  .copyWith(color: c, fontWeight: FontWeight.w700)),
-        ],
-      ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 20),
+        ),
+      ],
     );
   }
 }
@@ -361,107 +451,62 @@ class _AllVitalsProgress extends StatelessWidget {
   }
 }
 
-/// The one doorway from Home into everything numeric: readiness score, vital
-/// tiles, movement stats, weekly charts, and measurements.
-class _NumbersCard extends StatelessWidget {
-  const _NumbersCard();
+class _HomeAppBar extends ConsumerWidget {
+  const _HomeAppBar({required this.controller, required this.hasRingContext});
+  final RingController controller;
+  final bool hasRingContext;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final greeting = ref
+        .watch(userProfileProvider)
+        .maybeWhen(
+          data: (profile) => profile.homeGreeting,
+          orElse: () => 'Welcome',
+        );
     final t = context.vyana;
-    const icons = ['heart', 'moon', 'walk', 'chart'];
-    return Panel(
-      pad: 18,
-      onTap: () => openTrends(context),
+    final status = hasRingContext ? 'Ring synced' : 'Start your practice';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 6, 0, 10),
       child: Row(
         children: [
-          SizedBox(
-            width: 64,
-            height: 40,
-            child: Stack(
-              children: [
-                for (var i = 0; i < icons.length; i++)
-                  Positioned(
-                    left: i * 8.0,
-                    top: i.isEven ? 0 : 8,
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: t.elevated,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: t.borderSoft),
-                      ),
-                      child: Center(
-                        child: VyanaIcon(icons[i], size: 14, color: t.textSec),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          GestureDetector(
+            onTap: () => openScanner(context, controller),
+            child: const Seal(size: 44, glow: true),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Your numbers',
-                    style: VyanaType.titleSerif
-                        .copyWith(color: t.text, fontSize: 19)),
-                const SizedBox(height: 3),
                 Text(
-                  'Readiness, vitals, trends and insights — kept here, for when you want them.',
-                  style: VyanaType.caption
-                      .copyWith(color: t.textSec, height: 1.4),
+                  greeting,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: VyanaType.appBarSerif.copyWith(
+                    color: t.text,
+                    fontSize: 24,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '• $status',
+                  style: VyanaType.caption.copyWith(color: t.green),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 6),
-          VyanaIcon('chevR', size: 18, color: t.textMuted),
+          const IconBtn(icon: 'bell', badge: true, size: 42),
+          const SizedBox(width: 8),
+          IconBtn(
+            icon: 'award',
+            size: 42,
+            onTap: () => ref.read(tabIndexProvider.notifier).state = 4,
+          ),
         ],
       ),
-    );
-  }
-}
-
-class _HomeAppBar extends ConsumerWidget {
-  const _HomeAppBar({
-    required this.controller,
-    required this.dashboard,
-    required this.hasRingContext,
-  });
-  final RingController controller;
-  final HomeDashboard dashboard;
-  final bool hasRingContext;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final greeting = ref.watch(userProfileProvider).maybeWhen(
-          data: (profile) => profile.homeGreeting,
-          orElse: () => 'Welcome',
-        );
-    // Worded, unhurried — streak counts live on the Trends screen.
-    final streakSub = !hasRingContext
-        ? 'Start your practice'
-        : dashboard.stepStreak > 0
-            ? 'Moving in a steady rhythm'
-            : dashboard.hasRingHistory
-                ? 'Ring synced'
-                : 'Connect your ring';
-
-    return VAppBar(
-      sub: streakSub,
-      title: greeting,
-      leading: const Seal(size: 42, glow: true),
-      actions: [
-        const IconBtn(icon: 'bell', badge: true),
-        IconBtn(
-          icon: 'award',
-          onTap: () => ref.read(tabIndexProvider.notifier).state = 4,
-        ),
-      ],
     );
   }
 }
@@ -479,11 +524,12 @@ class _DiscoverRingPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('PRANA RING',
-              style: VyanaType.eyebrow.copyWith(color: t.gold)),
+          Text('PRANA RING', style: VyanaType.eyebrow.copyWith(color: t.gold)),
           const SizedBox(height: 6),
-          Text('Wear your vitals.',
-              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 24)),
+          Text(
+            'Wear your vitals.',
+            style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 24),
+          ),
           const SizedBox(height: 8),
           Text(
             'Black · sizes 7–13 · ships in 30 days.',
@@ -527,11 +573,12 @@ class _WelcomeHero extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('WELCOME',
-              style: VyanaType.eyebrow.copyWith(color: t.gold)),
+          Text('WELCOME', style: VyanaType.eyebrow.copyWith(color: t.gold)),
           const SizedBox(height: 6),
-          Text('Your wellness, on your terms.',
-              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 26)),
+          Text(
+            'Your wellness, on your terms.',
+            style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 26),
+          ),
           const SizedBox(height: 10),
           Text(
             'Explore breath, movement, and rest. Add a ring when you are ready '
@@ -544,162 +591,150 @@ class _WelcomeHero extends StatelessWidget {
   }
 }
 
-/// Words for the ring battery so Home stays free of raw numbers; the exact
-/// percentage remains in the scanner / device screens.
-String? _batteryWords(int? battery) {
-  if (battery == null) return null;
-  if (battery >= 80) return 'Battery full';
-  if (battery >= 40) return 'Battery good';
-  if (battery >= 15) return 'Battery getting low';
-  return 'Charge soon';
-}
-
-class _RingStrip extends StatelessWidget {
-  const _RingStrip({required this.controller});
-  final RingController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.vyana;
-    final connected = controller.isConnected;
-    final dot = connected ? t.green : t.textMuted;
-    final name = controller.pairedRing?.displayName ??
-        (controller.selectedDevice == null
-            ? 'PRANA Ring'
-            : deviceLabel(controller.selectedDevice));
-    final battery = controller.vitals.battery ??
-        controller.basicInfo?.batteryPower;
-    final batteryLabel = _batteryWords(battery);
-    final subtitle = connected
-        ? [
-            ?batteryLabel,
-            controller.isSyncing ? 'Syncing…' : 'Connected',
-          ].join(' · ')
-        : controller.status;
-
-    return Panel(
-      pad: 13,
-      onTap: () => openScanner(context, controller),
-      child: Row(
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: dot, width: 1.5),
-                ),
-                child: Center(child: VyanaIcon('ring', size: 18, color: dot)),
-              ),
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: Container(
-                  width: 11,
-                  height: 11,
-                  decoration: BoxDecoration(
-                    color: dot,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: t.card, width: 2),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: VyanaType.label.copyWith(
-                        color: t.text, fontWeight: FontWeight.w700)),
-                Text(subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: VyanaType.caption.copyWith(color: t.textSec)),
-              ],
-            ),
-          ),
-          VyanaIcon('chevR', size: 18, color: t.textMuted),
-        ],
-      ),
-    );
-  }
-}
-
 class _PracticeHero extends ConsumerWidget {
-  const _PracticeHero({required this.dashboard});
+  const _PracticeHero({
+    required this.moment,
+    required this.dashboard,
+    required this.state,
+  });
+
+  final HomeMoment moment;
   final HomeDashboard dashboard;
+  final WellnessState state;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.vyana;
-    final quick = HomeSeed.quickPractices
-        .map(activityById)
-        .whereType<Activity>()
-        .toList();
-    return Panel(
-      grad: true,
-      pad: 20,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('SADHANA · YOUR PRACTICE',
-              style: VyanaType.eyebrow.copyWith(color: t.gold)),
-          const SizedBox(height: 7),
-          Text('Begin today, gently.',
-              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 24)),
-          const SizedBox(height: 6),
-          Text(
-            dashboard.practiceHint,
-            style: VyanaType.bodySm.copyWith(color: t.textSec),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+    final id = suggestedPracticeId(state, dashboard.readinessScore, moment);
+    final activity = activityById(id)!;
+    final title = activity.name;
+    final kind = switch (activity.kind) {
+      'breath' => 'Breath',
+      'sequence' => 'Guided flow',
+      'recovery' => 'Recovery',
+      _ => 'Movement',
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final a in quick)
-                GestureDetector(
-                  onTap: () => openActivityDetail(context, a),
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(10, 8, 13, 8),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(100),
-                      border: Border.all(color: t.border),
-                      color: t.isDark
-                          ? Colors.white.withValues(alpha: 0.03)
-                          : Colors.black.withValues(alpha: 0.02),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        VyanaIcon(a.icon, size: 15, color: t.vit(a.accent)),
-                        const SizedBox(width: 7),
-                        Text(a.name,
-                            style: VyanaType.caption.copyWith(
-                                color: t.text, fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                  ),
+              Text(
+                'Suggested practice',
+                style: VyanaType.titleSerif.copyWith(
+                  color: t.text,
+                  fontSize: 19,
                 ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _practiceReason(state, dashboard.readinessScore),
+                style: VyanaType.caption.copyWith(color: t.textSec),
+              ),
             ],
           ),
-          const SizedBox(height: 16),
-          Cta(
-            label: 'Choose a practice',
-            icon: 'lotus',
-            onTap: () => ref.read(tabIndexProvider.notifier).state = 2,
+        ),
+        const SizedBox(height: 10),
+        Panel(
+          pad: 14,
+          radius: 20,
+          onTap: () => openActivityDetail(context, activity),
+          child: Row(
+            children: [
+              VyanaIconBadge(
+                name: activity.icon,
+                color: t.vit(activity.accent),
+                size: 48,
+                iconSize: 22,
+                borderRadius: 16,
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: VyanaType.titleSerif.copyWith(
+                        color: t.text,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${activity.dur} min · $kind',
+                      style: VyanaType.caption.copyWith(color: t.textSec),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: t.green,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: t.green.withValues(alpha: 0.24),
+                      blurRadius: 16,
+                      offset: const Offset(0, 7),
+                    ),
+                  ],
+                ),
+                child: const Center(
+                  child: VyanaIcon(
+                    'play',
+                    size: 18,
+                    color: Colors.white,
+                    fill: true,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
+}
+
+String suggestedPracticeId(
+  WellnessState state,
+  int? readinessScore,
+  HomeMoment moment,
+) {
+  final tense = state.signals.any(
+    (signal) => signal.label == 'Calm' && signal.tone == WellnessTone.watch,
+  );
+  if (tense) return 'breathwork';
+  if (readinessScore != null && readinessScore < 50) return 'recovery';
+  if (state.tone == WellnessTone.watch) return 'recovery';
+  if (readinessScore != null && readinessScore >= 75) {
+    return switch (moment) {
+      HomeMoment.morning => 'sunSalutation',
+      HomeMoment.day => 'walk',
+      HomeMoment.night => 'pranayama',
+    };
+  }
+  return 'breathwork';
+}
+
+String _practiceReason(WellnessState state, int? readinessScore) {
+  final tense = state.signals.any(
+    (signal) => signal.label == 'Calm' && signal.tone == WellnessTone.watch,
+  );
+  if (tense) return 'Suggested to help settle your current stress signals.';
+  if (readinessScore != null && readinessScore < 50) {
+    return 'Suggested to support recovery today.';
+  }
+  if (readinessScore != null && readinessScore >= 75) {
+    return 'Your recovery supports gentle, steady movement.';
+  }
+  return 'Matched to your current health signals.';
 }

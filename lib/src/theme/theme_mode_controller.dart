@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Persisted app theme mode. Defaults to dark (the design's primary), with a
-/// light variant. Stored in shared_preferences so the choice survives restarts.
+/// Persisted app theme mode. Defaults to the brighter light experience while
+/// preserving an explicit user choice across restarts.
 class ThemeModeController extends StateNotifier<ThemeMode> {
-  ThemeModeController() : super(ThemeMode.dark) {
+  ThemeModeController() : super(ThemeMode.light) {
     _load();
   }
 
@@ -18,7 +18,7 @@ class ThemeModeController extends StateNotifier<ThemeMode> {
       'light' => ThemeMode.light,
       'dark' => ThemeMode.dark,
       'system' => ThemeMode.system,
-      _ => ThemeMode.dark,
+      _ => ThemeMode.light,
     };
   }
 

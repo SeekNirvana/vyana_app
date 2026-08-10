@@ -15,7 +15,7 @@ class VitalsNotificationService {
   static const _channelId = 'vyana_vitals';
   static const _channelName = 'Vitals monitoring';
   static const _channelDescription =
-      'Tells you when a Monitor all vitals run has finished.';
+      'Tells you when a health check has finished.';
   static const _progressId = 4201;
   static const _resultId = 4202;
 

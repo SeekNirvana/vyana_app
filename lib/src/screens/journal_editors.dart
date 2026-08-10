@@ -153,7 +153,7 @@ class _NewEntryScreenState extends ConsumerState<NewEntryScreen> {
     final ac = t.vit(_entryAccent(_type));
     return _EditorScaffold(
       title: 'New entry',
-      sub: 'Antara',
+      sub: 'Journal',
       ctaLabel: 'Save entry',
       ctaIcon: 'check',
       canSave: _body.text.trim().isNotEmpty || _title.text.trim().isNotEmpty,
@@ -388,7 +388,7 @@ class _WakeCaptureScreenState extends ConsumerState<WakeCaptureScreen> {
             : 'Tap to speak';
     return _EditorScaffold(
       title: 'Wake capture',
-      sub: 'Antara · dream',
+      sub: 'Journal · Dream',
       ctaLabel: 'Save dream',
       ctaIcon: 'moon',
       canSave: _body.text.trim().isNotEmpty,
@@ -600,7 +600,7 @@ class _MealLogScreenState extends ConsumerState<MealLogScreen> {
     final t = context.vyana;
     return _EditorScaffold(
       title: 'Log a meal',
-      sub: 'Antara · nourishment',
+      sub: 'Journal · Nourishment',
       ctaLabel: 'Save meal',
       ctaIcon: 'bowl',
       canSave: _label.text.trim().isNotEmpty,

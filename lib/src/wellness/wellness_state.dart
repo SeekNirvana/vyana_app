@@ -1,6 +1,6 @@
 /// Translates raw ring vitals into a qualitative "state of being" so Vyana can
-/// speak in felt language ("Calm", "Rested", "Strong") rather than clinical
-/// numbers that leave the user guessing. Shared by the home screen, the
+/// explain measurements in plain health language rather than abstract labels
+/// or unexplained numbers. Shared by the home screen, the
 /// completion notification, and the home-screen widgets.
 ///
 /// Pure Dart on purpose: no Flutter imports, no `part of` coupling, so the
@@ -9,7 +9,7 @@ library;
 
 enum WellnessTone { good, steady, watch, unknown }
 
-/// A single felt signal, e.g. Heart → "Calm".
+/// A single plain-language signal, e.g. Heart rate → "Elevated".
 class WellnessSignal {
   const WellnessSignal({
     required this.label,
@@ -18,10 +18,10 @@ class WellnessSignal {
     this.detail,
   });
 
-  /// Concept name shown to the user: "Heart", "Oxygen", "Recovery", "Warmth".
+  /// Measurement name shown to the user.
   final String label;
 
-  /// Felt descriptor: "Calm", "Strong", "Rested", "Normal"…
+  /// Short interpretation of the measurement.
   final String reading;
 
   final WellnessTone tone;
@@ -56,8 +56,7 @@ class WellnessState {
 
   bool get isEmpty => !hasData;
 
-  /// Compact felt line for a notification body or widget subtitle, e.g.
-  /// "heart calm · oxygen strong · recovery rested".
+  /// Compact line for a notification body or widget subtitle.
   String get spokenLine {
     if (signals.isEmpty) return summary;
     return signals
@@ -95,12 +94,10 @@ class WellnessState {
       final reading = heartRate < 55
           ? 'Resting'
           : heartRate <= 70
-              ? 'Calm'
-              : heartRate <= 85
-                  ? 'Active'
-                  : 'Elevated';
+              ? 'Typical'
+              : 'Elevated';
       signals.add(WellnessSignal(
-        label: 'Heart',
+        label: 'Heart rate',
         reading: reading,
         tone: tone,
         detail: '$heartRate bpm',
@@ -113,13 +110,9 @@ class WellnessState {
           : bloodOxygen >= 95
               ? WellnessTone.steady
               : WellnessTone.watch;
-      final reading = bloodOxygen >= 97
-          ? 'Strong'
-          : bloodOxygen >= 95
-              ? 'Steady'
-              : 'Low';
+      final reading = bloodOxygen >= 95 ? 'Within range' : 'Low';
       signals.add(WellnessSignal(
-        label: 'Oxygen',
+        label: 'Blood oxygen',
         reading: reading,
         tone: tone,
         detail: '$bloodOxygen%',
@@ -133,10 +126,10 @@ class WellnessState {
               ? WellnessTone.steady
               : WellnessTone.watch;
       final reading = hrv >= 55
-          ? 'Rested'
+          ? 'Well recovered'
           : hrv >= 35
               ? 'Balanced'
-              : 'Strained';
+              : 'Take it easy';
       signals.add(WellnessSignal(
         label: 'Recovery',
         reading: reading,
@@ -152,12 +145,12 @@ class WellnessState {
               ? WellnessTone.steady
               : WellnessTone.watch;
       final reading = temperature > 37.3
-          ? 'Warm'
+          ? 'Higher'
           : temperature < 35.8
-              ? 'Cool'
-              : 'Normal';
+              ? 'Lower'
+              : 'Within range';
       signals.add(WellnessSignal(
-        label: 'Warmth',
+        label: 'Temperature',
         reading: reading,
         tone: tone,
         detail: '${temperature.toStringAsFixed(1)}°',

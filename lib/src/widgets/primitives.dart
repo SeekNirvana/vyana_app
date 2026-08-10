@@ -460,7 +460,7 @@ class VSwitch extends StatelessWidget {
   }
 }
 
-/// In-body app bar: optional leading widget, gold sub-eyebrow + serif title,
+/// In-body app bar: optional leading widget, quiet sub-label + title,
 /// trailing actions. (Distinct from a Material AppBar — sits in screen bodies.)
 class VAppBar extends StatelessWidget {
   const VAppBar({
@@ -490,8 +490,8 @@ class VAppBar extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (sub != null)
-                  Text(sub!.toUpperCase(),
-                      style: VyanaType.eyebrow.copyWith(color: t.gold, letterSpacing: 1.5)),
+                  Text(sub!,
+                      style: VyanaType.eyebrow.copyWith(color: t.green)),
                 Text(title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

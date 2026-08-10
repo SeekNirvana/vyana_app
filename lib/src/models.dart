@@ -1177,7 +1177,7 @@ class RingSyncFeedback {
 
   String get snackMessage {
     if (!success) {
-      return errorMessage ?? 'Could not sync vitals and data. Try again.';
+      return errorMessage ?? 'We couldn’t update your ring data. Try again.';
     }
     if (!logSaved) {
       return 'Synced $recordCount records from your ring. Saving to the data log failed.';

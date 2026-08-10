@@ -1,6 +1,6 @@
 part of '../../main.dart';
 
-/// Sadhana library — choose a practice for the state you're in.
+/// Practice library — choose a practice for the state you're in.
 class PracticeScreen extends StatefulWidget {
   const PracticeScreen({super.key});
 
@@ -23,7 +23,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
       children: [
         VAppBar(
           title: 'Practice',
-          sub: 'Sadhana',
+          sub: 'For your body and mind',
           actions: [
             IconBtn(
               icon: 'chart',

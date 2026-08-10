@@ -31,10 +31,11 @@ class _InfoScreenHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(eyebrow.toUpperCase(),
-                  style: VyanaType.eyebrow.copyWith(color: t.gold)),
-              Text(title,
-                  style: VyanaType.appBarSerif.copyWith(color: t.text)),
+              Text(
+                eyebrow.toUpperCase(),
+                style: VyanaType.eyebrow.copyWith(color: t.gold),
+              ),
+              Text(title, style: VyanaType.appBarSerif.copyWith(color: t.text)),
             ],
           ),
         ),
@@ -66,7 +67,10 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 32),
             children: [
-              const _InfoScreenHeader(eyebrow: 'SeekNirvana', title: 'About Vyana'),
+              const _InfoScreenHeader(
+                eyebrow: 'SeekNirvana',
+                title: 'About Vyana',
+              ),
               const SizedBox(height: 14),
               Panel(
                 grad: true,
@@ -75,12 +79,18 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
                   children: [
                     const Seal(size: 72, glow: true),
                     const SizedBox(height: 16),
-                    Text('Vyana App',
-                        style: VyanaType.titleSerif.copyWith(
-                            color: t.text, fontSize: 28)),
+                    Text(
+                      'Vyana App',
+                      style: VyanaType.titleSerif.copyWith(
+                        color: t.text,
+                        fontSize: 28,
+                      ),
+                    ),
                     const SizedBox(height: 6),
-                    Text('Your wellness operating system',
-                        style: VyanaType.bodySm.copyWith(color: t.textSec)),
+                    Text(
+                      'Your wellness operating system',
+                      style: VyanaType.bodySm.copyWith(color: t.textSec),
+                    ),
                   ],
                 ),
               ),
@@ -89,30 +99,41 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Join the mission',
-                        style: VyanaType.label.copyWith(
-                            color: t.text, fontWeight: FontWeight.w700)),
+                    Text(
+                      'Join the mission',
+                      style: VyanaType.label.copyWith(
+                        color: t.text,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     Text(
                       'Most wearables lock your biometrics in someone else\'s cloud. '
                       'Vyana is different — your signals, your AI, your guidance, '
                       'all under your rules. We built this for people who want to '
                       'feel better without giving away the story their body tells.',
-                      style: VyanaType.bodySm
-                          .copyWith(color: t.textSec, height: 1.55),
+                      style: VyanaType.bodySm.copyWith(
+                        color: t.textSec,
+                        height: 1.55,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Text(
                       'Sense your rhythm. Understand the pattern. Practice with '
                       'intention — one breath, one session, one kinder day at a time.',
-                      style: VyanaType.bodySm
-                          .copyWith(color: t.textSec, height: 1.55),
+                      style: VyanaType.bodySm.copyWith(
+                        color: t.textSec,
+                        height: 1.55,
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 14),
-              const SectionHead(eyebrow: 'Our ethos', title: 'Own your wellness'),
+              const SectionHead(
+                eyebrow: 'Our ethos',
+                title: 'Own your wellness',
+              ),
               Panel(
                 child: Column(
                   children: [
@@ -155,7 +176,10 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
                 onTap: () => _openSeekNirvanaSite(context),
               ),
               const SizedBox(height: 22),
-              const SectionHead(eyebrow: 'Hardware', title: 'Ring capabilities'),
+              const SectionHead(
+                eyebrow: 'Hardware',
+                title: 'Ring capabilities',
+              ),
               FeaturePanel(features: widget.features),
               const SizedBox(height: 18),
               FutureBuilder<PackageInfo>(
@@ -166,8 +190,10 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
                       : null;
                   if (versionText == null) return const SizedBox.shrink();
                   return Center(
-                    child: Text(versionText,
-                        style: VyanaType.caption.copyWith(color: t.textMuted)),
+                    child: Text(
+                      versionText,
+                      style: VyanaType.caption.copyWith(color: t.textMuted),
+                    ),
                   );
                 },
               ),
@@ -215,13 +241,21 @@ class _EthosPillar extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('$step · $title',
-                  style: VyanaType.label.copyWith(
-                      color: t.text, fontWeight: FontWeight.w700)),
+              Text(
+                '$step · $title',
+                style: VyanaType.label.copyWith(
+                  color: t.text,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const SizedBox(height: 5),
-              Text(body,
-                  style: VyanaType.bodySm
-                      .copyWith(color: t.textSec, height: 1.45)),
+              Text(
+                body,
+                style: VyanaType.bodySm.copyWith(
+                  color: t.textSec,
+                  height: 1.45,
+                ),
+              ),
             ],
           ),
         ),
@@ -262,16 +296,27 @@ class AppPrivacyScreen extends StatelessWidget {
                           height: 40,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
-                            color: t.green.withValues(alpha: t.isDark ? 0.2 : 0.13),
+                            color: t.green.withValues(
+                              alpha: t.isDark ? 0.2 : 0.13,
+                            ),
                           ),
                           child: Center(
-                              child: VyanaIcon('shield', size: 20, color: t.green)),
+                            child: VyanaIcon(
+                              'shield',
+                              size: 20,
+                              color: t.green,
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Text('Your body, your rules',
-                              style: VyanaType.titleSerif.copyWith(
-                                  color: t.text, fontSize: 22)),
+                          child: Text(
+                            'Your body, your rules',
+                            style: VyanaType.titleSerif.copyWith(
+                              color: t.text,
+                              fontSize: 22,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -280,8 +325,10 @@ class AppPrivacyScreen extends StatelessWidget {
                       'Vyana is built on data sovereignty. We do not collect, sell, '
                       'or profile you. This is a plain-language summary of how your '
                       'information is handled.',
-                      style: VyanaType.bodySm
-                          .copyWith(color: t.textSec, height: 1.5),
+                      style: VyanaType.bodySm.copyWith(
+                        color: t.textSec,
+                        height: 1.5,
+                      ),
                     ),
                   ],
                 ),
@@ -313,8 +360,7 @@ class AppPrivacyScreen extends StatelessWidget {
               ),
               _PrivacySection(
                 title: 'Optional connections you control',
-                body:
-                    'Some features reach outward only when you turn them on:',
+                body: 'Some features reach outward only when you turn them on:',
                 bullets: const [
                   'Wallet linking — only if you connect Solana or Reown; keys stay with your wallet app',
                   'Weather on ring — only if you enable weather push to the device',
@@ -343,12 +389,18 @@ class AppPrivacyScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Questions or feedback',
-                              style: VyanaType.label.copyWith(
-                                  color: t.text, fontWeight: FontWeight.w700)),
+                          Text(
+                            'Questions or feedback',
+                            style: VyanaType.label.copyWith(
+                              color: t.text,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                           const SizedBox(height: 3),
-                          Text('seeknirvana.com',
-                              style: VyanaType.caption.copyWith(color: t.green)),
+                          Text(
+                            'seeknirvana.com',
+                            style: VyanaType.caption.copyWith(color: t.green),
+                          ),
                         ],
                       ),
                     ),
@@ -391,13 +443,18 @@ class _PrivacySection extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                style: VyanaType.label
-                    .copyWith(color: t.text, fontWeight: FontWeight.w700)),
+            Text(
+              title,
+              style: VyanaType.label.copyWith(
+                color: t.text,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text(body,
-                style: VyanaType.bodySm
-                    .copyWith(color: t.textSec, height: 1.45)),
+            Text(
+              body,
+              style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45),
+            ),
             const SizedBox(height: 10),
             for (final bullet in bullets) ...[
               Row(
@@ -416,9 +473,13 @@ class _PrivacySection extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(bullet,
-                        style: VyanaType.bodySm
-                            .copyWith(color: t.textSec, height: 1.45)),
+                    child: Text(
+                      bullet,
+                      style: VyanaType.bodySm.copyWith(
+                        color: t.textSec,
+                        height: 1.45,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -525,11 +586,7 @@ class _CapabilityCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               color: t.green.withValues(alpha: t.isDark ? 0.2 : 0.13),
             ),
-            child: Icon(
-              capability.icon,
-              size: 20,
-              color: t.green,
-            ),
+            child: Icon(capability.icon, size: 20, color: t.green),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -673,7 +730,7 @@ List<_RingCapability> _ringCapabilities(DeviceFeatureSnapshot feature) {
     feature.supports('isSupportSleep'),
     'Sleep stages',
     'Deep, light, REM, awake',
-    Icons.bedtime,
+    Icons.airline_seat_individual_suite_rounded,
   );
   addIf(
     feature.supports('isSupportStep'),
@@ -1214,7 +1271,10 @@ class EmptyState extends StatelessWidget {
           Icon(icon, color: t.green),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(text, style: VyanaType.bodySm.copyWith(color: t.textSec)),
+            child: Text(
+              text,
+              style: VyanaType.bodySm.copyWith(color: t.textSec),
+            ),
           ),
         ],
       ),

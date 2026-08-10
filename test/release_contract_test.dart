@@ -10,11 +10,7 @@ void main() {
 
   String readLib(String relativePath) {
     final file = File.fromUri(lib.resolve(relativePath));
-    expect(
-      file.existsSync(),
-      isTrue,
-      reason: 'Missing $relativePath',
-    );
+    expect(file.existsSync(), isTrue, reason: 'Missing $relativePath');
     return file.readAsStringSync();
   }
 
@@ -55,11 +51,13 @@ void main() {
   test('v1.0.3 monitor-all vitals + state-of-being present in source', () {
     final homeScreen = readLib('src/screens/home_screen.dart');
     expect(homeScreen, contains('runAllVitals'));
-    expect(homeScreen, contains('Check in with your body'));
-    expect(homeScreen, contains('HOW YOU'));
-    expect(homeScreen, contains('reads each vital in turn'));
+    expect(homeScreen, contains('Check vitals'));
+    expect(homeScreen, contains('How you’re being'));
+    expect(homeScreen, contains('homeMomentAt'));
+    expect(homeScreen, contains('Suggested practice'));
+    expect(homeScreen, contains('suggestedPracticeId'));
 
-    // Calm redesign: Home stays number-free; numbers live on TrendsScreen.
+    // Contextual morning/night summaries complement the full Trends screen.
     final trendsScreen = readLib('src/screens/trends_screen.dart');
     expect(trendsScreen, contains('openVitalDetail'));
     expect(trendsScreen, contains('openMeasurements'));
@@ -78,34 +76,41 @@ void main() {
     expect(homeWidget, contains('STATE OF BEING'));
   });
 
-  test('v1.0.4 live sessions (map, 10-min splits, terrain cues) + meal polish',
-      () {
-    final sessionBodies = readLib('src/screens/session_bodies.dart');
-    expect(sessionBodies, contains('FlutterMap'));
-    expect(sessionBodies, contains('tile.openstreetmap.org'));
-    expect(sessionBodies, contains('PolylineLayer'));
+  test(
+    'v1.0.4 live sessions (map, 10-min splits, terrain cues) + meal polish',
+    () {
+      final sessionBodies = readLib('src/screens/session_bodies.dart');
+      expect(sessionBodies, contains('FlutterMap'));
+      expect(sessionBodies, contains('tile.openstreetmap.org'));
+      expect(sessionBodies, contains('PolylineLayer'));
 
-    final sessionController = readLib('src/state/session_controller.dart');
-    expect(sessionController, contains('% 600'),
-        reason: 'spoken splits every 10 minutes');
-    expect(sessionController, contains('Kilometre'));
-    expect(sessionController, contains('Steep climb'));
-    expect(sessionController, contains('gpsPermissionDenied'));
+      final sessionController = readLib('src/state/session_controller.dart');
+      expect(
+        sessionController,
+        contains('% 600'),
+        reason: 'spoken splits every 10 minutes',
+      );
+      expect(sessionController, contains('Kilometre'));
+      expect(sessionController, contains('Steep climb'));
+      expect(sessionController, contains('gpsPermissionDenied'));
 
-    final journalScreen = readLib('src/screens/journal_screen.dart');
-    expect(journalScreen, contains('deleteMeal'));
-    expect(journalScreen, contains('MealPhotoViewer'));
+      final journalScreen = readLib('src/screens/journal_screen.dart');
+      expect(journalScreen, contains('deleteMeal'));
+      expect(journalScreen, contains('MealPhotoViewer'));
 
-    final journalEditors = readLib('src/screens/journal_editors.dart');
-    expect(journalEditors, contains('Add a photo of your plate'));
+      final journalEditors = readLib('src/screens/journal_editors.dart');
+      expect(journalEditors, contains('Add a photo of your plate'));
 
-    // GPS must work on Android 12+: FINE_LOCATION may not carry maxSdkVersion.
-    final manifest = File('android/app/src/main/AndroidManifest.xml')
-        .readAsStringSync();
-    expect(
-      manifest,
-      contains(
-          '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />'),
-    );
-  });
+      // GPS must work on Android 12+: FINE_LOCATION may not carry maxSdkVersion.
+      final manifest = File(
+        'android/app/src/main/AndroidManifest.xml',
+      ).readAsStringSync();
+      expect(
+        manifest,
+        contains(
+          '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
+        ),
+      );
+    },
+  );
 }

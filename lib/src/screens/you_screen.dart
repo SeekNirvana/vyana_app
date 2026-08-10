@@ -39,10 +39,13 @@ Future<void> openMeasurements(BuildContext context, RingController c) {
   );
 }
 
-Future<void> syncRingWithFeedback(BuildContext context, RingController c) async {
+Future<void> syncRingWithFeedback(
+  BuildContext context,
+  RingController c,
+) async {
   showVyanaSnackBar(
     context,
-    message: 'Syncing vitals and data from your ring…',
+    message: 'Updating your health data…',
     icon: 'refresh',
     success: true,
     duration: const Duration(seconds: 2),
@@ -86,9 +89,9 @@ Future<void> openAbout(BuildContext context, RingController c) {
 }
 
 Future<void> openPrivacy(BuildContext context) {
-  return Navigator.of(context).push<void>(
-    MaterialPageRoute(builder: (_) => const AppPrivacyScreen()),
-  );
+  return Navigator.of(
+    context,
+  ).push<void>(MaterialPageRoute(builder: (_) => const AppPrivacyScreen()));
 }
 
 Future<void> openActivityDetail(BuildContext context, Activity activity) {
@@ -107,10 +110,9 @@ class YouScreen extends ConsumerWidget {
     final t = context.vyana;
     final c = ref.watch(ringControllerProvider);
     final mode = ref.watch(themeModeProvider);
-    final profile = ref.watch(userProfileProvider).maybeWhen(
-          data: (p) => p,
-          orElse: () => const UserProfile(),
-        );
+    final profile = ref
+        .watch(userProfileProvider)
+        .maybeWhen(data: (p) => p, orElse: () => const UserProfile());
     final wallet = ref.watch(walletControllerProvider);
 
     return ListView(
@@ -129,9 +131,13 @@ class YouScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(profile.displayName,
-                        style: VyanaType.titleSerif.copyWith(
-                            color: t.text, fontSize: 20)),
+                    Text(
+                      profile.displayName,
+                      style: VyanaType.titleSerif.copyWith(
+                        color: t.text,
+                        fontSize: 20,
+                      ),
+                    ),
                     if (profile.subtitle != null)
                       Text(
                         profile.subtitle!,
@@ -149,8 +155,8 @@ class YouScreen extends ConsumerWidget {
                       c.isConnected
                           ? '${c.pairedRing?.displayName ?? 'PRANA ring'} · connected'
                           : c.hasRingContext
-                              ? c.status
-                              : 'No ring yet',
+                          ? c.status
+                          : 'No ring yet',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: VyanaType.caption.copyWith(color: t.textSec),
@@ -158,21 +164,9 @@ class YouScreen extends ConsumerWidget {
                   ],
                 ),
               ),
-              VyanaIcon('chevR', size: 17, color: t.textMuted),
+              VyanaIcon('edit', size: 18, color: t.green),
             ],
           ),
-        ),
-        const SizedBox(height: 18),
-        const SectionHead(eyebrow: 'You', title: 'Profile'),
-        _SettingsGroup(
-          rows: [
-            _SettingsRow(
-              icon: 'user',
-              iconColor: t.textSec,
-              label: 'Edit profile',
-              onTap: () => openProfileEditor(context),
-            ),
-          ],
         ),
         const SizedBox(height: 18),
         const SectionHead(eyebrow: 'Your ring', title: 'PRANA'),
@@ -190,8 +184,10 @@ class YouScreen extends ConsumerWidget {
                 iconColor: t.green,
                 label: 'Sync vitals & data',
                 trailing: c.isSyncing
-                    ? Text('Syncing…',
-                        style: VyanaType.label.copyWith(color: t.green))
+                    ? Text(
+                        'Syncing…',
+                        style: VyanaType.label.copyWith(color: t.green),
+                      )
                     : null,
                 onTap: c.isConnected && !c.isSyncing
                     ? () => syncRingWithFeedback(context, c)
@@ -204,7 +200,7 @@ class YouScreen extends ConsumerWidget {
                 onTap: () => openMeasurements(context, c),
               ),
               _SettingsRow(
-                icon: 'moon',
+                icon: 'sleep',
                 iconColor: t.vit('sleep'),
                 label: 'Sleep detail',
                 onTap: () => openSleep(context, c),
@@ -225,7 +221,8 @@ class YouScreen extends ConsumerWidget {
                         ? c.healthMonitoring.summaryLabel
                         : 'Off',
                     style: VyanaType.label.copyWith(
-                      color: c.healthMonitoring.enabled &&
+                      color:
+                          c.healthMonitoring.enabled &&
                               c.healthMonitoring.ringAcknowledged
                           ? t.green
                           : t.textMuted,
@@ -256,8 +253,10 @@ class YouScreen extends ConsumerWidget {
                   ),
                   onTap: c.foregroundServiceAllowed
                       ? () => unawaited(
-                            c.setForegroundServiceEnabled(!c.foregroundServiceEnabled),
-                          )
+                          c.setForegroundServiceEnabled(
+                            !c.foregroundServiceEnabled,
+                          ),
+                        )
                       : null,
                   chevron: false,
                 ),
@@ -326,8 +325,10 @@ class YouScreen extends ConsumerWidget {
               icon: 'award',
               iconColor: t.gold,
               label: 'Chakra & rewards',
-              trailing: Text('${HomeSeed.chakraBalance}',
-                  style: VyanaType.label.copyWith(color: t.gold)),
+              trailing: Text(
+                '${HomeSeed.chakraBalance}',
+                style: VyanaType.label.copyWith(color: t.gold),
+              ),
               onTap: () => _comingSoon(context, 'Chakra & rewards'),
             ),
             _SettingsRow(
@@ -377,10 +378,16 @@ class YouScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Cloud sync', style: VyanaType.label.copyWith(color: t.text)),
+                    Text(
+                      'Cloud sync',
+                      style: VyanaType.label.copyWith(color: t.text),
+                    ),
                     Text(
                       'Opt-in backup of sessions & routes. Off keeps everything on-device.',
-                      style: VyanaType.caption.copyWith(color: t.textSec, height: 1.4),
+                      style: VyanaType.caption.copyWith(
+                        color: t.textSec,
+                        height: 1.4,
+                      ),
                     ),
                   ],
                 ),
@@ -412,12 +419,16 @@ class YouScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('Voice cues',
-                          style: VyanaType.label.copyWith(color: t.text)),
+                      Text(
+                        'Voice cues',
+                        style: VyanaType.label.copyWith(color: t.text),
+                      ),
                       Text(
                         'Spoken guidance during sessions (splits, rest, breath). Tap to preview.',
-                        style:
-                            VyanaType.caption.copyWith(color: t.textSec, height: 1.4),
+                        style: VyanaType.caption.copyWith(
+                          color: t.textSec,
+                          height: 1.4,
+                        ),
                       ),
                     ],
                   ),
@@ -456,10 +467,10 @@ class YouScreen extends ConsumerWidget {
   }
 
   static String _themeLabel(ThemeMode m) => switch (m) {
-        ThemeMode.dark => 'Dark',
-        ThemeMode.light => 'Light',
-        ThemeMode.system => 'System',
-      };
+    ThemeMode.dark => 'Dark',
+    ThemeMode.light => 'Light',
+    ThemeMode.system => 'System',
+  };
 
   Future<void> _previewVoiceCue(BuildContext context, WidgetRef ref) async {
     if (!ref.read(voiceCuesEnabledProvider)) {
@@ -544,7 +555,9 @@ class YouScreen extends ConsumerWidget {
   }
 
   Future<void> _renameRing(BuildContext context, RingController c) async {
-    final current = c.selectedDevice == null ? '' : deviceLabel(c.selectedDevice);
+    final current = c.selectedDevice == null
+        ? ''
+        : deviceLabel(c.selectedDevice);
     var edited = current;
     final name = await showDialog<String>(
       context: context,
@@ -590,7 +603,12 @@ class _SettingsGroup extends StatelessWidget {
         children: [
           for (var i = 0; i < rows.length; i++) ...[
             if (i > 0)
-              Divider(height: 1, color: t.borderSoft, indent: 14, endIndent: 14),
+              Divider(
+                height: 1,
+                color: t.borderSoft,
+                indent: 14,
+                endIndent: 14,
+              ),
             rows[i],
           ],
         ],
@@ -639,8 +657,10 @@ class _SettingsRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(label,
-                        style: VyanaType.bodySm.copyWith(color: t.text)),
+                    Text(
+                      label,
+                      style: VyanaType.bodySm.copyWith(color: t.text),
+                    ),
                     if (subtitle != null) ...[
                       const SizedBox(height: 3),
                       Text(
@@ -655,8 +675,7 @@ class _SettingsRow extends StatelessWidget {
                 ),
               ),
               if (trailing != null) ...[trailing!, const SizedBox(width: 8)],
-              if (chevron)
-                VyanaIcon('chevR', size: 17, color: t.textMuted),
+              if (chevron) VyanaIcon('chevR', size: 17, color: t.textMuted),
             ],
           ),
         ),

@@ -365,10 +365,7 @@ class _SleepDayAnalytics extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Text(
-                    day.windowLabel,
-                    style: TextStyle(color: t.textSec),
-                  ),
+                  Text(day.windowLabel, style: TextStyle(color: t.textSec)),
                 ],
               ),
               const SizedBox(height: 12),
@@ -615,10 +612,7 @@ class _SleepVitalAverageChip extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            series.label,
-            style: TextStyle(color: t.textSec, fontSize: 12),
-          ),
+          Text(series.label, style: TextStyle(color: t.textSec, fontSize: 12)),
           const SizedBox(height: 4),
           Text(
             '${series.averageText(decimals)} ${series.unit}'.trim(),
@@ -656,10 +650,7 @@ class _SleepVitalSeriesChart extends StatelessWidget {
       children: [
         Text(
           series.label,
-          style: TextStyle(
-            color: t.text,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(color: t.text, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 8),
         TimeSeriesChart(points: points),
@@ -718,15 +709,16 @@ class _SleepSectionRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.bedtime, color: t.green, size: 18),
+          Icon(
+            Icons.airline_seat_individual_suite_rounded,
+            color: t.green,
+            size: 18,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               section.windowLabel,
-              style: TextStyle(
-                color: t.text,
-                fontWeight: FontWeight.w700,
-              ),
+              style: TextStyle(color: t.text, fontWeight: FontWeight.w700),
             ),
           ),
           Text(
@@ -768,7 +760,7 @@ class _SleepEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     return const _SleepPanel(
       child: _DarkEmptyInline(
-        icon: Icons.bedtime,
+        icon: Icons.airline_seat_individual_suite_rounded,
         text: 'No sleep stages have been synced for this period.',
       ),
     );
@@ -891,11 +883,7 @@ class SleepPeriodBarChartPainter extends CustomPainter {
         canvas,
         durationText(day.breakdown.asleepSeconds),
         Offset(centerX - 18, cursorY - 16),
-        TextStyle(
-          color: valueColor,
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-        ),
+        TextStyle(color: valueColor, fontSize: 10, fontWeight: FontWeight.w700),
       );
       _paintText(
         canvas,

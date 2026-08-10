@@ -41,16 +41,23 @@ class VitalsDetailScreen extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  IconBtn(icon: 'chevL', onTap: () => Navigator.of(context).pop()),
+                  IconBtn(
+                    icon: 'chevL',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
                   const SizedBox(width: 11),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(meta.eyebrow,
-                            style: VyanaType.eyebrow.copyWith(color: t.gold)),
-                        Text(meta.title,
-                            style: VyanaType.appBarSerif.copyWith(color: t.text)),
+                        Text(
+                          meta.eyebrow,
+                          style: VyanaType.eyebrow.copyWith(color: t.gold),
+                        ),
+                        Text(
+                          meta.title,
+                          style: VyanaType.appBarSerif.copyWith(color: t.text),
+                        ),
                       ],
                     ),
                   ),
@@ -98,7 +105,8 @@ class VitalsDetailScreen extends StatelessWidget {
                 if (points.isEmpty)
                   AccessDeniedPanel(
                     title: 'No history yet',
-                    message: 'Sync your ring to pull ${meta.title.toLowerCase()} readings.',
+                    message:
+                        'Sync your ring to pull ${meta.title.toLowerCase()} readings.',
                     icon: 'refresh',
                     hint: 'You → Sync vitals & data after connecting.',
                     secondaryLabel: 'Sync now',
@@ -128,13 +136,19 @@ class VitalsDetailScreen extends StatelessWidget {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    timeLabel(points[points.length - 1 - i].time),
-                                    style: VyanaType.caption.copyWith(color: t.textSec),
+                                    timeLabel(
+                                      points[points.length - 1 - i].time,
+                                    ),
+                                    style: VyanaType.caption.copyWith(
+                                      color: t.textSec,
+                                    ),
                                   ),
                                 ),
                                 Text(
                                   points[points.length - 1 - i].label,
-                                  style: VyanaType.label.copyWith(color: t.text),
+                                  style: VyanaType.label.copyWith(
+                                    color: t.text,
+                                  ),
                                 ),
                               ],
                             ),
@@ -155,7 +169,10 @@ class VitalsDetailScreen extends StatelessWidget {
                     Expanded(
                       child: Text(
                         meta.footnote,
-                        style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
+                        style: VyanaType.bodySm.copyWith(
+                          color: t.textSec,
+                          height: 1.5,
+                        ),
                       ),
                     ),
                   ],
@@ -170,10 +187,7 @@ class VitalsDetailScreen extends StatelessWidget {
 }
 
 class _StepsDetailBody extends StatelessWidget {
-  const _StepsDetailBody({
-    required this.controller,
-    required this.dashboard,
-  });
+  const _StepsDetailBody({required this.controller, required this.dashboard});
 
   final RingController controller;
   final HomeDashboard dashboard;
@@ -203,7 +217,9 @@ class _StepsDetailBody extends StatelessWidget {
                     width: 46,
                     height: 46,
                     decoration: BoxDecoration(
-                      color: t.vit('steps').withValues(alpha: t.isDark ? 0.2 : 0.13),
+                      color: t
+                          .vit('steps')
+                          .withValues(alpha: t.isDark ? 0.2 : 0.13),
                       borderRadius: BorderRadius.circular(13),
                     ),
                     child: Center(
@@ -215,22 +231,33 @@ class _StepsDetailBody extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Today',
-                            style: VyanaType.caption.copyWith(color: t.textSec)),
-                        Text('${dashboard.todaySteps}',
-                            style: VyanaType.displaySerif.copyWith(color: t.text)),
-                        Text('steps',
-                            style: VyanaType.mono10.copyWith(color: t.textMuted)),
+                        Text(
+                          'Today',
+                          style: VyanaType.caption.copyWith(color: t.textSec),
+                        ),
+                        Text(
+                          '${dashboard.todaySteps}',
+                          style: VyanaType.displaySerif.copyWith(color: t.text),
+                        ),
+                        Text(
+                          'steps',
+                          style: VyanaType.mono10.copyWith(color: t.textMuted),
+                        ),
                       ],
                     ),
                   ),
                   if (dashboard.stepStreak > 0)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: t.gold.withValues(alpha: t.isDark ? 0.16 : 0.1),
                         borderRadius: BorderRadius.circular(100),
-                        border: Border.all(color: t.gold.withValues(alpha: 0.35)),
+                        border: Border.all(
+                          color: t.gold.withValues(alpha: 0.35),
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -306,7 +333,10 @@ class _StepsDetailBody extends StatelessWidget {
                       endIndent: 14,
                     ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     child: Row(
                       children: [
                         Expanded(
@@ -415,17 +445,24 @@ class _MetricHero extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(caption, style: VyanaType.caption.copyWith(color: t.textSec)),
+                Text(
+                  caption,
+                  style: VyanaType.caption.copyWith(color: t.textSec),
+                ),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
                   children: [
-                    Text(value,
-                        style: VyanaType.displaySerif.copyWith(color: t.text)),
+                    Text(
+                      value,
+                      style: VyanaType.displaySerif.copyWith(color: t.text),
+                    ),
                     if (unit.isNotEmpty) ...[
                       const SizedBox(width: 6),
-                      Text(unit,
-                          style: VyanaType.caption.copyWith(color: t.textMuted)),
+                      Text(
+                        unit,
+                        style: VyanaType.caption.copyWith(color: t.textMuted),
+                      ),
                     ],
                   ],
                 ),
@@ -487,8 +524,10 @@ class _VitalBarChart extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Text(labels[i],
-                      style: VyanaType.mono10.copyWith(color: t.textMuted)),
+                  Text(
+                    labels[i],
+                    style: VyanaType.mono10.copyWith(color: t.textMuted),
+                  ),
                 ],
               ),
             ),
@@ -519,127 +558,127 @@ class _MetricMeta {
 }
 
 _MetricMeta _metricMeta(VitalsMetricKind kind) => switch (kind) {
-      VitalsMetricKind.steps => const _MetricMeta(
-          eyebrow: 'Activity',
-          title: 'Steps',
-          icon: 'walk',
-          accent: 'steps',
-          unit: 'steps',
-          caption: 'Today',
-          footnote:
-              'Daily totals are summed from 30-minute ring intervals after each sync.',
-        ),
-      VitalsMetricKind.heartRate => const _MetricMeta(
-          eyebrow: 'Vitals',
-          title: 'Heart rate',
-          icon: 'heart',
-          accent: 'hr',
-          unit: 'bpm',
-          caption: 'Latest',
-          footnote: 'Historical readings come from ring background monitoring.',
-        ),
-      VitalsMetricKind.hrv => const _MetricMeta(
-          eyebrow: 'Recovery',
-          title: 'HRV',
-          icon: 'pulse',
-          accent: 'hrv',
-          unit: 'ms',
-          caption: 'Latest',
-          footnote: 'Heart rate variability from combined vitals history.',
-        ),
-      VitalsMetricKind.spo2 => const _MetricMeta(
-          eyebrow: 'Vitals',
-          title: 'Blood oxygen',
-          icon: 'drop',
-          accent: 'spo2',
-          unit: '%',
-          caption: 'Latest',
-          footnote: 'SpO₂ readings from combined vitals history.',
-        ),
-      VitalsMetricKind.calories => const _MetricMeta(
-          eyebrow: 'Activity',
-          title: 'Calories',
-          icon: 'flame',
-          accent: 'cal',
-          unit: 'cal',
-          caption: 'Today',
-          footnote: 'Active calories estimated from ring step intervals.',
-        ),
-      VitalsMetricKind.distance => const _MetricMeta(
-          eyebrow: 'Activity',
-          title: 'Distance',
-          icon: 'walk',
-          accent: 'steps',
-          unit: '',
-          caption: 'Today',
-          footnote: 'Walking distance estimated from ring step intervals.',
-        ),
-      VitalsMetricKind.bloodPressure => const _MetricMeta(
-          eyebrow: 'Vitals',
-          title: 'Blood pressure',
-          icon: 'activity',
-          accent: 'bp',
-          unit: 'mmHg',
-          caption: 'Latest',
-          footnote: 'Background blood pressure readings stored on the ring.',
-        ),
-      VitalsMetricKind.temperature => const _MetricMeta(
-          eyebrow: 'Vitals',
-          title: 'Temperature',
-          icon: 'thermo',
-          accent: 'temp',
-          unit: 'C',
-          caption: 'Latest',
-          footnote: 'Skin temperature from combined vitals history.',
-        ),
-      VitalsMetricKind.glucose => const _MetricMeta(
-          eyebrow: 'Biomarker',
-          title: 'Glucose',
-          icon: 'drop',
-          accent: 'glucose',
-          unit: 'mmol/L',
-          caption: 'Latest',
-          footnote: 'Non-invasive glucose estimates when supported by your ring.',
-        ),
-      VitalsMetricKind.uricAcid => const _MetricMeta(
-          eyebrow: 'Biomarker',
-          title: 'Uric acid',
-          icon: 'drop',
-          accent: 'glucose',
-          unit: 'µmol/L',
-          caption: 'Latest',
-          footnote: 'Invasive biomarker readings from ring history.',
-        ),
-      VitalsMetricKind.cholesterol => const _MetricMeta(
-          eyebrow: 'Biomarker',
-          title: 'Cholesterol',
-          icon: 'activity',
-          accent: 'bp',
-          unit: 'mmol/L',
-          caption: 'Latest',
-          footnote: 'Total cholesterol from invasive biomarker history.',
-        ),
-      VitalsMetricKind.stress => const _MetricMeta(
-          eyebrow: 'Recovery',
-          title: 'Stress',
-          icon: 'brain',
-          accent: 'stress',
-          unit: '',
-          caption: 'Now',
-          footnote:
-              'Stress is read from your heart-rate variability — higher HRV '
-              'means calmer. It refreshes each time HRV syncs from the ring.',
-        ),
-      VitalsMetricKind.sleep => const _MetricMeta(
-          eyebrow: 'Recovery',
-          title: 'Sleep',
-          icon: 'moon',
-          accent: 'sleep',
-          unit: '',
-          caption: 'Last night',
-          footnote: 'Sleep opens in the dedicated sleep detail view.',
-        ),
-    };
+  VitalsMetricKind.steps => const _MetricMeta(
+    eyebrow: 'Activity',
+    title: 'Steps',
+    icon: 'walk',
+    accent: 'steps',
+    unit: 'steps',
+    caption: 'Today',
+    footnote:
+        'Daily totals are summed from 30-minute ring intervals after each sync.',
+  ),
+  VitalsMetricKind.heartRate => const _MetricMeta(
+    eyebrow: 'Vitals',
+    title: 'Heart rate',
+    icon: 'heart',
+    accent: 'hr',
+    unit: 'bpm',
+    caption: 'Latest',
+    footnote: 'Historical readings come from ring background monitoring.',
+  ),
+  VitalsMetricKind.hrv => const _MetricMeta(
+    eyebrow: 'Recovery',
+    title: 'HRV',
+    icon: 'pulse',
+    accent: 'hrv',
+    unit: 'ms',
+    caption: 'Latest',
+    footnote: 'Heart rate variability from combined vitals history.',
+  ),
+  VitalsMetricKind.spo2 => const _MetricMeta(
+    eyebrow: 'Vitals',
+    title: 'Blood oxygen',
+    icon: 'drop',
+    accent: 'spo2',
+    unit: '%',
+    caption: 'Latest',
+    footnote: 'SpO₂ readings from combined vitals history.',
+  ),
+  VitalsMetricKind.calories => const _MetricMeta(
+    eyebrow: 'Activity',
+    title: 'Calories',
+    icon: 'flame',
+    accent: 'cal',
+    unit: 'cal',
+    caption: 'Today',
+    footnote: 'Active calories estimated from ring step intervals.',
+  ),
+  VitalsMetricKind.distance => const _MetricMeta(
+    eyebrow: 'Activity',
+    title: 'Distance',
+    icon: 'walk',
+    accent: 'steps',
+    unit: '',
+    caption: 'Today',
+    footnote: 'Walking distance estimated from ring step intervals.',
+  ),
+  VitalsMetricKind.bloodPressure => const _MetricMeta(
+    eyebrow: 'Vitals',
+    title: 'Blood pressure',
+    icon: 'activity',
+    accent: 'bp',
+    unit: 'mmHg',
+    caption: 'Latest',
+    footnote: 'Background blood pressure readings stored on the ring.',
+  ),
+  VitalsMetricKind.temperature => const _MetricMeta(
+    eyebrow: 'Vitals',
+    title: 'Temperature',
+    icon: 'thermo',
+    accent: 'temp',
+    unit: 'C',
+    caption: 'Latest',
+    footnote: 'Skin temperature from combined vitals history.',
+  ),
+  VitalsMetricKind.glucose => const _MetricMeta(
+    eyebrow: 'Biomarker',
+    title: 'Glucose',
+    icon: 'drop',
+    accent: 'glucose',
+    unit: 'mmol/L',
+    caption: 'Latest',
+    footnote: 'Non-invasive glucose estimates when supported by your ring.',
+  ),
+  VitalsMetricKind.uricAcid => const _MetricMeta(
+    eyebrow: 'Biomarker',
+    title: 'Uric acid',
+    icon: 'drop',
+    accent: 'glucose',
+    unit: 'µmol/L',
+    caption: 'Latest',
+    footnote: 'Invasive biomarker readings from ring history.',
+  ),
+  VitalsMetricKind.cholesterol => const _MetricMeta(
+    eyebrow: 'Biomarker',
+    title: 'Cholesterol',
+    icon: 'activity',
+    accent: 'bp',
+    unit: 'mmol/L',
+    caption: 'Latest',
+    footnote: 'Total cholesterol from invasive biomarker history.',
+  ),
+  VitalsMetricKind.stress => const _MetricMeta(
+    eyebrow: 'Recovery',
+    title: 'Stress',
+    icon: 'brain',
+    accent: 'stress',
+    unit: '',
+    caption: 'Now',
+    footnote:
+        'Stress is read from your heart-rate variability — higher HRV '
+        'means calmer. It refreshes each time HRV syncs from the ring.',
+  ),
+  VitalsMetricKind.sleep => const _MetricMeta(
+    eyebrow: 'Recovery',
+    title: 'Sleep',
+    icon: 'sleep',
+    accent: 'sleep',
+    unit: '',
+    caption: 'Last night',
+    footnote: 'Sleep opens in the dedicated sleep detail view.',
+  ),
+};
 
 String _currentValue(RingController controller, VitalsMetricKind kind) {
   final v = controller.vitals;
@@ -650,17 +689,20 @@ String _currentValue(RingController controller, VitalsMetricKind kind) {
     VitalsMetricKind.hrv => valueOrDash(v.hrv),
     VitalsMetricKind.spo2 => valueOrDash(v.bloodOxygen),
     VitalsMetricKind.calories => '${dashboard.todayCalories}',
-    VitalsMetricKind.distance => formatDistanceMeters(dashboard.todayDistanceMeters),
+    VitalsMetricKind.distance => formatDistanceMeters(
+      dashboard.todayDistanceMeters,
+    ),
     VitalsMetricKind.bloodPressure => v.bloodPressure ?? '—',
     VitalsMetricKind.temperature => doubleOrDash(v.temperature, 1),
     VitalsMetricKind.glucose => doubleOrDash(v.bloodGlucose, 1),
     VitalsMetricKind.uricAcid => valueOrDash(v.uricAcid),
     VitalsMetricKind.cholesterol => doubleOrDash(v.totalCholesterol, 1),
-    VitalsMetricKind.stress => v.pressure == null
-        ? '—'
-        : stressZoneLabel(
-            stressZoneForLevel((v.pressure! / 100).clamp(0.0, 1.0)),
-          ),
+    VitalsMetricKind.stress =>
+      v.pressure == null
+          ? '—'
+          : stressZoneLabel(
+              stressZoneForLevel((v.pressure! / 100).clamp(0.0, 1.0)),
+            ),
     VitalsMetricKind.sleep => v.sleepSummary ?? '—',
   };
 }
@@ -746,8 +788,7 @@ class _StressBandPainter extends CustomPainter {
   final Color activated;
   final Color stressed;
 
-  Color _zoneColor(double v) =>
-      v < 34 ? calm : (v < 67 ? activated : stressed);
+  Color _zoneColor(double v) => v < 34 ? calm : (v < 67 ? activated : stressed);
 
   @override
   void paint(Canvas canvas, Size size) {
