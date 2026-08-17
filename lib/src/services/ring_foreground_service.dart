@@ -1,5 +1,10 @@
 part of '../../main.dart';
 
+/// Message the foreground-service isolate sends to the main isolate on each
+/// heartbeat, asking it to reconnect (if needed) and pull fresh ring history.
+/// The main isolate owns the BLE connection, so the actual sync must run there.
+const kRingForegroundSyncTick = 'ring_foreground_sync_tick';
+
 /// The callback that the native service runs when it starts the foreground
 /// task. Must be a top-level or static function marked with the entry-point
 /// pragma so it is not tree-shaken.
@@ -8,20 +13,26 @@ void ringForegroundServiceCallback() {
   FlutterForegroundTask.setTaskHandler(RingForegroundTaskHandler());
 }
 
-/// Runs inside the foreground service isolate and updates the persistent
-/// notification that the user sees while Vyana keeps the ring connected.
+/// Runs inside the foreground service isolate. Its job is twofold: keep the
+/// persistent notification current, and — because the foreground service keeps
+/// the process (and the main isolate's BLE connection) alive — fire a periodic
+/// heartbeat to the main isolate so ring history is pulled even while the app
+/// is backgrounded. The heartbeat cadence is the native `repeat` interval set
+/// in [RingForegroundService.init]/[RingForegroundService.setRepeatInterval].
 class RingForegroundTaskHandler extends TaskHandler {
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     _updateNotification(
       title: 'Vyana is running',
-      body: 'Ring vitals syncing in background',
+      body: 'Keeping your ring connected',
     );
   }
 
   @override
   void onRepeatEvent(DateTime timestamp) {
-    // The main isolate sends fresh vitals/data when needed.
+    // Ask the main isolate (which owns the ring connection) to sync. It decides
+    // whether a reconnect is needed and whether enough time has elapsed.
+    FlutterForegroundTask.sendDataToMain(kRingForegroundSyncTick);
   }
 
   @override
@@ -51,6 +62,24 @@ class RingForegroundTaskHandler extends TaskHandler {
 class RingForegroundService {
   static bool _initialized = false;
 
+  /// Default background heartbeat cadence (minutes) when no interval is passed.
+  static const int _defaultRepeatMinutes = kPeriodicSyncDefaultIntervalMinutes;
+
+  /// The heartbeat cadence the service was last (re)configured with, so we only
+  /// call `updateService` when it actually changes.
+  static int _repeatMinutes = _defaultRepeatMinutes;
+
+  static ForegroundTaskOptions _taskOptions(int intervalMinutes) {
+    return ForegroundTaskOptions(
+      eventAction: ForegroundTaskEventAction.repeat(
+        Duration(minutes: intervalMinutes).inMilliseconds,
+      ),
+      autoRunOnBoot: false,
+      allowWakeLock: true,
+      allowWifiLock: false,
+    );
+  }
+
   /// Initializes the foreground task plugin and the communication port.
   /// Call this once early in the app lifecycle (e.g. in `main()`).
   static void init() {
@@ -74,18 +103,14 @@ class RingForegroundService {
         showNotification: false,
         playSound: false,
       ),
-      foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.nothing(),
-        autoRunOnBoot: false,
-        allowWakeLock: true,
-        allowWifiLock: false,
-      ),
+      foregroundTaskOptions: _taskOptions(_repeatMinutes),
     );
     _initialized = true;
   }
 
-  static Future<void> start() async {
+  static Future<void> start({int? intervalMinutes}) async {
     if (!Platform.isAndroid) return;
+    if (intervalMinutes != null) _repeatMinutes = intervalMinutes;
     _ensureInitialized();
 
     final permission = await FlutterForegroundTask.checkNotificationPermission();
@@ -93,7 +118,11 @@ class RingForegroundService {
       await FlutterForegroundTask.requestNotificationPermission();
     }
 
-    if (await FlutterForegroundTask.isRunningService) return;
+    if (await FlutterForegroundTask.isRunningService) {
+      // Already running — just make sure the heartbeat cadence is current.
+      await setRepeatInterval(_repeatMinutes);
+      return;
+    }
 
     final result = await FlutterForegroundTask.startService(
       serviceTypes: const [
@@ -101,12 +130,25 @@ class RingForegroundService {
         ForegroundServiceTypes.remoteMessaging,
       ],
       notificationTitle: 'Vyana is running',
-      notificationText: 'Ring vitals syncing in background',
+      notificationText: 'Keeping your ring connected',
       callback: ringForegroundServiceCallback,
     );
 
     if (result is ServiceRequestFailure) {
       debugPrint('RING_FOREGROUND_SERVICE_START_FAILED: ${result.error}');
+    }
+  }
+
+  /// Re-configures the background heartbeat cadence while the service runs.
+  static Future<void> setRepeatInterval(int intervalMinutes) async {
+    if (!Platform.isAndroid) return;
+    _repeatMinutes = intervalMinutes;
+    if (!(await FlutterForegroundTask.isRunningService)) return;
+    final result = await FlutterForegroundTask.updateService(
+      foregroundTaskOptions: _taskOptions(intervalMinutes),
+    );
+    if (result is ServiceRequestFailure) {
+      debugPrint('RING_FOREGROUND_SERVICE_UPDATE_FAILED: ${result.error}');
     }
   }
 

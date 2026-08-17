@@ -465,7 +465,13 @@ class _HomeAppBar extends ConsumerWidget {
           orElse: () => 'Welcome',
         );
     final t = context.vyana;
-    final status = hasRingContext ? 'Ring synced' : 'Start your practice';
+    final status = !hasRingContext
+        ? 'Start your practice'
+        : controller.isSyncing
+        ? 'Syncing your ring…'
+        : controller.isConnected
+        ? 'Ring connected'
+        : 'Ring offline · reconnecting';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 6, 0, 10),
@@ -493,7 +499,11 @@ class _HomeAppBar extends ConsumerWidget {
                 const SizedBox(height: 2),
                 Text(
                   '• $status',
-                  style: VyanaType.caption.copyWith(color: t.green),
+                  style: VyanaType.caption.copyWith(
+                    color: hasRingContext && !controller.isConnected
+                        ? t.textMuted
+                        : t.green,
+                  ),
                 ),
               ],
             ),

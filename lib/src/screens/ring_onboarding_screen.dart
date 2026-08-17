@@ -479,8 +479,9 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
         _stepTitle('Wipe old ring data', t),
         const SizedBox(height: 10),
         _stepCaption(
-          'Erase any previous health data stored on the ring so Vyana starts '
-          'fresh from your first sync.',
+          'Optional: erase any previous health data stored on the ring so Vyana '
+          'starts fresh from your first sync. If this is a new ring, you can skip '
+          'this and keep whatever it already recorded.',
           t,
         ),
         const SizedBox(height: 24),
@@ -610,6 +611,14 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
                   else
                     _continueButton(t, "Let's Go!", _onFinish, busy: _finishBusy),
                   const SizedBox(height: 10),
+                  if (_page == 2 && !_wipeDone)
+                    TextButton(
+                      onPressed: _wipeBusy ? null : () => _goTo(3),
+                      child: Text(
+                        'Skip — keep existing data',
+                        style: VyanaType.label.copyWith(color: t.textSec),
+                      ),
+                    ),
                   if (_page > 0)
                     TextButton(
                       onPressed: () => _goTo(_page - 1),

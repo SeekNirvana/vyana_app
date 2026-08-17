@@ -31,6 +31,7 @@ class RingController extends ChangeNotifier {
   Timer? _ecgContactTimeout;
   Timer? _ecgSnapshotTicker;
   DateTime? _lastReconnectAttempt;
+  Duration _reconnectBackoff = _reconnectAttemptInterval;
   DateTime? _lastConnectionConfirmedAt;
   DateTime? _lastBatteryPoll;
   DateTime? _lastPeriodicSync;
@@ -202,6 +203,9 @@ class RingController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    if (Platform.isAndroid) {
+      FlutterForegroundTask.removeTaskDataCallback(_onForegroundTaskData);
+    }
     _connectionStateTimer?.cancel();
     _measurementTimeout?.cancel();
     _ecgPreparationTimer?.cancel();
@@ -211,11 +215,32 @@ class RingController extends ChangeNotifier {
     super.dispose();
   }
 
+  /// Heartbeat from the foreground-service isolate (Android). The service keeps
+  /// the process alive; on each tick we make sure the ring is connected and pull
+  /// fresh history so data lands even while the app is backgrounded.
+  void _onForegroundTaskData(Object data) {
+    if (_disposed || data != kRingForegroundSyncTick) return;
+    unawaited(_backgroundSyncTick());
+  }
+
+  Future<void> _backgroundSyncTick() async {
+    if (!_isReady) return;
+    if (!_isConnected) {
+      if (_pairedRing == null) return;
+      await reconnectSavedRing();
+      if (_disposed || !_isConnected) return;
+    }
+    await _syncDeviceData();
+  }
+
   /// Call when the app returns to the foreground.
   void onAppResumed() => unawaited(_refreshConnectionState());
 
   Future<void> initialize() async {
     try {
+      if (Platform.isAndroid) {
+        FlutterForegroundTask.addTaskDataCallback(_onForegroundTaskData);
+      }
       final pairedRing = await PranaRingStore.load();
       await _loadHealthMonitoringPrefs();
       await _loadPeriodicSyncIntervalPrefs();
@@ -351,6 +376,7 @@ class RingController extends ChangeNotifier {
       _isConnected = true;
       _isConnecting = false;
       _lastConnectionConfirmedAt = DateTime.now();
+      _resetReconnectBackoff();
       if (deviceInfo != null) {
         _selectedDevice = deviceInfo;
       }
@@ -517,6 +543,12 @@ class RingController extends ChangeNotifier {
     }
   }
 
+  /// Resets the reconnect backoff so the next drop retries promptly. Called
+  /// whenever a live connection is (re)established.
+  void _resetReconnectBackoff() {
+    _reconnectBackoff = _reconnectAttemptInterval;
+  }
+
   Future<bool> reconnectSavedRing({bool force = false}) async {
     final pairedRing = _pairedRing;
     if (!_isReady ||
@@ -529,45 +561,67 @@ class RingController extends ChangeNotifier {
 
     final now = DateTime.now();
     final previousAttempt = _lastReconnectAttempt;
-    if (!force &&
-        previousAttempt != null &&
-        now.difference(previousAttempt) < _reconnectAttemptInterval) {
+    // A user-driven attempt (force) always runs and resets the backoff so the
+    // next passive retry starts fresh. Passive attempts respect the growing
+    // backoff so we don't hammer the BLE stack while the ring is out of range.
+    if (force) {
+      _resetReconnectBackoff();
+    } else if (previousAttempt != null &&
+        now.difference(previousAttempt) < _reconnectBackoff) {
       return false;
     }
 
     _lastReconnectAttempt = now;
+    // Stay quiet on passive retries — surfacing "Checking paired ring" every
+    // cycle is noisy; only user-driven reconnects narrate progress.
     _set(() {
       _isAutoReconnecting = true;
-      _status = 'Checking paired PRANA ring';
+      if (force) _status = 'Checking paired PRANA ring';
     });
 
     try {
       if (await _restoreResponsiveSdkConnection()) {
+        _resetReconnectBackoff();
         return true;
       }
       final scanAccess = await _repo.ensureScanAccess();
       if (!scanAccess.granted) {
         if (_disposed) return false;
-        _set(() => _status = scanAccess.message);
+        if (force) _set(() => _status = scanAccess.message);
         return false;
       }
       final devices = await _repo.scanDevices(seconds: 6);
       final matchingDevice = pairedRing.matchingDevice(devices);
       if (matchingDevice == null) {
         if (_disposed) return false;
-        _set(() => _status = 'Paired PRANA ring not found by scan');
+        _growReconnectBackoff();
+        if (force) _set(() => _status = 'Paired PRANA ring not found by scan');
         return false;
       }
-      return connect(matchingDevice);
+      final connected = await connect(matchingDevice);
+      if (connected) {
+        _resetReconnectBackoff();
+      } else {
+        _growReconnectBackoff();
+      }
+      return connected;
     } on Object catch (error) {
       if (_disposed) return false;
-      _set(() => _status = 'Reconnect failed: $error');
+      _growReconnectBackoff();
+      if (force) _set(() => _status = 'Reconnect failed: $error');
       return false;
     } finally {
       if (!_disposed) {
         _set(() => _isAutoReconnecting = false);
       }
     }
+  }
+
+  /// Doubles the passive reconnect interval up to [_maxReconnectBackoff].
+  void _growReconnectBackoff() {
+    final next = _reconnectBackoff * 2;
+    _reconnectBackoff =
+        next > _maxReconnectBackoff ? _maxReconnectBackoff : next;
   }
 
   Future<bool> _restoreResponsiveSdkConnection() async {
@@ -1033,6 +1087,10 @@ class RingController extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_periodicSyncIntervalMinutesKey, clamped);
     _set(() => _periodicSyncIntervalMinutes = clamped);
+    // Keep the background heartbeat cadence aligned with the user's choice.
+    if (Platform.isAndroid) {
+      unawaited(RingForegroundService.setRepeatInterval(clamped));
+    }
   }
 
   Future<void> _persistHealthMonitoring(HealthMonitoringSettings settings) async {
@@ -1909,7 +1967,9 @@ class RingController extends ChangeNotifier {
     if (!Platform.isAndroid) return;
     if (_foregroundServiceEnabled && _isConnected) {
       unawaited(
-        RingForegroundService.start().then((_) => _updateForegroundNotification()),
+        RingForegroundService.start(
+          intervalMinutes: _periodicSyncIntervalMinutes,
+        ).then((_) => _updateForegroundNotification()),
       );
     } else {
       unawaited(RingForegroundService.stop());

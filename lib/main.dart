@@ -183,6 +183,11 @@ class _StorageUnavailableScreen extends StatelessWidget {
 const _ecgContactDetectionTimeout = Duration(seconds: 20);
 const _connectionStatePollInterval = Duration(seconds: 2);
 const _reconnectAttemptInterval = Duration(seconds: 5);
+// Upper bound for the exponential backoff between passive reconnect scans. The
+// PRANA SDK runs its own native auto-reconnect (isReconnectEnable: true), so the
+// Dart-side rescan is a fallback — we back off aggressively to save battery
+// while a ring is out of range instead of scanning every few seconds.
+const _maxReconnectBackoff = Duration(seconds: 90);
 const _connectionStateGracePeriod = Duration(seconds: 20);
 const _batteryPollInterval = Duration(seconds: 5);
 
