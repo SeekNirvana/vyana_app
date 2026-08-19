@@ -33,6 +33,8 @@ class HomeScreen extends ConsumerWidget {
           _WelcomeHero(dashboard: dashboard),
         const SizedBox(height: 10),
         _PracticeHero(moment: moment, dashboard: dashboard, state: state),
+        const SizedBox(height: 10),
+        const _PactHomeCard(),
         if (!hasRing) ...[
           const SizedBox(height: 22),
           AccessDeniedPanel(

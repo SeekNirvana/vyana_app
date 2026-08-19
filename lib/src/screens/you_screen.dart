@@ -318,6 +318,20 @@ class YouScreen extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 18),
+        const SectionHead(eyebrow: 'Commit', title: 'Pact'),
+        _SettingsGroup(
+          rows: [
+            _SettingsRow(
+              icon: 'target',
+              iconColor: t.gold,
+              label: 'Your Pacts',
+              trailing: Text('Preview',
+                  style: VyanaType.mono10.copyWith(color: t.gold)),
+              onTap: () => openPact(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
         const SectionHead(eyebrow: 'Chakra', title: 'Rewards'),
         _SettingsGroup(
           rows: [
