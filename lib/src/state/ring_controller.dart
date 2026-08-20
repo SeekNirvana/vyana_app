@@ -8,11 +8,19 @@ enum AllVitalsPhase { idle, reconnecting, running, syncing, done, failed }
 /// preserved. UI now reads it through [ringControllerProvider]; navigation and
 /// dialogs live in the widgets, not here.
 class RingController extends ChangeNotifier {
-  RingController({RingHistoryCacheService? historyCache})
-      : _historyCache = historyCache;
+  RingController({
+    RingHistoryCacheService? historyCache,
+    EcgRecordService? ecgRecords,
+  })  : _historyCache = historyCache,
+        _ecgRecords = ecgRecords;
 
   final RingRepository _repo = RingRepository();
   final RingHistoryCacheService? _historyCache;
+  final EcgRecordService? _ecgRecords;
+
+  /// True once the current ECG capture has been written to the vault, so we
+  /// persist a completed recording exactly once even if the result is re-read.
+  bool _ecgPersisted = false;
 
   SavedPranaRing? _pairedRing;
   bool _isReady = false;
@@ -1698,6 +1706,7 @@ class RingController extends ChangeNotifier {
     if (_ecgResult != null && _ecgResult!.isMeasurementSuccessful) {
       _set(() => _testStatus = 'ECG result ready');
       _publishMeasurementSnapshot();
+      unawaited(_persistEcgRecording());
       return;
     }
     if (!_ecgSuccessful) {
@@ -1730,9 +1739,19 @@ class RingController extends ChangeNotifier {
     }
     _readingEcgResult = false;
     _set(() {
-      if (result != null && result.isMeasurementSuccessful) {
-        _testStatus = 'ECG result ready';
-        _ecgResult = result;
+      if (result != null) {
+        // Surface whatever the SDK returned — even an undiagnosed (qrsType 0)
+        // or noisy (qrsType 14) read still carries a heart rate and the AF
+        // flag, and the raw samples are what a foundation model needs. Only
+        // overwrite a previously-successful diagnosis with a better one.
+        if (_ecgResult == null ||
+            !_ecgResult!.isMeasurementSuccessful ||
+            result.isMeasurementSuccessful) {
+          _ecgResult = result;
+        }
+        _testStatus = _ecgResult!.isMeasurementSuccessful
+            ? 'ECG result ready'
+            : 'Captured — signal too noisy to classify rhythm (saved)';
       } else if (_ecgResult == null) {
         // Only report failure if we never captured a good result; never wipe a
         // previously-successful one on a late re-read.
@@ -1740,6 +1759,29 @@ class RingController extends ChangeNotifier {
       }
     });
     _publishMeasurementSnapshot();
+    unawaited(_persistEcgRecording());
+  }
+
+  /// Write the finished capture (full raw + filtered samples + diagnosis) to the
+  /// local vault, exactly once per recording. Persists even when the rhythm is
+  /// noisy/undiagnosed — the samples are the point.
+  Future<void> _persistEcgRecording() async {
+    if (_ecgPersisted || !_ecgSuccessful) return;
+    final records = _ecgRecords;
+    if (records == null) return;
+    _ecgPersisted = true;
+    try {
+      final id = await records.save(
+        session: _currentEcgSessionSnapshot(),
+        result: _ecgResult,
+      );
+      if (id != null) {
+        debugPrint('ECG_RECORD saved locally ($id)');
+      }
+    } on Object catch (error) {
+      _ecgPersisted = false; // allow a retry on the next read
+      debugPrint('ECG_RECORD save failed: $error');
+    }
   }
 
   Future<void> _beginMeasurement(
@@ -1811,6 +1853,7 @@ class RingController extends ChangeNotifier {
     _ecgWaitingForContact = false;
     _ecgSdkStarted = false;
     _ecgSuccessful = false;
+    _ecgPersisted = false;
     _readingEcgResult = false;
     _ecgStartedAt = null;
     _ecgEndedAt = null;
@@ -2006,6 +2049,7 @@ class RingController extends ChangeNotifier {
 final ringControllerProvider = ChangeNotifierProvider<RingController>((ref) {
   final controller = RingController(
     historyCache: ref.watch(ringHistoryCacheServiceProvider),
+    ecgRecords: ref.watch(ecgRecordServiceProvider),
   );
   controller.initialize();
   ref.onDispose(controller.dispose);

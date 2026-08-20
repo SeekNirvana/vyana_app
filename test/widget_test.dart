@@ -559,7 +559,7 @@ void main() {
         'qrsType': 14,
         'afflag': false,
       }).interpretation,
-      'Failed or noisy measurement',
+      'Signal too noisy to classify',
     );
   });
 

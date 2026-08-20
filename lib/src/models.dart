@@ -383,7 +383,21 @@ class ParsedEcgResult {
   final int? respiratoryRate;
   final String interpretation;
 
+  /// A clean, classifiable rhythm diagnosis (used to decide whether to keep
+  /// polling for a better read — NOT whether to show anything).
   bool get isMeasurementSuccessful => qrsType != 0 && qrsType != 14;
+
+  /// The AI produced a rhythm classification (any code except "not-QRS").
+  bool get hasDiagnosis => qrsType != 0;
+
+  /// The AI judged the trace too noisy to classify.
+  bool get isNoisy => qrsType == 14;
+
+  /// Human label for the QRS/rhythm code (see ECGCodes.h).
+  String get qrsLabel => qrsTypeLabel(qrsType);
+
+  /// One-line plain-language description of the QRS/rhythm code.
+  String get qrsDescription => qrsTypeDescription(qrsType);
 
   String get summaryText {
     final rate = heartRate == null ? '-' : '$heartRate bpm';
@@ -411,12 +425,10 @@ String ecgInterpretation({
   if (afFlag) return 'Atrial fibrillation flag';
 
   switch (qrsType) {
+    case 0:
+      return 'No rhythm classification';
     case 14:
-      return 'Failed or noisy measurement';
-    case 5:
-      return 'Ventricular premature beat';
-    case 9:
-      return 'Atrial premature beat';
+      return 'Signal too noisy to classify';
     case 1:
       if (heartRate != null && heartRate <= 50) {
         return 'Suspected bradycardia';
@@ -427,9 +439,101 @@ String ecgInterpretation({
       if (hrv != null && hrv >= 125) {
         return 'Suspected sinus arrhythmia';
       }
-      return 'Normal ECG';
+      return 'Normal sinus rhythm';
     default:
-      return qrsType == 0 ? 'No ECG diagnosis' : 'QRS type $qrsType';
+      return qrsTypeLabel(qrsType);
+  }
+}
+
+/// Human-readable name for an MIT-BIH QRS/rhythm annotation code (ECGCodes.h).
+String qrsTypeLabel(int qrsType) {
+  switch (qrsType) {
+    case 0:
+      return 'No rhythm classification';
+    case 1:
+      return 'Normal beat';
+    case 2:
+      return 'Left bundle branch block';
+    case 3:
+      return 'Right bundle branch block';
+    case 4:
+      return 'Aberrated atrial premature beat';
+    case 5:
+      return 'Ventricular premature beat';
+    case 6:
+      return 'Fusion beat';
+    case 7:
+      return 'Nodal (junctional) premature beat';
+    case 8:
+      return 'Atrial premature beat';
+    case 9:
+      return 'Supraventricular premature beat';
+    case 10:
+      return 'Ventricular escape beat';
+    case 11:
+      return 'Nodal (junctional) escape beat';
+    case 12:
+      return 'Paced beat';
+    case 13:
+      return 'Unclassifiable beat';
+    case 14:
+      return 'Noisy signal';
+    case 32:
+      return 'Ventricular flutter/fibrillation onset';
+    case 34:
+      return 'Atrial escape beat';
+    case 35:
+      return 'Supraventricular escape beat';
+    case 41:
+      return 'R-on-T premature ventricular beat';
+    default:
+      return 'QRS type $qrsType';
+  }
+}
+
+/// One-line, non-alarming explanation of a QRS/rhythm code.
+String qrsTypeDescription(int qrsType) {
+  switch (qrsType) {
+    case 0:
+      return 'The algorithm could not settle on a rhythm type for this trace.';
+    case 1:
+      return 'Beats look regular and normally conducted.';
+    case 2:
+      return 'A conduction delay in the heart’s left pathway.';
+    case 3:
+      return 'A conduction delay in the heart’s right pathway.';
+    case 4:
+      return 'An early beat from the upper chambers with unusual conduction.';
+    case 5:
+      return 'An early beat originating from the lower chambers.';
+    case 6:
+      return 'A beat blending normal and ventricular activity.';
+    case 7:
+      return 'An early beat from the AV junction.';
+    case 8:
+      return 'An early beat from the upper chambers.';
+    case 9:
+      return 'An early beat from above the ventricles.';
+    case 10:
+      return 'A backup beat from the lower chambers.';
+    case 11:
+      return 'A backup beat from the AV junction.';
+    case 12:
+      return 'A beat triggered by a pacemaker.';
+    case 13:
+      return 'A beat the algorithm could not categorise.';
+    case 14:
+      return 'The trace was too noisy for a reliable rhythm read — samples saved for review.';
+    case 32:
+      return 'Possible ventricular flutter/fibrillation — seek medical attention if unwell.';
+    case 34:
+      return 'A backup beat from the upper chambers.';
+    case 35:
+      return 'A backup beat from above the ventricles.';
+    case 41:
+      return 'An early ventricular beat landing on the previous T-wave.';
+    default:
+      return 'Rhythm annotation code $qrsType from the on-device algorithm.';
   }
 }
 

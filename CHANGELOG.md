@@ -18,6 +18,12 @@
   is out of range; user-driven reconnects still retry immediately.
 - Home header shows live ring status: connected, syncing, or offline and
   reconnecting.
+- **ECG results & local history** — every 60-second recording (the full
+  ~15k-sample waveform + metrics) is now saved on-device and browsable from a new
+  ECG screen, ready for future A-Fib/V-Fib analysis. Post-ECG detail is richer: a
+  clear atrial-fibrillation banner, a plain-language QRS explanation, and extra
+  HRV-derived indices (stress, body load, vitality, autonomic balance, breathing)
+  shown in a tidy grid.
 
 ### Changed
 
@@ -25,6 +31,14 @@
   rows with current values; data wipe during onboarding is optional.
 - UI polish — icon badges, card gradients, icon colors, onboarding, and
   settings consistency; refreshed homescreen type and ring status indicator.
+
+### Fixed
+
+- **ECG "Result" showed nothing** — undiagnosed or noisy readings (including a
+  valid heart rate and the AF flag) were discarded; results now always surface
+  and persist.
+- **Stress history** — the Stress metric plotted only the latest value; it now
+  shows a full trend derived from HRV history, like every other vital.
 
 ## v1.0.4 — 2026-07-06
 

@@ -5378,6 +5378,1371 @@ class RingOrdersCompanion extends UpdateCompanion<RingOrderRow> {
   }
 }
 
+class $EcgRecordingsTable extends EcgRecordings
+    with TableInfo<$EcgRecordingsTable, EcgRecordingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $EcgRecordingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _capturedAtMeta = const VerificationMeta(
+    'capturedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> capturedAt = GeneratedColumn<DateTime>(
+    'captured_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sampleRateHzMeta = const VerificationMeta(
+    'sampleRateHz',
+  );
+  @override
+  late final GeneratedColumn<int> sampleRateHz = GeneratedColumn<int>(
+    'sample_rate_hz',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sampleCountMeta = const VerificationMeta(
+    'sampleCount',
+  );
+  @override
+  late final GeneratedColumn<int> sampleCount = GeneratedColumn<int>(
+    'sample_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _rawSamplesJsonMeta = const VerificationMeta(
+    'rawSamplesJson',
+  );
+  @override
+  late final GeneratedColumn<String> rawSamplesJson = GeneratedColumn<String>(
+    'raw_samples_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _filteredSamplesJsonMeta =
+      const VerificationMeta('filteredSamplesJson');
+  @override
+  late final GeneratedColumn<String> filteredSamplesJson =
+      GeneratedColumn<String>(
+        'filtered_samples_json',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _heartRateMeta = const VerificationMeta(
+    'heartRate',
+  );
+  @override
+  late final GeneratedColumn<int> heartRate = GeneratedColumn<int>(
+    'heart_rate',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _hrvMeta = const VerificationMeta('hrv');
+  @override
+  late final GeneratedColumn<double> hrv = GeneratedColumn<double>(
+    'hrv',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _rrMeta = const VerificationMeta('rr');
+  @override
+  late final GeneratedColumn<int> rr = GeneratedColumn<int>(
+    'rr',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _afFlagMeta = const VerificationMeta('afFlag');
+  @override
+  late final GeneratedColumn<bool> afFlag = GeneratedColumn<bool>(
+    'af_flag',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("af_flag" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _qrsTypeMeta = const VerificationMeta(
+    'qrsType',
+  );
+  @override
+  late final GeneratedColumn<int> qrsType = GeneratedColumn<int>(
+    'qrs_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _interpretationMeta = const VerificationMeta(
+    'interpretation',
+  );
+  @override
+  late final GeneratedColumn<String> interpretation = GeneratedColumn<String>(
+    'interpretation',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _heavyLoadMeta = const VerificationMeta(
+    'heavyLoad',
+  );
+  @override
+  late final GeneratedColumn<double> heavyLoad = GeneratedColumn<double>(
+    'heavy_load',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _pressureMeta = const VerificationMeta(
+    'pressure',
+  );
+  @override
+  late final GeneratedColumn<double> pressure = GeneratedColumn<double>(
+    'pressure',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _bodyMeta = const VerificationMeta('body');
+  @override
+  late final GeneratedColumn<double> body = GeneratedColumn<double>(
+    'body',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _hrvNormMeta = const VerificationMeta(
+    'hrvNorm',
+  );
+  @override
+  late final GeneratedColumn<double> hrvNorm = GeneratedColumn<double>(
+    'hrv_norm',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sympatheticActivityIndexMeta =
+      const VerificationMeta('sympatheticActivityIndex');
+  @override
+  late final GeneratedColumn<double> sympatheticActivityIndex =
+      GeneratedColumn<double>(
+        'sympathetic_activity_index',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _respiratoryRateMeta = const VerificationMeta(
+    'respiratoryRate',
+  );
+  @override
+  late final GeneratedColumn<int> respiratoryRate = GeneratedColumn<int>(
+    'respiratory_rate',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _bloodPressureMeta = const VerificationMeta(
+    'bloodPressure',
+  );
+  @override
+  late final GeneratedColumn<String> bloodPressure = GeneratedColumn<String>(
+    'blood_pressure',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _contactQualityMeta = const VerificationMeta(
+    'contactQuality',
+  );
+  @override
+  late final GeneratedColumn<String> contactQuality = GeneratedColumn<String>(
+    'contact_quality',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _endReasonMeta = const VerificationMeta(
+    'endReason',
+  );
+  @override
+  late final GeneratedColumn<String> endReason = GeneratedColumn<String>(
+    'end_reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _aiAnalysisJsonMeta = const VerificationMeta(
+    'aiAnalysisJson',
+  );
+  @override
+  late final GeneratedColumn<String> aiAnalysisJson = GeneratedColumn<String>(
+    'ai_analysis_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    capturedAt,
+    durationMs,
+    sampleRateHz,
+    sampleCount,
+    rawSamplesJson,
+    filteredSamplesJson,
+    heartRate,
+    hrv,
+    rr,
+    afFlag,
+    qrsType,
+    interpretation,
+    heavyLoad,
+    pressure,
+    body,
+    hrvNorm,
+    sympatheticActivityIndex,
+    respiratoryRate,
+    bloodPressure,
+    contactQuality,
+    endReason,
+    aiAnalysisJson,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'ecg_recordings';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<EcgRecordingRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('captured_at')) {
+      context.handle(
+        _capturedAtMeta,
+        capturedAt.isAcceptableOrUnknown(data['captured_at']!, _capturedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_capturedAtMeta);
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_durationMsMeta);
+    }
+    if (data.containsKey('sample_rate_hz')) {
+      context.handle(
+        _sampleRateHzMeta,
+        sampleRateHz.isAcceptableOrUnknown(
+          data['sample_rate_hz']!,
+          _sampleRateHzMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_sampleRateHzMeta);
+    }
+    if (data.containsKey('sample_count')) {
+      context.handle(
+        _sampleCountMeta,
+        sampleCount.isAcceptableOrUnknown(
+          data['sample_count']!,
+          _sampleCountMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_sampleCountMeta);
+    }
+    if (data.containsKey('raw_samples_json')) {
+      context.handle(
+        _rawSamplesJsonMeta,
+        rawSamplesJson.isAcceptableOrUnknown(
+          data['raw_samples_json']!,
+          _rawSamplesJsonMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_rawSamplesJsonMeta);
+    }
+    if (data.containsKey('filtered_samples_json')) {
+      context.handle(
+        _filteredSamplesJsonMeta,
+        filteredSamplesJson.isAcceptableOrUnknown(
+          data['filtered_samples_json']!,
+          _filteredSamplesJsonMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_filteredSamplesJsonMeta);
+    }
+    if (data.containsKey('heart_rate')) {
+      context.handle(
+        _heartRateMeta,
+        heartRate.isAcceptableOrUnknown(data['heart_rate']!, _heartRateMeta),
+      );
+    }
+    if (data.containsKey('hrv')) {
+      context.handle(
+        _hrvMeta,
+        hrv.isAcceptableOrUnknown(data['hrv']!, _hrvMeta),
+      );
+    }
+    if (data.containsKey('rr')) {
+      context.handle(_rrMeta, rr.isAcceptableOrUnknown(data['rr']!, _rrMeta));
+    }
+    if (data.containsKey('af_flag')) {
+      context.handle(
+        _afFlagMeta,
+        afFlag.isAcceptableOrUnknown(data['af_flag']!, _afFlagMeta),
+      );
+    }
+    if (data.containsKey('qrs_type')) {
+      context.handle(
+        _qrsTypeMeta,
+        qrsType.isAcceptableOrUnknown(data['qrs_type']!, _qrsTypeMeta),
+      );
+    }
+    if (data.containsKey('interpretation')) {
+      context.handle(
+        _interpretationMeta,
+        interpretation.isAcceptableOrUnknown(
+          data['interpretation']!,
+          _interpretationMeta,
+        ),
+      );
+    }
+    if (data.containsKey('heavy_load')) {
+      context.handle(
+        _heavyLoadMeta,
+        heavyLoad.isAcceptableOrUnknown(data['heavy_load']!, _heavyLoadMeta),
+      );
+    }
+    if (data.containsKey('pressure')) {
+      context.handle(
+        _pressureMeta,
+        pressure.isAcceptableOrUnknown(data['pressure']!, _pressureMeta),
+      );
+    }
+    if (data.containsKey('body')) {
+      context.handle(
+        _bodyMeta,
+        body.isAcceptableOrUnknown(data['body']!, _bodyMeta),
+      );
+    }
+    if (data.containsKey('hrv_norm')) {
+      context.handle(
+        _hrvNormMeta,
+        hrvNorm.isAcceptableOrUnknown(data['hrv_norm']!, _hrvNormMeta),
+      );
+    }
+    if (data.containsKey('sympathetic_activity_index')) {
+      context.handle(
+        _sympatheticActivityIndexMeta,
+        sympatheticActivityIndex.isAcceptableOrUnknown(
+          data['sympathetic_activity_index']!,
+          _sympatheticActivityIndexMeta,
+        ),
+      );
+    }
+    if (data.containsKey('respiratory_rate')) {
+      context.handle(
+        _respiratoryRateMeta,
+        respiratoryRate.isAcceptableOrUnknown(
+          data['respiratory_rate']!,
+          _respiratoryRateMeta,
+        ),
+      );
+    }
+    if (data.containsKey('blood_pressure')) {
+      context.handle(
+        _bloodPressureMeta,
+        bloodPressure.isAcceptableOrUnknown(
+          data['blood_pressure']!,
+          _bloodPressureMeta,
+        ),
+      );
+    }
+    if (data.containsKey('contact_quality')) {
+      context.handle(
+        _contactQualityMeta,
+        contactQuality.isAcceptableOrUnknown(
+          data['contact_quality']!,
+          _contactQualityMeta,
+        ),
+      );
+    }
+    if (data.containsKey('end_reason')) {
+      context.handle(
+        _endReasonMeta,
+        endReason.isAcceptableOrUnknown(data['end_reason']!, _endReasonMeta),
+      );
+    }
+    if (data.containsKey('ai_analysis_json')) {
+      context.handle(
+        _aiAnalysisJsonMeta,
+        aiAnalysisJson.isAcceptableOrUnknown(
+          data['ai_analysis_json']!,
+          _aiAnalysisJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  EcgRecordingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return EcgRecordingRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      capturedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}captured_at'],
+      )!,
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      )!,
+      sampleRateHz: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sample_rate_hz'],
+      )!,
+      sampleCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sample_count'],
+      )!,
+      rawSamplesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}raw_samples_json'],
+      )!,
+      filteredSamplesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}filtered_samples_json'],
+      )!,
+      heartRate: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}heart_rate'],
+      ),
+      hrv: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}hrv'],
+      ),
+      rr: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rr'],
+      ),
+      afFlag: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}af_flag'],
+      )!,
+      qrsType: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}qrs_type'],
+      )!,
+      interpretation: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}interpretation'],
+      ),
+      heavyLoad: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}heavy_load'],
+      ),
+      pressure: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}pressure'],
+      ),
+      body: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}body'],
+      ),
+      hrvNorm: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}hrv_norm'],
+      ),
+      sympatheticActivityIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}sympathetic_activity_index'],
+      ),
+      respiratoryRate: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}respiratory_rate'],
+      ),
+      bloodPressure: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}blood_pressure'],
+      ),
+      contactQuality: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}contact_quality'],
+      ),
+      endReason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}end_reason'],
+      ),
+      aiAnalysisJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ai_analysis_json'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $EcgRecordingsTable createAlias(String alias) {
+    return $EcgRecordingsTable(attachedDatabase, alias);
+  }
+}
+
+class EcgRecordingRow extends DataClass implements Insertable<EcgRecordingRow> {
+  final String id;
+  final DateTime capturedAt;
+  final int durationMs;
+  final int sampleRateHz;
+  final int sampleCount;
+
+  /// Full-resolution sample arrays, JSON-encoded (`[12,-4,...]`).
+  final String rawSamplesJson;
+  final String filteredSamplesJson;
+  final int? heartRate;
+  final double? hrv;
+  final int? rr;
+  final bool afFlag;
+
+  /// MIT-BIH annotation code from the SDK (see ECGCodes.h).
+  final int qrsType;
+  final String? interpretation;
+  final double? heavyLoad;
+  final double? pressure;
+  final double? body;
+  final double? hrvNorm;
+  final double? sympatheticActivityIndex;
+  final int? respiratoryRate;
+  final String? bloodPressure;
+
+  /// `good` | `lost` | `unknown` — contact state at completion.
+  final String? contactQuality;
+  final String? endReason;
+
+  /// Reserved for a future AF/V-Fib foundation-model verdict.
+  final String? aiAnalysisJson;
+  final DateTime createdAt;
+  const EcgRecordingRow({
+    required this.id,
+    required this.capturedAt,
+    required this.durationMs,
+    required this.sampleRateHz,
+    required this.sampleCount,
+    required this.rawSamplesJson,
+    required this.filteredSamplesJson,
+    this.heartRate,
+    this.hrv,
+    this.rr,
+    required this.afFlag,
+    required this.qrsType,
+    this.interpretation,
+    this.heavyLoad,
+    this.pressure,
+    this.body,
+    this.hrvNorm,
+    this.sympatheticActivityIndex,
+    this.respiratoryRate,
+    this.bloodPressure,
+    this.contactQuality,
+    this.endReason,
+    this.aiAnalysisJson,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['captured_at'] = Variable<DateTime>(capturedAt);
+    map['duration_ms'] = Variable<int>(durationMs);
+    map['sample_rate_hz'] = Variable<int>(sampleRateHz);
+    map['sample_count'] = Variable<int>(sampleCount);
+    map['raw_samples_json'] = Variable<String>(rawSamplesJson);
+    map['filtered_samples_json'] = Variable<String>(filteredSamplesJson);
+    if (!nullToAbsent || heartRate != null) {
+      map['heart_rate'] = Variable<int>(heartRate);
+    }
+    if (!nullToAbsent || hrv != null) {
+      map['hrv'] = Variable<double>(hrv);
+    }
+    if (!nullToAbsent || rr != null) {
+      map['rr'] = Variable<int>(rr);
+    }
+    map['af_flag'] = Variable<bool>(afFlag);
+    map['qrs_type'] = Variable<int>(qrsType);
+    if (!nullToAbsent || interpretation != null) {
+      map['interpretation'] = Variable<String>(interpretation);
+    }
+    if (!nullToAbsent || heavyLoad != null) {
+      map['heavy_load'] = Variable<double>(heavyLoad);
+    }
+    if (!nullToAbsent || pressure != null) {
+      map['pressure'] = Variable<double>(pressure);
+    }
+    if (!nullToAbsent || body != null) {
+      map['body'] = Variable<double>(body);
+    }
+    if (!nullToAbsent || hrvNorm != null) {
+      map['hrv_norm'] = Variable<double>(hrvNorm);
+    }
+    if (!nullToAbsent || sympatheticActivityIndex != null) {
+      map['sympathetic_activity_index'] = Variable<double>(
+        sympatheticActivityIndex,
+      );
+    }
+    if (!nullToAbsent || respiratoryRate != null) {
+      map['respiratory_rate'] = Variable<int>(respiratoryRate);
+    }
+    if (!nullToAbsent || bloodPressure != null) {
+      map['blood_pressure'] = Variable<String>(bloodPressure);
+    }
+    if (!nullToAbsent || contactQuality != null) {
+      map['contact_quality'] = Variable<String>(contactQuality);
+    }
+    if (!nullToAbsent || endReason != null) {
+      map['end_reason'] = Variable<String>(endReason);
+    }
+    if (!nullToAbsent || aiAnalysisJson != null) {
+      map['ai_analysis_json'] = Variable<String>(aiAnalysisJson);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  EcgRecordingsCompanion toCompanion(bool nullToAbsent) {
+    return EcgRecordingsCompanion(
+      id: Value(id),
+      capturedAt: Value(capturedAt),
+      durationMs: Value(durationMs),
+      sampleRateHz: Value(sampleRateHz),
+      sampleCount: Value(sampleCount),
+      rawSamplesJson: Value(rawSamplesJson),
+      filteredSamplesJson: Value(filteredSamplesJson),
+      heartRate: heartRate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(heartRate),
+      hrv: hrv == null && nullToAbsent ? const Value.absent() : Value(hrv),
+      rr: rr == null && nullToAbsent ? const Value.absent() : Value(rr),
+      afFlag: Value(afFlag),
+      qrsType: Value(qrsType),
+      interpretation: interpretation == null && nullToAbsent
+          ? const Value.absent()
+          : Value(interpretation),
+      heavyLoad: heavyLoad == null && nullToAbsent
+          ? const Value.absent()
+          : Value(heavyLoad),
+      pressure: pressure == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pressure),
+      body: body == null && nullToAbsent ? const Value.absent() : Value(body),
+      hrvNorm: hrvNorm == null && nullToAbsent
+          ? const Value.absent()
+          : Value(hrvNorm),
+      sympatheticActivityIndex: sympatheticActivityIndex == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sympatheticActivityIndex),
+      respiratoryRate: respiratoryRate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(respiratoryRate),
+      bloodPressure: bloodPressure == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bloodPressure),
+      contactQuality: contactQuality == null && nullToAbsent
+          ? const Value.absent()
+          : Value(contactQuality),
+      endReason: endReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(endReason),
+      aiAnalysisJson: aiAnalysisJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(aiAnalysisJson),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory EcgRecordingRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return EcgRecordingRow(
+      id: serializer.fromJson<String>(json['id']),
+      capturedAt: serializer.fromJson<DateTime>(json['capturedAt']),
+      durationMs: serializer.fromJson<int>(json['durationMs']),
+      sampleRateHz: serializer.fromJson<int>(json['sampleRateHz']),
+      sampleCount: serializer.fromJson<int>(json['sampleCount']),
+      rawSamplesJson: serializer.fromJson<String>(json['rawSamplesJson']),
+      filteredSamplesJson: serializer.fromJson<String>(
+        json['filteredSamplesJson'],
+      ),
+      heartRate: serializer.fromJson<int?>(json['heartRate']),
+      hrv: serializer.fromJson<double?>(json['hrv']),
+      rr: serializer.fromJson<int?>(json['rr']),
+      afFlag: serializer.fromJson<bool>(json['afFlag']),
+      qrsType: serializer.fromJson<int>(json['qrsType']),
+      interpretation: serializer.fromJson<String?>(json['interpretation']),
+      heavyLoad: serializer.fromJson<double?>(json['heavyLoad']),
+      pressure: serializer.fromJson<double?>(json['pressure']),
+      body: serializer.fromJson<double?>(json['body']),
+      hrvNorm: serializer.fromJson<double?>(json['hrvNorm']),
+      sympatheticActivityIndex: serializer.fromJson<double?>(
+        json['sympatheticActivityIndex'],
+      ),
+      respiratoryRate: serializer.fromJson<int?>(json['respiratoryRate']),
+      bloodPressure: serializer.fromJson<String?>(json['bloodPressure']),
+      contactQuality: serializer.fromJson<String?>(json['contactQuality']),
+      endReason: serializer.fromJson<String?>(json['endReason']),
+      aiAnalysisJson: serializer.fromJson<String?>(json['aiAnalysisJson']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'capturedAt': serializer.toJson<DateTime>(capturedAt),
+      'durationMs': serializer.toJson<int>(durationMs),
+      'sampleRateHz': serializer.toJson<int>(sampleRateHz),
+      'sampleCount': serializer.toJson<int>(sampleCount),
+      'rawSamplesJson': serializer.toJson<String>(rawSamplesJson),
+      'filteredSamplesJson': serializer.toJson<String>(filteredSamplesJson),
+      'heartRate': serializer.toJson<int?>(heartRate),
+      'hrv': serializer.toJson<double?>(hrv),
+      'rr': serializer.toJson<int?>(rr),
+      'afFlag': serializer.toJson<bool>(afFlag),
+      'qrsType': serializer.toJson<int>(qrsType),
+      'interpretation': serializer.toJson<String?>(interpretation),
+      'heavyLoad': serializer.toJson<double?>(heavyLoad),
+      'pressure': serializer.toJson<double?>(pressure),
+      'body': serializer.toJson<double?>(body),
+      'hrvNorm': serializer.toJson<double?>(hrvNorm),
+      'sympatheticActivityIndex': serializer.toJson<double?>(
+        sympatheticActivityIndex,
+      ),
+      'respiratoryRate': serializer.toJson<int?>(respiratoryRate),
+      'bloodPressure': serializer.toJson<String?>(bloodPressure),
+      'contactQuality': serializer.toJson<String?>(contactQuality),
+      'endReason': serializer.toJson<String?>(endReason),
+      'aiAnalysisJson': serializer.toJson<String?>(aiAnalysisJson),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  EcgRecordingRow copyWith({
+    String? id,
+    DateTime? capturedAt,
+    int? durationMs,
+    int? sampleRateHz,
+    int? sampleCount,
+    String? rawSamplesJson,
+    String? filteredSamplesJson,
+    Value<int?> heartRate = const Value.absent(),
+    Value<double?> hrv = const Value.absent(),
+    Value<int?> rr = const Value.absent(),
+    bool? afFlag,
+    int? qrsType,
+    Value<String?> interpretation = const Value.absent(),
+    Value<double?> heavyLoad = const Value.absent(),
+    Value<double?> pressure = const Value.absent(),
+    Value<double?> body = const Value.absent(),
+    Value<double?> hrvNorm = const Value.absent(),
+    Value<double?> sympatheticActivityIndex = const Value.absent(),
+    Value<int?> respiratoryRate = const Value.absent(),
+    Value<String?> bloodPressure = const Value.absent(),
+    Value<String?> contactQuality = const Value.absent(),
+    Value<String?> endReason = const Value.absent(),
+    Value<String?> aiAnalysisJson = const Value.absent(),
+    DateTime? createdAt,
+  }) => EcgRecordingRow(
+    id: id ?? this.id,
+    capturedAt: capturedAt ?? this.capturedAt,
+    durationMs: durationMs ?? this.durationMs,
+    sampleRateHz: sampleRateHz ?? this.sampleRateHz,
+    sampleCount: sampleCount ?? this.sampleCount,
+    rawSamplesJson: rawSamplesJson ?? this.rawSamplesJson,
+    filteredSamplesJson: filteredSamplesJson ?? this.filteredSamplesJson,
+    heartRate: heartRate.present ? heartRate.value : this.heartRate,
+    hrv: hrv.present ? hrv.value : this.hrv,
+    rr: rr.present ? rr.value : this.rr,
+    afFlag: afFlag ?? this.afFlag,
+    qrsType: qrsType ?? this.qrsType,
+    interpretation: interpretation.present
+        ? interpretation.value
+        : this.interpretation,
+    heavyLoad: heavyLoad.present ? heavyLoad.value : this.heavyLoad,
+    pressure: pressure.present ? pressure.value : this.pressure,
+    body: body.present ? body.value : this.body,
+    hrvNorm: hrvNorm.present ? hrvNorm.value : this.hrvNorm,
+    sympatheticActivityIndex: sympatheticActivityIndex.present
+        ? sympatheticActivityIndex.value
+        : this.sympatheticActivityIndex,
+    respiratoryRate: respiratoryRate.present
+        ? respiratoryRate.value
+        : this.respiratoryRate,
+    bloodPressure: bloodPressure.present
+        ? bloodPressure.value
+        : this.bloodPressure,
+    contactQuality: contactQuality.present
+        ? contactQuality.value
+        : this.contactQuality,
+    endReason: endReason.present ? endReason.value : this.endReason,
+    aiAnalysisJson: aiAnalysisJson.present
+        ? aiAnalysisJson.value
+        : this.aiAnalysisJson,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  EcgRecordingRow copyWithCompanion(EcgRecordingsCompanion data) {
+    return EcgRecordingRow(
+      id: data.id.present ? data.id.value : this.id,
+      capturedAt: data.capturedAt.present
+          ? data.capturedAt.value
+          : this.capturedAt,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      sampleRateHz: data.sampleRateHz.present
+          ? data.sampleRateHz.value
+          : this.sampleRateHz,
+      sampleCount: data.sampleCount.present
+          ? data.sampleCount.value
+          : this.sampleCount,
+      rawSamplesJson: data.rawSamplesJson.present
+          ? data.rawSamplesJson.value
+          : this.rawSamplesJson,
+      filteredSamplesJson: data.filteredSamplesJson.present
+          ? data.filteredSamplesJson.value
+          : this.filteredSamplesJson,
+      heartRate: data.heartRate.present ? data.heartRate.value : this.heartRate,
+      hrv: data.hrv.present ? data.hrv.value : this.hrv,
+      rr: data.rr.present ? data.rr.value : this.rr,
+      afFlag: data.afFlag.present ? data.afFlag.value : this.afFlag,
+      qrsType: data.qrsType.present ? data.qrsType.value : this.qrsType,
+      interpretation: data.interpretation.present
+          ? data.interpretation.value
+          : this.interpretation,
+      heavyLoad: data.heavyLoad.present ? data.heavyLoad.value : this.heavyLoad,
+      pressure: data.pressure.present ? data.pressure.value : this.pressure,
+      body: data.body.present ? data.body.value : this.body,
+      hrvNorm: data.hrvNorm.present ? data.hrvNorm.value : this.hrvNorm,
+      sympatheticActivityIndex: data.sympatheticActivityIndex.present
+          ? data.sympatheticActivityIndex.value
+          : this.sympatheticActivityIndex,
+      respiratoryRate: data.respiratoryRate.present
+          ? data.respiratoryRate.value
+          : this.respiratoryRate,
+      bloodPressure: data.bloodPressure.present
+          ? data.bloodPressure.value
+          : this.bloodPressure,
+      contactQuality: data.contactQuality.present
+          ? data.contactQuality.value
+          : this.contactQuality,
+      endReason: data.endReason.present ? data.endReason.value : this.endReason,
+      aiAnalysisJson: data.aiAnalysisJson.present
+          ? data.aiAnalysisJson.value
+          : this.aiAnalysisJson,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('EcgRecordingRow(')
+          ..write('id: $id, ')
+          ..write('capturedAt: $capturedAt, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('sampleRateHz: $sampleRateHz, ')
+          ..write('sampleCount: $sampleCount, ')
+          ..write('rawSamplesJson: $rawSamplesJson, ')
+          ..write('filteredSamplesJson: $filteredSamplesJson, ')
+          ..write('heartRate: $heartRate, ')
+          ..write('hrv: $hrv, ')
+          ..write('rr: $rr, ')
+          ..write('afFlag: $afFlag, ')
+          ..write('qrsType: $qrsType, ')
+          ..write('interpretation: $interpretation, ')
+          ..write('heavyLoad: $heavyLoad, ')
+          ..write('pressure: $pressure, ')
+          ..write('body: $body, ')
+          ..write('hrvNorm: $hrvNorm, ')
+          ..write('sympatheticActivityIndex: $sympatheticActivityIndex, ')
+          ..write('respiratoryRate: $respiratoryRate, ')
+          ..write('bloodPressure: $bloodPressure, ')
+          ..write('contactQuality: $contactQuality, ')
+          ..write('endReason: $endReason, ')
+          ..write('aiAnalysisJson: $aiAnalysisJson, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hashAll([
+    id,
+    capturedAt,
+    durationMs,
+    sampleRateHz,
+    sampleCount,
+    rawSamplesJson,
+    filteredSamplesJson,
+    heartRate,
+    hrv,
+    rr,
+    afFlag,
+    qrsType,
+    interpretation,
+    heavyLoad,
+    pressure,
+    body,
+    hrvNorm,
+    sympatheticActivityIndex,
+    respiratoryRate,
+    bloodPressure,
+    contactQuality,
+    endReason,
+    aiAnalysisJson,
+    createdAt,
+  ]);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is EcgRecordingRow &&
+          other.id == this.id &&
+          other.capturedAt == this.capturedAt &&
+          other.durationMs == this.durationMs &&
+          other.sampleRateHz == this.sampleRateHz &&
+          other.sampleCount == this.sampleCount &&
+          other.rawSamplesJson == this.rawSamplesJson &&
+          other.filteredSamplesJson == this.filteredSamplesJson &&
+          other.heartRate == this.heartRate &&
+          other.hrv == this.hrv &&
+          other.rr == this.rr &&
+          other.afFlag == this.afFlag &&
+          other.qrsType == this.qrsType &&
+          other.interpretation == this.interpretation &&
+          other.heavyLoad == this.heavyLoad &&
+          other.pressure == this.pressure &&
+          other.body == this.body &&
+          other.hrvNorm == this.hrvNorm &&
+          other.sympatheticActivityIndex == this.sympatheticActivityIndex &&
+          other.respiratoryRate == this.respiratoryRate &&
+          other.bloodPressure == this.bloodPressure &&
+          other.contactQuality == this.contactQuality &&
+          other.endReason == this.endReason &&
+          other.aiAnalysisJson == this.aiAnalysisJson &&
+          other.createdAt == this.createdAt);
+}
+
+class EcgRecordingsCompanion extends UpdateCompanion<EcgRecordingRow> {
+  final Value<String> id;
+  final Value<DateTime> capturedAt;
+  final Value<int> durationMs;
+  final Value<int> sampleRateHz;
+  final Value<int> sampleCount;
+  final Value<String> rawSamplesJson;
+  final Value<String> filteredSamplesJson;
+  final Value<int?> heartRate;
+  final Value<double?> hrv;
+  final Value<int?> rr;
+  final Value<bool> afFlag;
+  final Value<int> qrsType;
+  final Value<String?> interpretation;
+  final Value<double?> heavyLoad;
+  final Value<double?> pressure;
+  final Value<double?> body;
+  final Value<double?> hrvNorm;
+  final Value<double?> sympatheticActivityIndex;
+  final Value<int?> respiratoryRate;
+  final Value<String?> bloodPressure;
+  final Value<String?> contactQuality;
+  final Value<String?> endReason;
+  final Value<String?> aiAnalysisJson;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const EcgRecordingsCompanion({
+    this.id = const Value.absent(),
+    this.capturedAt = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.sampleRateHz = const Value.absent(),
+    this.sampleCount = const Value.absent(),
+    this.rawSamplesJson = const Value.absent(),
+    this.filteredSamplesJson = const Value.absent(),
+    this.heartRate = const Value.absent(),
+    this.hrv = const Value.absent(),
+    this.rr = const Value.absent(),
+    this.afFlag = const Value.absent(),
+    this.qrsType = const Value.absent(),
+    this.interpretation = const Value.absent(),
+    this.heavyLoad = const Value.absent(),
+    this.pressure = const Value.absent(),
+    this.body = const Value.absent(),
+    this.hrvNorm = const Value.absent(),
+    this.sympatheticActivityIndex = const Value.absent(),
+    this.respiratoryRate = const Value.absent(),
+    this.bloodPressure = const Value.absent(),
+    this.contactQuality = const Value.absent(),
+    this.endReason = const Value.absent(),
+    this.aiAnalysisJson = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  EcgRecordingsCompanion.insert({
+    required String id,
+    required DateTime capturedAt,
+    required int durationMs,
+    required int sampleRateHz,
+    required int sampleCount,
+    required String rawSamplesJson,
+    required String filteredSamplesJson,
+    this.heartRate = const Value.absent(),
+    this.hrv = const Value.absent(),
+    this.rr = const Value.absent(),
+    this.afFlag = const Value.absent(),
+    this.qrsType = const Value.absent(),
+    this.interpretation = const Value.absent(),
+    this.heavyLoad = const Value.absent(),
+    this.pressure = const Value.absent(),
+    this.body = const Value.absent(),
+    this.hrvNorm = const Value.absent(),
+    this.sympatheticActivityIndex = const Value.absent(),
+    this.respiratoryRate = const Value.absent(),
+    this.bloodPressure = const Value.absent(),
+    this.contactQuality = const Value.absent(),
+    this.endReason = const Value.absent(),
+    this.aiAnalysisJson = const Value.absent(),
+    required DateTime createdAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       capturedAt = Value(capturedAt),
+       durationMs = Value(durationMs),
+       sampleRateHz = Value(sampleRateHz),
+       sampleCount = Value(sampleCount),
+       rawSamplesJson = Value(rawSamplesJson),
+       filteredSamplesJson = Value(filteredSamplesJson),
+       createdAt = Value(createdAt);
+  static Insertable<EcgRecordingRow> custom({
+    Expression<String>? id,
+    Expression<DateTime>? capturedAt,
+    Expression<int>? durationMs,
+    Expression<int>? sampleRateHz,
+    Expression<int>? sampleCount,
+    Expression<String>? rawSamplesJson,
+    Expression<String>? filteredSamplesJson,
+    Expression<int>? heartRate,
+    Expression<double>? hrv,
+    Expression<int>? rr,
+    Expression<bool>? afFlag,
+    Expression<int>? qrsType,
+    Expression<String>? interpretation,
+    Expression<double>? heavyLoad,
+    Expression<double>? pressure,
+    Expression<double>? body,
+    Expression<double>? hrvNorm,
+    Expression<double>? sympatheticActivityIndex,
+    Expression<int>? respiratoryRate,
+    Expression<String>? bloodPressure,
+    Expression<String>? contactQuality,
+    Expression<String>? endReason,
+    Expression<String>? aiAnalysisJson,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (capturedAt != null) 'captured_at': capturedAt,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (sampleRateHz != null) 'sample_rate_hz': sampleRateHz,
+      if (sampleCount != null) 'sample_count': sampleCount,
+      if (rawSamplesJson != null) 'raw_samples_json': rawSamplesJson,
+      if (filteredSamplesJson != null)
+        'filtered_samples_json': filteredSamplesJson,
+      if (heartRate != null) 'heart_rate': heartRate,
+      if (hrv != null) 'hrv': hrv,
+      if (rr != null) 'rr': rr,
+      if (afFlag != null) 'af_flag': afFlag,
+      if (qrsType != null) 'qrs_type': qrsType,
+      if (interpretation != null) 'interpretation': interpretation,
+      if (heavyLoad != null) 'heavy_load': heavyLoad,
+      if (pressure != null) 'pressure': pressure,
+      if (body != null) 'body': body,
+      if (hrvNorm != null) 'hrv_norm': hrvNorm,
+      if (sympatheticActivityIndex != null)
+        'sympathetic_activity_index': sympatheticActivityIndex,
+      if (respiratoryRate != null) 'respiratory_rate': respiratoryRate,
+      if (bloodPressure != null) 'blood_pressure': bloodPressure,
+      if (contactQuality != null) 'contact_quality': contactQuality,
+      if (endReason != null) 'end_reason': endReason,
+      if (aiAnalysisJson != null) 'ai_analysis_json': aiAnalysisJson,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  EcgRecordingsCompanion copyWith({
+    Value<String>? id,
+    Value<DateTime>? capturedAt,
+    Value<int>? durationMs,
+    Value<int>? sampleRateHz,
+    Value<int>? sampleCount,
+    Value<String>? rawSamplesJson,
+    Value<String>? filteredSamplesJson,
+    Value<int?>? heartRate,
+    Value<double?>? hrv,
+    Value<int?>? rr,
+    Value<bool>? afFlag,
+    Value<int>? qrsType,
+    Value<String?>? interpretation,
+    Value<double?>? heavyLoad,
+    Value<double?>? pressure,
+    Value<double?>? body,
+    Value<double?>? hrvNorm,
+    Value<double?>? sympatheticActivityIndex,
+    Value<int?>? respiratoryRate,
+    Value<String?>? bloodPressure,
+    Value<String?>? contactQuality,
+    Value<String?>? endReason,
+    Value<String?>? aiAnalysisJson,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return EcgRecordingsCompanion(
+      id: id ?? this.id,
+      capturedAt: capturedAt ?? this.capturedAt,
+      durationMs: durationMs ?? this.durationMs,
+      sampleRateHz: sampleRateHz ?? this.sampleRateHz,
+      sampleCount: sampleCount ?? this.sampleCount,
+      rawSamplesJson: rawSamplesJson ?? this.rawSamplesJson,
+      filteredSamplesJson: filteredSamplesJson ?? this.filteredSamplesJson,
+      heartRate: heartRate ?? this.heartRate,
+      hrv: hrv ?? this.hrv,
+      rr: rr ?? this.rr,
+      afFlag: afFlag ?? this.afFlag,
+      qrsType: qrsType ?? this.qrsType,
+      interpretation: interpretation ?? this.interpretation,
+      heavyLoad: heavyLoad ?? this.heavyLoad,
+      pressure: pressure ?? this.pressure,
+      body: body ?? this.body,
+      hrvNorm: hrvNorm ?? this.hrvNorm,
+      sympatheticActivityIndex:
+          sympatheticActivityIndex ?? this.sympatheticActivityIndex,
+      respiratoryRate: respiratoryRate ?? this.respiratoryRate,
+      bloodPressure: bloodPressure ?? this.bloodPressure,
+      contactQuality: contactQuality ?? this.contactQuality,
+      endReason: endReason ?? this.endReason,
+      aiAnalysisJson: aiAnalysisJson ?? this.aiAnalysisJson,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (capturedAt.present) {
+      map['captured_at'] = Variable<DateTime>(capturedAt.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (sampleRateHz.present) {
+      map['sample_rate_hz'] = Variable<int>(sampleRateHz.value);
+    }
+    if (sampleCount.present) {
+      map['sample_count'] = Variable<int>(sampleCount.value);
+    }
+    if (rawSamplesJson.present) {
+      map['raw_samples_json'] = Variable<String>(rawSamplesJson.value);
+    }
+    if (filteredSamplesJson.present) {
+      map['filtered_samples_json'] = Variable<String>(
+        filteredSamplesJson.value,
+      );
+    }
+    if (heartRate.present) {
+      map['heart_rate'] = Variable<int>(heartRate.value);
+    }
+    if (hrv.present) {
+      map['hrv'] = Variable<double>(hrv.value);
+    }
+    if (rr.present) {
+      map['rr'] = Variable<int>(rr.value);
+    }
+    if (afFlag.present) {
+      map['af_flag'] = Variable<bool>(afFlag.value);
+    }
+    if (qrsType.present) {
+      map['qrs_type'] = Variable<int>(qrsType.value);
+    }
+    if (interpretation.present) {
+      map['interpretation'] = Variable<String>(interpretation.value);
+    }
+    if (heavyLoad.present) {
+      map['heavy_load'] = Variable<double>(heavyLoad.value);
+    }
+    if (pressure.present) {
+      map['pressure'] = Variable<double>(pressure.value);
+    }
+    if (body.present) {
+      map['body'] = Variable<double>(body.value);
+    }
+    if (hrvNorm.present) {
+      map['hrv_norm'] = Variable<double>(hrvNorm.value);
+    }
+    if (sympatheticActivityIndex.present) {
+      map['sympathetic_activity_index'] = Variable<double>(
+        sympatheticActivityIndex.value,
+      );
+    }
+    if (respiratoryRate.present) {
+      map['respiratory_rate'] = Variable<int>(respiratoryRate.value);
+    }
+    if (bloodPressure.present) {
+      map['blood_pressure'] = Variable<String>(bloodPressure.value);
+    }
+    if (contactQuality.present) {
+      map['contact_quality'] = Variable<String>(contactQuality.value);
+    }
+    if (endReason.present) {
+      map['end_reason'] = Variable<String>(endReason.value);
+    }
+    if (aiAnalysisJson.present) {
+      map['ai_analysis_json'] = Variable<String>(aiAnalysisJson.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('EcgRecordingsCompanion(')
+          ..write('id: $id, ')
+          ..write('capturedAt: $capturedAt, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('sampleRateHz: $sampleRateHz, ')
+          ..write('sampleCount: $sampleCount, ')
+          ..write('rawSamplesJson: $rawSamplesJson, ')
+          ..write('filteredSamplesJson: $filteredSamplesJson, ')
+          ..write('heartRate: $heartRate, ')
+          ..write('hrv: $hrv, ')
+          ..write('rr: $rr, ')
+          ..write('afFlag: $afFlag, ')
+          ..write('qrsType: $qrsType, ')
+          ..write('interpretation: $interpretation, ')
+          ..write('heavyLoad: $heavyLoad, ')
+          ..write('pressure: $pressure, ')
+          ..write('body: $body, ')
+          ..write('hrvNorm: $hrvNorm, ')
+          ..write('sympatheticActivityIndex: $sympatheticActivityIndex, ')
+          ..write('respiratoryRate: $respiratoryRate, ')
+          ..write('bloodPressure: $bloodPressure, ')
+          ..write('contactQuality: $contactQuality, ')
+          ..write('endReason: $endReason, ')
+          ..write('aiAnalysisJson: $aiAnalysisJson, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$VyanaDatabase extends GeneratedDatabase {
   _$VyanaDatabase(QueryExecutor e) : super(e);
   $VyanaDatabaseManager get managers => $VyanaDatabaseManager(this);
@@ -5397,6 +6762,7 @@ abstract class _$VyanaDatabase extends GeneratedDatabase {
   late final $RingHistoryCachesTable ringHistoryCaches =
       $RingHistoryCachesTable(this);
   late final $RingOrdersTable ringOrders = $RingOrdersTable(this);
+  late final $EcgRecordingsTable ecgRecordings = $EcgRecordingsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -5412,6 +6778,7 @@ abstract class _$VyanaDatabase extends GeneratedDatabase {
     guideVoicePrefs,
     ringHistoryCaches,
     ringOrders,
+    ecgRecordings,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -8786,6 +10153,597 @@ typedef $$RingOrdersTableProcessedTableManager =
       RingOrderRow,
       PrefetchHooks Function()
     >;
+typedef $$EcgRecordingsTableCreateCompanionBuilder =
+    EcgRecordingsCompanion Function({
+      required String id,
+      required DateTime capturedAt,
+      required int durationMs,
+      required int sampleRateHz,
+      required int sampleCount,
+      required String rawSamplesJson,
+      required String filteredSamplesJson,
+      Value<int?> heartRate,
+      Value<double?> hrv,
+      Value<int?> rr,
+      Value<bool> afFlag,
+      Value<int> qrsType,
+      Value<String?> interpretation,
+      Value<double?> heavyLoad,
+      Value<double?> pressure,
+      Value<double?> body,
+      Value<double?> hrvNorm,
+      Value<double?> sympatheticActivityIndex,
+      Value<int?> respiratoryRate,
+      Value<String?> bloodPressure,
+      Value<String?> contactQuality,
+      Value<String?> endReason,
+      Value<String?> aiAnalysisJson,
+      required DateTime createdAt,
+      Value<int> rowid,
+    });
+typedef $$EcgRecordingsTableUpdateCompanionBuilder =
+    EcgRecordingsCompanion Function({
+      Value<String> id,
+      Value<DateTime> capturedAt,
+      Value<int> durationMs,
+      Value<int> sampleRateHz,
+      Value<int> sampleCount,
+      Value<String> rawSamplesJson,
+      Value<String> filteredSamplesJson,
+      Value<int?> heartRate,
+      Value<double?> hrv,
+      Value<int?> rr,
+      Value<bool> afFlag,
+      Value<int> qrsType,
+      Value<String?> interpretation,
+      Value<double?> heavyLoad,
+      Value<double?> pressure,
+      Value<double?> body,
+      Value<double?> hrvNorm,
+      Value<double?> sympatheticActivityIndex,
+      Value<int?> respiratoryRate,
+      Value<String?> bloodPressure,
+      Value<String?> contactQuality,
+      Value<String?> endReason,
+      Value<String?> aiAnalysisJson,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$EcgRecordingsTableFilterComposer
+    extends Composer<_$VyanaDatabase, $EcgRecordingsTable> {
+  $$EcgRecordingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get capturedAt => $composableBuilder(
+    column: $table.capturedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sampleRateHz => $composableBuilder(
+    column: $table.sampleRateHz,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sampleCount => $composableBuilder(
+    column: $table.sampleCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get rawSamplesJson => $composableBuilder(
+    column: $table.rawSamplesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get filteredSamplesJson => $composableBuilder(
+    column: $table.filteredSamplesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get heartRate => $composableBuilder(
+    column: $table.heartRate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get hrv => $composableBuilder(
+    column: $table.hrv,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get rr => $composableBuilder(
+    column: $table.rr,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get afFlag => $composableBuilder(
+    column: $table.afFlag,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get qrsType => $composableBuilder(
+    column: $table.qrsType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get interpretation => $composableBuilder(
+    column: $table.interpretation,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get heavyLoad => $composableBuilder(
+    column: $table.heavyLoad,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get pressure => $composableBuilder(
+    column: $table.pressure,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get hrvNorm => $composableBuilder(
+    column: $table.hrvNorm,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get sympatheticActivityIndex => $composableBuilder(
+    column: $table.sympatheticActivityIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get respiratoryRate => $composableBuilder(
+    column: $table.respiratoryRate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bloodPressure => $composableBuilder(
+    column: $table.bloodPressure,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get contactQuality => $composableBuilder(
+    column: $table.contactQuality,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get endReason => $composableBuilder(
+    column: $table.endReason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get aiAnalysisJson => $composableBuilder(
+    column: $table.aiAnalysisJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$EcgRecordingsTableOrderingComposer
+    extends Composer<_$VyanaDatabase, $EcgRecordingsTable> {
+  $$EcgRecordingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get capturedAt => $composableBuilder(
+    column: $table.capturedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sampleRateHz => $composableBuilder(
+    column: $table.sampleRateHz,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sampleCount => $composableBuilder(
+    column: $table.sampleCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get rawSamplesJson => $composableBuilder(
+    column: $table.rawSamplesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get filteredSamplesJson => $composableBuilder(
+    column: $table.filteredSamplesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get heartRate => $composableBuilder(
+    column: $table.heartRate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get hrv => $composableBuilder(
+    column: $table.hrv,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get rr => $composableBuilder(
+    column: $table.rr,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get afFlag => $composableBuilder(
+    column: $table.afFlag,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get qrsType => $composableBuilder(
+    column: $table.qrsType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get interpretation => $composableBuilder(
+    column: $table.interpretation,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get heavyLoad => $composableBuilder(
+    column: $table.heavyLoad,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get pressure => $composableBuilder(
+    column: $table.pressure,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get hrvNorm => $composableBuilder(
+    column: $table.hrvNorm,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get sympatheticActivityIndex => $composableBuilder(
+    column: $table.sympatheticActivityIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get respiratoryRate => $composableBuilder(
+    column: $table.respiratoryRate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bloodPressure => $composableBuilder(
+    column: $table.bloodPressure,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get contactQuality => $composableBuilder(
+    column: $table.contactQuality,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get endReason => $composableBuilder(
+    column: $table.endReason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get aiAnalysisJson => $composableBuilder(
+    column: $table.aiAnalysisJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$EcgRecordingsTableAnnotationComposer
+    extends Composer<_$VyanaDatabase, $EcgRecordingsTable> {
+  $$EcgRecordingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get capturedAt => $composableBuilder(
+    column: $table.capturedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sampleRateHz => $composableBuilder(
+    column: $table.sampleRateHz,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sampleCount => $composableBuilder(
+    column: $table.sampleCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get rawSamplesJson => $composableBuilder(
+    column: $table.rawSamplesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get filteredSamplesJson => $composableBuilder(
+    column: $table.filteredSamplesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get heartRate =>
+      $composableBuilder(column: $table.heartRate, builder: (column) => column);
+
+  GeneratedColumn<double> get hrv =>
+      $composableBuilder(column: $table.hrv, builder: (column) => column);
+
+  GeneratedColumn<int> get rr =>
+      $composableBuilder(column: $table.rr, builder: (column) => column);
+
+  GeneratedColumn<bool> get afFlag =>
+      $composableBuilder(column: $table.afFlag, builder: (column) => column);
+
+  GeneratedColumn<int> get qrsType =>
+      $composableBuilder(column: $table.qrsType, builder: (column) => column);
+
+  GeneratedColumn<String> get interpretation => $composableBuilder(
+    column: $table.interpretation,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get heavyLoad =>
+      $composableBuilder(column: $table.heavyLoad, builder: (column) => column);
+
+  GeneratedColumn<double> get pressure =>
+      $composableBuilder(column: $table.pressure, builder: (column) => column);
+
+  GeneratedColumn<double> get body =>
+      $composableBuilder(column: $table.body, builder: (column) => column);
+
+  GeneratedColumn<double> get hrvNorm =>
+      $composableBuilder(column: $table.hrvNorm, builder: (column) => column);
+
+  GeneratedColumn<double> get sympatheticActivityIndex => $composableBuilder(
+    column: $table.sympatheticActivityIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get respiratoryRate => $composableBuilder(
+    column: $table.respiratoryRate,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get bloodPressure => $composableBuilder(
+    column: $table.bloodPressure,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get contactQuality => $composableBuilder(
+    column: $table.contactQuality,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get endReason =>
+      $composableBuilder(column: $table.endReason, builder: (column) => column);
+
+  GeneratedColumn<String> get aiAnalysisJson => $composableBuilder(
+    column: $table.aiAnalysisJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$EcgRecordingsTableTableManager
+    extends
+        RootTableManager<
+          _$VyanaDatabase,
+          $EcgRecordingsTable,
+          EcgRecordingRow,
+          $$EcgRecordingsTableFilterComposer,
+          $$EcgRecordingsTableOrderingComposer,
+          $$EcgRecordingsTableAnnotationComposer,
+          $$EcgRecordingsTableCreateCompanionBuilder,
+          $$EcgRecordingsTableUpdateCompanionBuilder,
+          (
+            EcgRecordingRow,
+            BaseReferences<
+              _$VyanaDatabase,
+              $EcgRecordingsTable,
+              EcgRecordingRow
+            >,
+          ),
+          EcgRecordingRow,
+          PrefetchHooks Function()
+        > {
+  $$EcgRecordingsTableTableManager(
+    _$VyanaDatabase db,
+    $EcgRecordingsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$EcgRecordingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$EcgRecordingsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$EcgRecordingsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<DateTime> capturedAt = const Value.absent(),
+                Value<int> durationMs = const Value.absent(),
+                Value<int> sampleRateHz = const Value.absent(),
+                Value<int> sampleCount = const Value.absent(),
+                Value<String> rawSamplesJson = const Value.absent(),
+                Value<String> filteredSamplesJson = const Value.absent(),
+                Value<int?> heartRate = const Value.absent(),
+                Value<double?> hrv = const Value.absent(),
+                Value<int?> rr = const Value.absent(),
+                Value<bool> afFlag = const Value.absent(),
+                Value<int> qrsType = const Value.absent(),
+                Value<String?> interpretation = const Value.absent(),
+                Value<double?> heavyLoad = const Value.absent(),
+                Value<double?> pressure = const Value.absent(),
+                Value<double?> body = const Value.absent(),
+                Value<double?> hrvNorm = const Value.absent(),
+                Value<double?> sympatheticActivityIndex = const Value.absent(),
+                Value<int?> respiratoryRate = const Value.absent(),
+                Value<String?> bloodPressure = const Value.absent(),
+                Value<String?> contactQuality = const Value.absent(),
+                Value<String?> endReason = const Value.absent(),
+                Value<String?> aiAnalysisJson = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => EcgRecordingsCompanion(
+                id: id,
+                capturedAt: capturedAt,
+                durationMs: durationMs,
+                sampleRateHz: sampleRateHz,
+                sampleCount: sampleCount,
+                rawSamplesJson: rawSamplesJson,
+                filteredSamplesJson: filteredSamplesJson,
+                heartRate: heartRate,
+                hrv: hrv,
+                rr: rr,
+                afFlag: afFlag,
+                qrsType: qrsType,
+                interpretation: interpretation,
+                heavyLoad: heavyLoad,
+                pressure: pressure,
+                body: body,
+                hrvNorm: hrvNorm,
+                sympatheticActivityIndex: sympatheticActivityIndex,
+                respiratoryRate: respiratoryRate,
+                bloodPressure: bloodPressure,
+                contactQuality: contactQuality,
+                endReason: endReason,
+                aiAnalysisJson: aiAnalysisJson,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required DateTime capturedAt,
+                required int durationMs,
+                required int sampleRateHz,
+                required int sampleCount,
+                required String rawSamplesJson,
+                required String filteredSamplesJson,
+                Value<int?> heartRate = const Value.absent(),
+                Value<double?> hrv = const Value.absent(),
+                Value<int?> rr = const Value.absent(),
+                Value<bool> afFlag = const Value.absent(),
+                Value<int> qrsType = const Value.absent(),
+                Value<String?> interpretation = const Value.absent(),
+                Value<double?> heavyLoad = const Value.absent(),
+                Value<double?> pressure = const Value.absent(),
+                Value<double?> body = const Value.absent(),
+                Value<double?> hrvNorm = const Value.absent(),
+                Value<double?> sympatheticActivityIndex = const Value.absent(),
+                Value<int?> respiratoryRate = const Value.absent(),
+                Value<String?> bloodPressure = const Value.absent(),
+                Value<String?> contactQuality = const Value.absent(),
+                Value<String?> endReason = const Value.absent(),
+                Value<String?> aiAnalysisJson = const Value.absent(),
+                required DateTime createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => EcgRecordingsCompanion.insert(
+                id: id,
+                capturedAt: capturedAt,
+                durationMs: durationMs,
+                sampleRateHz: sampleRateHz,
+                sampleCount: sampleCount,
+                rawSamplesJson: rawSamplesJson,
+                filteredSamplesJson: filteredSamplesJson,
+                heartRate: heartRate,
+                hrv: hrv,
+                rr: rr,
+                afFlag: afFlag,
+                qrsType: qrsType,
+                interpretation: interpretation,
+                heavyLoad: heavyLoad,
+                pressure: pressure,
+                body: body,
+                hrvNorm: hrvNorm,
+                sympatheticActivityIndex: sympatheticActivityIndex,
+                respiratoryRate: respiratoryRate,
+                bloodPressure: bloodPressure,
+                contactQuality: contactQuality,
+                endReason: endReason,
+                aiAnalysisJson: aiAnalysisJson,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$EcgRecordingsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$VyanaDatabase,
+      $EcgRecordingsTable,
+      EcgRecordingRow,
+      $$EcgRecordingsTableFilterComposer,
+      $$EcgRecordingsTableOrderingComposer,
+      $$EcgRecordingsTableAnnotationComposer,
+      $$EcgRecordingsTableCreateCompanionBuilder,
+      $$EcgRecordingsTableUpdateCompanionBuilder,
+      (
+        EcgRecordingRow,
+        BaseReferences<_$VyanaDatabase, $EcgRecordingsTable, EcgRecordingRow>,
+      ),
+      EcgRecordingRow,
+      PrefetchHooks Function()
+    >;
 
 class $VyanaDatabaseManager {
   final _$VyanaDatabase _db;
@@ -8810,4 +10768,6 @@ class $VyanaDatabaseManager {
       $$RingHistoryCachesTableTableManager(_db, _db.ringHistoryCaches);
   $$RingOrdersTableTableManager get ringOrders =>
       $$RingOrdersTableTableManager(_db, _db.ringOrders);
+  $$EcgRecordingsTableTableManager get ecgRecordings =>
+      $$EcgRecordingsTableTableManager(_db, _db.ecgRecordings);
 }

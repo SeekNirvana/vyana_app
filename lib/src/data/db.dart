@@ -186,6 +186,54 @@ class RingOrders extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// One completed single-lead ECG recording from the ring.
+///
+/// The full ~15k raw + filtered samples are kept verbatim (as JSON arrays) so a
+/// foundation model can later re-analyse the waveform for A-Fib / V-Fib. The
+/// diagnostic fields mirror the SDK's on-device AI output; [aiAnalysisJson] is
+/// reserved for a future cloud/on-device model's verdict.
+@DataClassName('EcgRecordingRow')
+class EcgRecordings extends Table {
+  TextColumn get id => text()();
+  DateTimeColumn get capturedAt => dateTime()();
+  IntColumn get durationMs => integer()();
+  IntColumn get sampleRateHz => integer()();
+  IntColumn get sampleCount => integer()();
+
+  /// Full-resolution sample arrays, JSON-encoded (`[12,-4,...]`).
+  TextColumn get rawSamplesJson => text()();
+  TextColumn get filteredSamplesJson => text()();
+
+  IntColumn get heartRate => integer().nullable()();
+  RealColumn get hrv => real().nullable()();
+  IntColumn get rr => integer().nullable()();
+  BoolColumn get afFlag => boolean().withDefault(const Constant(false))();
+
+  /// MIT-BIH annotation code from the SDK (see ECGCodes.h).
+  IntColumn get qrsType => integer().withDefault(const Constant(0))();
+  TextColumn get interpretation => text().nullable()();
+
+  RealColumn get heavyLoad => real().nullable()();
+  RealColumn get pressure => real().nullable()();
+  RealColumn get body => real().nullable()();
+  RealColumn get hrvNorm => real().nullable()();
+  RealColumn get sympatheticActivityIndex => real().nullable()();
+  IntColumn get respiratoryRate => integer().nullable()();
+  TextColumn get bloodPressure => text().nullable()();
+
+  /// `good` | `lost` | `unknown` — contact state at completion.
+  TextColumn get contactQuality => text().nullable()();
+  TextColumn get endReason => text().nullable()();
+
+  /// Reserved for a future AF/V-Fib foundation-model verdict.
+  TextColumn get aiAnalysisJson => text().nullable()();
+
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// Global guide voice preferences (TTS voice + speak-replies toggle).
 @DataClassName('GuideVoicePrefRow')
 class GuideVoicePrefs extends Table {
@@ -215,6 +263,7 @@ class GuideVoicePrefs extends Table {
     GuideVoicePrefs,
     RingHistoryCaches,
     RingOrders,
+    EcgRecordings,
   ],
 )
 class VyanaDatabase extends _$VyanaDatabase {
@@ -231,7 +280,7 @@ class VyanaDatabase extends _$VyanaDatabase {
   }
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -262,6 +311,9 @@ class VyanaDatabase extends _$VyanaDatabase {
             await m.addColumn(ringOrders, ringOrders.shippingCountry);
             await m.addColumn(ringOrders, ringOrders.orderMessage);
           }
+          try {
+            await m.createTable(ecgRecordings);
+          } on Object catch (_) {/* already exists */}
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
@@ -608,6 +660,88 @@ class VyanaDatabase extends _$VyanaDatabase {
   }
 
   Future<int> clearRingHistoryCaches() => delete(ringHistoryCaches).go();
+
+  // ── ECG recordings ────────────────────────────────────────────────────────
+  Future<void> insertEcgRecording({
+    required String id,
+    required DateTime capturedAt,
+    required int durationMs,
+    required int sampleRateHz,
+    required int sampleCount,
+    required String rawSamplesJson,
+    required String filteredSamplesJson,
+    int? heartRate,
+    double? hrv,
+    int? rr,
+    bool afFlag = false,
+    int qrsType = 0,
+    String? interpretation,
+    double? heavyLoad,
+    double? pressure,
+    double? body,
+    double? hrvNorm,
+    double? sympatheticActivityIndex,
+    int? respiratoryRate,
+    String? bloodPressure,
+    String? contactQuality,
+    String? endReason,
+    String? aiAnalysisJson,
+    DateTime? createdAt,
+  }) {
+    return into(ecgRecordings).insertOnConflictUpdate(
+      EcgRecordingsCompanion.insert(
+        id: id,
+        capturedAt: capturedAt,
+        durationMs: durationMs,
+        sampleRateHz: sampleRateHz,
+        sampleCount: sampleCount,
+        rawSamplesJson: rawSamplesJson,
+        filteredSamplesJson: filteredSamplesJson,
+        heartRate: Value(heartRate),
+        hrv: Value(hrv),
+        rr: Value(rr),
+        afFlag: Value(afFlag),
+        qrsType: Value(qrsType),
+        interpretation: Value(interpretation),
+        heavyLoad: Value(heavyLoad),
+        pressure: Value(pressure),
+        body: Value(body),
+        hrvNorm: Value(hrvNorm),
+        sympatheticActivityIndex: Value(sympatheticActivityIndex),
+        respiratoryRate: Value(respiratoryRate),
+        bloodPressure: Value(bloodPressure),
+        contactQuality: Value(contactQuality),
+        endReason: Value(endReason),
+        aiAnalysisJson: Value(aiAnalysisJson),
+        createdAt: createdAt ?? DateTime.now(),
+      ),
+    );
+  }
+
+  Future<void> setEcgAiAnalysis(String id, String? aiAnalysisJson) =>
+      (update(ecgRecordings)..where((t) => t.id.equals(id)))
+          .write(EcgRecordingsCompanion(aiAnalysisJson: Value(aiAnalysisJson)));
+
+  Future<List<EcgRecordingRow>> allEcgRecordings() =>
+      (select(ecgRecordings)..orderBy([(t) => OrderingTerm.desc(t.capturedAt)]))
+          .get();
+
+  Stream<List<EcgRecordingRow>> watchEcgRecordings() =>
+      (select(ecgRecordings)..orderBy([(t) => OrderingTerm.desc(t.capturedAt)]))
+          .watch();
+
+  Future<EcgRecordingRow?> getEcgRecording(String id) =>
+      (select(ecgRecordings)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  Future<int> deleteEcgRecording(String id) =>
+      (delete(ecgRecordings)..where((t) => t.id.equals(id))).go();
+
+  Future<int> ecgRecordingsCount() async {
+    final count = ecgRecordings.id.count();
+    final row = await (selectOnly(ecgRecordings)..addColumns([count]))
+        .getSingle();
+    return row.read(count) ?? 0;
+  }
 }
 
 /// The local vault (drift). One instance app-wide.

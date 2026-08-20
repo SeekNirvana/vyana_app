@@ -444,15 +444,35 @@ class EcgMeasurementCard extends StatelessWidget {
                   label: const Text('Stop'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: canReadResult ? onGetEcgResult : null,
+                  onPressed: canReadResult
+                      ? () async {
+                          // Ensure the diagnosis has been read + saved, then
+                          // open the full result screen so the button never
+                          // feels dead (the result also renders inline below).
+                          await onGetEcgResult();
+                          if (!context.mounted) return;
+                          await Navigator.of(context).push<void>(
+                            MaterialPageRoute(
+                              builder: (_) => const EcgLatestResultScreen(),
+                            ),
+                          );
+                        }
+                      : null,
                   icon: const Icon(Icons.assignment),
                   label: const Text('Result'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(builder: (_) => const EcgHistoryScreen()),
+                  ),
+                  icon: const Icon(Icons.history),
+                  label: const Text('Past ECGs'),
                 ),
               ],
             ),
             if (result != null) ...[
               const SizedBox(height: 12),
-              _EcgResultPanel(result: result),
+              _EcgResultPanel(result: result, session: session),
             ] else if (session.failureReason != null) ...[
               const SizedBox(height: 12),
               _EcgRetryPanel(message: session.failureReason!),
@@ -588,61 +608,102 @@ class _EcgMetricTile extends StatelessWidget {
     required this.label,
     required this.value,
     required this.icon,
+    this.fill = false,
   });
 
   final String label;
   final String value;
   final IconData icon;
 
+  /// When true the tile fills its parent's width (used inside the fixed
+  /// 3-column grid) and lets the label wrap to two lines instead of the
+  /// min/max-width sizing used by the free-flowing [Wrap] layouts.
+  final bool fill;
+
   @override
   Widget build(BuildContext context) {
+    final tile = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.vyana.border),
+        color: context.vyana.elevated,
+      ),
+      child: Row(
+        mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: context.vyana.textSec),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  maxLines: fill ? 2 : 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (fill) return tile;
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: 128, maxWidth: 176),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.vyana.border),
-          color: context.vyana.elevated,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: context.vyana.textSec),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                  Text(
-                    value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: tile,
     );
   }
 }
 
+/// Lays out metric tiles in fixed rows of three, equal width, without shrinking
+/// the tile font. Empty cells pad a short final row so columns stay aligned.
+Widget ecgMetricGrid(List<Widget> tiles) {
+  const perRow = 3;
+  const gap = 8.0;
+  final rows = <Widget>[];
+  for (var i = 0; i < tiles.length; i += perRow) {
+    final cells = <Widget>[];
+    for (var j = 0; j < perRow; j++) {
+      final index = i + j;
+      cells.add(
+        Expanded(
+          child: index < tiles.length ? tiles[index] : const SizedBox(),
+        ),
+      );
+      if (j < perRow - 1) cells.add(const SizedBox(width: gap));
+    }
+    rows.add(
+      Padding(
+        padding: EdgeInsets.only(bottom: i + perRow < tiles.length ? gap : 0),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: cells,
+          ),
+        ),
+      ),
+    );
+  }
+  return Column(children: rows);
+}
+
 class _EcgResultPanel extends StatelessWidget {
-  const _EcgResultPanel({required this.result});
+  const _EcgResultPanel({required this.result, this.session});
 
   final ParsedEcgResult result;
+  final EcgSessionSnapshot? session;
 
   @override
   Widget build(BuildContext context) {
@@ -672,42 +733,209 @@ class _EcgResultPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
+          _EcgAfBanner(afFlag: result.afFlag),
+          const SizedBox(height: 10),
+          _EcgQrsExplainer(result: result),
+          const SizedBox(height: 12),
+          ecgMetricGrid([
+            if ((result.heartRate ?? 0) != 0)
               _EcgMetricTile(
-                label: 'AF flag',
-                value: result.afFlag ? 'Flagged' : 'Clear',
-                icon: Icons.flag,
+                label: 'Heart rate',
+                value: _intMetric(result.heartRate, 'bpm'),
+                icon: Icons.favorite,
+                fill: true,
               ),
+            if ((result.hrv ?? 0) != 0)
               _EcgMetricTile(
-                label: 'QRS type',
-                value: '${result.qrsType}',
-                icon: Icons.analytics,
+                label: 'HRV',
+                value: _doubleMetric(result.hrv, 'ms', decimals: 0),
+                icon: Icons.timeline,
+                fill: true,
               ),
-              if ((result.heartRate ?? 0) != 0)
-                _EcgMetricTile(
-                  label: 'Heart rate',
-                  value: _intMetric(result.heartRate, 'bpm'),
-                  icon: Icons.favorite,
-                ),
-              if ((result.hrv ?? 0) != 0)
-                _EcgMetricTile(
-                  label: 'HRV',
-                  value: _doubleMetric(result.hrv, 'ms', decimals: 0),
-                  icon: Icons.timeline,
-                ),
-              if ((result.pressure ?? 0) != 0)
-                _EcgMetricTile(
-                  label: 'Pressure',
-                  value: _doubleMetric(result.pressure, ''),
-                  icon: Icons.psychology,
-                ),
-            ],
+            if ((session?.bloodPressure ?? '').isNotEmpty)
+              _EcgMetricTile(
+                label: 'Blood pressure',
+                value: session!.bloodPressure!,
+                icon: Icons.speed,
+                fill: true,
+              ),
+            if ((result.respiratoryRate ?? 0) != 0)
+              _EcgMetricTile(
+                label: 'Breathing',
+                value: _intMetric(result.respiratoryRate, '/min'),
+                icon: Icons.air,
+                fill: true,
+              ),
+            if ((result.pressure ?? 0) != 0)
+              _EcgMetricTile(
+                label: 'Stress',
+                value: ecgStressLabel(result.pressure),
+                icon: Icons.psychology,
+                fill: true,
+              ),
+            if ((result.heavyLoad ?? 0) != 0)
+              _EcgMetricTile(
+                label: 'Body load',
+                value: _doubleMetric(result.heavyLoad, ''),
+                icon: Icons.fitness_center,
+                fill: true,
+              ),
+            if ((result.body ?? 0) != 0)
+              _EcgMetricTile(
+                label: 'Vitality',
+                value: _doubleMetric(result.body, ''),
+                icon: Icons.bolt,
+                fill: true,
+              ),
+            if ((result.sympatheticActivityIndex ?? 0) != 0)
+              _EcgMetricTile(
+                label: 'Autonomic balance',
+                value: _doubleMetric(result.sympatheticActivityIndex, ''),
+                icon: Icons.balance,
+                fill: true,
+              ),
+          ]),
+          if (session != null) ...[
+            const SizedBox(height: 10),
+            _EcgQualityLine(session: session!),
+          ],
+          const SizedBox(height: 10),
+          Text(
+            'For wellness insight only — not a medical diagnosis. Stress, body '
+            'load, vitality and autonomic balance are estimated indices. The '
+            'full waveform is saved on this device for deeper analysis.',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: context.vyana.textSec,
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Prominent atrial-fibrillation banner — the headline clinical output.
+class _EcgAfBanner extends StatelessWidget {
+  const _EcgAfBanner({required this.afFlag});
+
+  final bool afFlag;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = afFlag ? context.vyana.gold : const Color(0xFF00A86B);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+        color: color.withValues(alpha: context.vyana.isDark ? 0.14 : 0.1),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            afFlag ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+            size: 20,
+            color: color,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              afFlag
+                  ? 'Atrial fibrillation flagged — consider consulting a clinician.'
+                  : 'No atrial fibrillation detected in this recording.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Human-readable QRS/rhythm classification with a plain-language line.
+class _EcgQrsExplainer extends StatelessWidget {
+  const _EcgQrsExplainer({required this.result});
+
+  final ParsedEcgResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.vyana.border),
+        color: context.vyana.elevated,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.analytics, size: 18, color: context.vyana.textSec),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  result.qrsLabel,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                'code ${result.qrsType}',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: context.vyana.textSec,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            result.qrsDescription,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: context.vyana.textSec,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Capture-quality footnote: duration, samples, contact.
+class _EcgQualityLine extends StatelessWidget {
+  const _EcgQualityLine({required this.session});
+
+  final EcgSessionSnapshot session;
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = session.elapsed.inSeconds;
+    final parts = <String>[
+      '${session.sampleCount} samples',
+      if (seconds > 0) '${seconds}s',
+      session.contactLabel,
+    ];
+    return Row(
+      children: [
+        Icon(Icons.verified_outlined, size: 16, color: context.vyana.textSec),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            parts.join(' · '),
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: context.vyana.textSec,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -757,6 +985,16 @@ String _doubleMetric(double? value, String unit, {int decimals = 1}) {
   final text = value.toStringAsFixed(decimals);
   return unit.isEmpty ? text : '$text $unit';
 }
+
+/// Render the SDK stress index as the app's own stress vocabulary
+/// (Calm / Activated / Stressed), matching the Home stress tile.
+String ecgStressLabel(double? pressure) {
+  if (pressure == null || pressure == 0) return '-';
+  return stressZoneLabel(
+    stressZoneForLevel((pressure / 100).clamp(0.0, 1.0)),
+  );
+}
+
 
 String _ecgWaveformEmptyText(EcgSessionSnapshot session) {
   if (session.isPreparing) {
@@ -983,7 +1221,22 @@ MeasurementSeries measurementSeriesFor(
         unit: 'ms',
       );
     case DeviceAppControlMeasureHealthDataType.pressure:
+      // The ring stores no native stress series, so derive one from the HRV
+      // history the same way the current value is derived (stress-from-HRV).
+      // This is why Stress previously showed only the latest point.
+      final hrvPoints = _pointsFromRecords(
+        snapshot.history.combined,
+        const ['hrv'],
+        '',
+        filter: validHrvValue,
+      );
       final points = [
+        for (final point in hrvPoints)
+          MeasurementSeriesPoint(
+            time: point.time,
+            value: stressLevelForHrv(point.value) * 100,
+            label: stressZoneLabel(stressZoneForHrv(point.value)),
+          ),
         if (snapshot.vitals.pressure != null)
           _livePoint(snapshot.vitals.pressure!, ''),
       ];
