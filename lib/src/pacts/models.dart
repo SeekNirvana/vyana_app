@@ -1,13 +1,6 @@
 // Phase 1 Pact shapes — match GET/POST /api/pacts* JSON from the webapp.
 
-const pactStakes = [
-  'coffee',
-  'lunch',
-  'drinks',
-  'pizza',
-  'dinner',
-  'custom',
-];
+const pactStakes = ['coffee', 'lunch', 'drinks', 'pizza', 'dinner', 'custom'];
 
 const pactCategories = [
   'sleep',
@@ -49,20 +42,20 @@ PactStatus pactStatus({
 }
 
 String pactStatusLabel(PactStatus status) => switch (status) {
-      PactStatus.secured => 'Secured',
-      PactStatus.onTrack => 'On track',
-      PactStatus.atRisk => 'No days to spare',
-      PactStatus.missed => 'Cannot catch up',
-    };
+  PactStatus.secured => 'Secured',
+  PactStatus.onTrack => 'On track',
+  PactStatus.atRisk => 'No days to spare',
+  PactStatus.missed => 'Cannot catch up',
+};
 
 PactDayStatus pactDayStatusFrom(String? raw) => switch (raw) {
-      'done' => PactDayStatus.done,
-      'freeze' => PactDayStatus.freeze,
-      'restore' => PactDayStatus.restore,
-      'missed' => PactDayStatus.missed,
-      'today' => PactDayStatus.today,
-      _ => PactDayStatus.future,
-    };
+  'done' => PactDayStatus.done,
+  'freeze' => PactDayStatus.freeze,
+  'restore' => PactDayStatus.restore,
+  'missed' => PactDayStatus.missed,
+  'today' => PactDayStatus.today,
+  _ => PactDayStatus.future,
+};
 
 int asInt(dynamic value, [int fallback = 0]) {
   if (value is int) return value;
@@ -108,6 +101,7 @@ class PactMe {
     required this.freezesRemaining,
     required this.restoresRemaining,
     this.participantId,
+    this.isCreator = false,
   });
 
   final String? participantId;
@@ -120,13 +114,14 @@ class PactMe {
   final int currentStreak;
   final int freezesRemaining;
   final int restoresRemaining;
+  final bool isCreator;
 
   PactStatus get standing => pactStatus(
-        done: done,
-        required: required,
-        elapsed: elapsed,
-        total: total,
-      );
+    done: done,
+    required: required,
+    elapsed: elapsed,
+    total: total,
+  );
 
   bool dayIs(String date, PactDayStatus status) =>
       days.any((d) => d.date == date && d.status == status);
@@ -142,13 +137,14 @@ class PactMe {
       status: json['status']?.toString() ?? '',
       days: rawDays is List
           ? rawDays
-              .whereType<Map>()
-              .map((row) => PactDay.fromJson(Map<String, dynamic>.from(row)))
-              .toList()
+                .whereType<Map>()
+                .map((row) => PactDay.fromJson(Map<String, dynamic>.from(row)))
+                .toList()
           : const [],
       currentStreak: asInt(json['currentStreak']),
       freezesRemaining: asInt(json['freezesRemaining']),
       restoresRemaining: asInt(json['restoresRemaining']),
+      isCreator: json['isCreator'] == true,
     );
   }
 }
@@ -173,6 +169,7 @@ class PactRecord {
     this.visibility = 'private',
     this.stakeCatalog = 'none',
     this.maxParticipants = 1,
+    this.creatorId = '',
   });
 
   final String id;
@@ -193,6 +190,7 @@ class PactRecord {
   final String visibility;
   final String stakeCatalog;
   final int maxParticipants;
+  final String creatorId;
 
   bool get isSocial => mode == 'challenge' || mode == 'friends';
 
@@ -216,6 +214,7 @@ class PactRecord {
       visibility: json['visibility']?.toString() ?? 'private',
       stakeCatalog: json['stakeCatalog']?.toString() ?? 'none',
       maxParticipants: asInt(json['maxParticipants'], 1),
+      creatorId: json['creatorId']?.toString() ?? '',
     );
   }
 }
@@ -228,6 +227,7 @@ class PactSnapshot {
     this.todayStatus = PactDayStatus.future,
     this.autoSatisfied,
     this.others = const [],
+    this.backings = const [],
     this.settlement,
   });
 
@@ -237,19 +237,30 @@ class PactSnapshot {
   final PactDayStatus todayStatus;
   final bool? autoSatisfied;
   final List<PactOther> others;
+  final List<PactBacking> backings;
   final PactSettlement? settlement;
 
+  List<PactBacking> get backingMe => backingsFor(me.participantId);
+
+  List<PactBacking> backingsFor(String? participantId) {
+    if (participantId == null || participantId.isEmpty) return const [];
+    return backings.where((b) => b.participantId == participantId).toList();
+  }
+
   PactSnapshot copyWith({
+    PactMe? me,
     List<PactOther>? others,
+    List<PactBacking>? backings,
     PactSettlement? settlement,
   }) {
     return PactSnapshot(
       pact: pact,
       today: today,
-      me: me,
+      me: me ?? this.me,
       todayStatus: todayStatus,
       autoSatisfied: autoSatisfied,
       others: others ?? this.others,
+      backings: backings ?? this.backings,
       settlement: settlement ?? this.settlement,
     );
   }
@@ -264,9 +275,7 @@ class PactSnapshot {
 
   factory PactSnapshot.fromJson(Map<String, dynamic> json) {
     final nested = json['pact'];
-    final recordJson = nested is Map
-        ? Map<String, dynamic>.from(nested)
-        : json;
+    final recordJson = nested is Map ? Map<String, dynamic>.from(nested) : json;
     final meJson = json['me'];
     return PactSnapshot(
       pact: PactRecord.fromJson(recordJson),
@@ -285,8 +294,11 @@ class PactSnapshot {
               restoresRemaining: 0,
             ),
       todayStatus: pactDayStatusFrom(json['todayStatus']?.toString()),
-      autoSatisfied: json['autoSatisfied'] is bool ? json['autoSatisfied'] as bool : null,
+      autoSatisfied: json['autoSatisfied'] is bool
+          ? json['autoSatisfied'] as bool
+          : null,
       others: pactRows(json['others'], PactOther.fromJson),
+      backings: pactRows(json['backings'], PactBacking.fromJson),
     );
   }
 }
@@ -298,6 +310,7 @@ const kPactWindowCatalogue = [
   PactWindowTier(days: 5, unlockAt: 5, label: '5 days', unlocked: false),
   PactWindowTier(days: 7, unlockAt: 7, label: '1 week', unlocked: false),
   PactWindowTier(days: 14, unlockAt: 10, label: '2 weeks', unlocked: false),
+  PactWindowTier(days: 21, unlockAt: 12, label: '3 weeks', unlocked: false),
   PactWindowTier(days: 30, unlockAt: 15, label: '1 month', unlocked: false),
 ];
 
@@ -315,13 +328,14 @@ class PactWindowTier {
   final bool unlocked;
 
   String get shortLabel => switch (days) {
-        3 => '3d',
-        5 => '5d',
-        7 => '1w',
-        14 => '2w',
-        30 => '1mo',
-        _ => '${days}d',
-      };
+    3 => '3d',
+    5 => '5d',
+    7 => '1w',
+    14 => '2w',
+    21 => '3w',
+    30 => '1mo',
+    _ => '${days}d',
+  };
 
   /// Shown when the thumb sits on a locked stop.
   String get lockHint {
@@ -352,9 +366,33 @@ List<PactWindowTier> pactWindowTiersFor({
         days: spec.days,
         unlockAt: spec.unlockAt,
         label: spec.label,
-        unlocked: unlockedDays.contains(spec.days) || completed >= spec.unlockAt,
+        unlocked:
+            unlockedDays.contains(spec.days) || completed >= spec.unlockAt,
       ),
   ];
+}
+
+class PactLockedFeature {
+  const PactLockedFeature({
+    required this.key,
+    required this.unlockAt,
+    this.category = '',
+    this.completionsAway = 0,
+  });
+
+  final String key;
+  final String category;
+  final int unlockAt;
+  final int completionsAway;
+
+  factory PactLockedFeature.fromJson(Map<String, dynamic> json) {
+    return PactLockedFeature(
+      key: json['key']?.toString() ?? '',
+      category: json['category']?.toString() ?? '',
+      unlockAt: asInt(json['unlockAt']),
+      completionsAway: asInt(json['completionsAway']),
+    );
+  }
 }
 
 class PactUnlocks {
@@ -372,6 +410,8 @@ class PactUnlocks {
     this.currentStreak = 0,
     this.backing = false,
     this.xpBalance = 0,
+    this.maxParticipants = 1,
+    this.locked = const [],
   });
 
   final int completed;
@@ -387,6 +427,8 @@ class PactUnlocks {
   final int currentStreak;
   final bool backing;
   final int xpBalance;
+  final int maxParticipants;
+  final List<PactLockedFeature> locked;
 
   bool get canCreate => slotsFree > 0 && windowDays.isNotEmpty;
 
@@ -395,6 +437,29 @@ class PactUnlocks {
   bool get canChallenge => modes.contains('challenge');
 
   bool get canFriends => modes.contains('friends');
+
+  bool get canCircles {
+    if (_locked('community.circles') != null) return false;
+    if (locked.isNotEmpty) return true;
+    return completed >= 7;
+  }
+
+  bool get canTemplates => _locked('content.templates') == null;
+
+  bool get canSuggested => _locked('content.suggested') == null;
+
+  PactLockedFeature? _locked(String key) {
+    for (final row in locked) {
+      if (row.key == key) return row;
+    }
+    return null;
+  }
+
+  String get circlesLockHint {
+    if (canCircles) return '';
+    final n = _locked('community.circles')?.unlockAt ?? 7;
+    return 'Unlock after $n successful pact${n == 1 ? '' : 's'}';
+  }
 
   PactWindowTier? get nextLockedTier {
     for (final tier in windowTiers) {
@@ -414,8 +479,9 @@ class PactUnlocks {
 
   factory PactUnlocks.fromJson(Map<String, dynamic> json) {
     final unlocks = json['unlocks'];
-    final unlockMap =
-        unlocks is Map ? Map<String, dynamic>.from(unlocks) : const <String, dynamic>{};
+    final unlockMap = unlocks is Map
+        ? Map<String, dynamic>.from(unlocks)
+        : const <String, dynamic>{};
     final windows = unlockMap['windowDays'];
     final modes = unlockMap['modes'];
     final stakes = unlockMap['stakes'];
@@ -426,10 +492,13 @@ class PactUnlocks {
     final rawTiers = json['windowTiers'];
     final fromApi = rawTiers is List
         ? rawTiers
-            .whereType<Map>()
-            .map((row) => PactWindowTier.fromJson(Map<String, dynamic>.from(row)))
-            .where((t) => t.days > 0)
-            .toList()
+              .whereType<Map>()
+              .map(
+                (row) =>
+                    PactWindowTier.fromJson(Map<String, dynamic>.from(row)),
+              )
+              .where((t) => t.days > 0)
+              .toList()
         : const <PactWindowTier>[];
     return PactUnlocks(
       completed: completed,
@@ -445,12 +514,16 @@ class PactUnlocks {
       modes: modes is List
           ? modes.map((m) => m.toString()).toList()
           : const ['just_me'],
-      stakes: stakes is List ? stakes.map((s) => s.toString()).toList() : const [],
+      stakes: stakes is List
+          ? stakes.map((s) => s.toString()).toList()
+          : const [],
       pactsCreated: asInt(json['pactsCreated']),
       longestStreak: asInt(json['longestStreak']),
       currentStreak: asInt(json['currentStreak']),
       backing: unlockMap['backing'] == true,
       xpBalance: asInt(json['xpBalance']),
+      maxParticipants: asInt(unlockMap['maxParticipants'], 1),
+      locked: pactRows(json['locked'], PactLockedFeature.fromJson),
     );
   }
 }
@@ -470,6 +543,7 @@ class PactCreateInput {
     this.stakeCatalog,
     this.visibility = 'private',
     this.maxParticipants,
+    this.templateSlug,
   });
 
   final String title;
@@ -485,22 +559,24 @@ class PactCreateInput {
   final String? stakeCatalog;
   final String visibility;
   final int? maxParticipants;
+  final String? templateSlug;
 
   Map<String, dynamic> toJson() => {
-        'mode': mode,
-        'title': title,
-        'ruleText': ruleText,
-        'category': category,
-        'goalMetric': goalMetric,
-        'goalValue': goalValue,
-        'goalUnit': goalUnit,
-        'windowDays': windowDays,
-        if (requiredDays != null) 'requiredDays': requiredDays,
-        'proofMode': proofMode,
-        if (stakeCatalog != null) 'stakeCatalog': stakeCatalog,
-        if (mode != 'just_me') 'visibility': visibility,
-        if (maxParticipants != null) 'maxParticipants': maxParticipants,
-      };
+    'mode': mode,
+    'title': title,
+    'ruleText': ruleText,
+    'category': category,
+    'goalMetric': goalMetric,
+    'goalValue': goalValue,
+    'goalUnit': goalUnit,
+    'windowDays': windowDays,
+    if (requiredDays != null) 'requiredDays': requiredDays,
+    'proofMode': proofMode,
+    if (stakeCatalog != null) 'stakeCatalog': stakeCatalog,
+    if (mode != 'just_me') 'visibility': visibility,
+    if (maxParticipants != null) 'maxParticipants': maxParticipants,
+    if (templateSlug != null) 'templateSlug': templateSlug,
+  };
 }
 
 List<T> pactRows<T>(dynamic raw, T Function(Map<String, dynamic>) parse) {
@@ -621,11 +697,22 @@ class PactOther {
 }
 
 class PactProgress {
-  const PactProgress({required this.me, this.others = const [], this.today = ''});
+  const PactProgress({
+    required this.me,
+    this.others = const [],
+    this.backings = const [],
+    this.today = '',
+  });
 
   final PactMe me;
   final List<PactOther> others;
+  final List<PactBacking> backings;
   final String today;
+
+  List<PactBacking> backingsFor(String? participantId) {
+    if (participantId == null || participantId.isEmpty) return const [];
+    return backings.where((b) => b.participantId == participantId).toList();
+  }
 
   factory PactProgress.fromJson(Map<String, dynamic> json) {
     final me = json['me'];
@@ -645,6 +732,7 @@ class PactProgress {
               restoresRemaining: 0,
             ),
       others: pactRows(json['others'], PactOther.fromJson),
+      backings: pactRows(json['backings'], PactBacking.fromJson),
     );
   }
 }
@@ -683,6 +771,7 @@ class PactBacking {
     this.message = '',
     this.status = 'pledged',
     this.mine = false,
+    this.backer,
   });
 
   final String id;
@@ -691,10 +780,14 @@ class PactBacking {
   final String message;
   final String status;
   final bool mine;
+  final PactProfile? backer;
 
   String get endedCopy => status == 'expired' ? 'This pact ended' : '';
 
+  String get who => backer?.displayName ?? 'Someone';
+
   factory PactBacking.fromJson(Map<String, dynamic> json) {
+    final backer = json['backer'];
     return PactBacking(
       id: json['id']?.toString() ?? '',
       participantId: json['participantId']?.toString() ?? '',
@@ -702,6 +795,9 @@ class PactBacking {
       message: json['message']?.toString() ?? '',
       status: json['status']?.toString() ?? 'pledged',
       mine: json['mine'] == true,
+      backer: backer is Map
+          ? PactProfile.fromJson(Map<String, dynamic>.from(backer))
+          : null,
     );
   }
 }
@@ -711,15 +807,18 @@ class PactBackable {
     required this.participantId,
     required this.pact,
     required this.person,
+    this.backing,
   });
 
   final String participantId;
   final PactRecord pact;
   final PactOther person;
+  final PactBacking? backing;
 
   factory PactBackable.fromJson(Map<String, dynamic> json) {
     final pact = json['pact'];
     final person = json['person'];
+    final backing = json['backing'];
     return PactBackable(
       participantId: json['participantId']?.toString() ?? '',
       pact: pact is Map
@@ -734,6 +833,9 @@ class PactBackable {
               required: 0,
               status: 'active',
             ),
+      backing: backing is Map
+          ? PactBacking.fromJson(Map<String, dynamic>.from(backing))
+          : null,
     );
   }
 }
@@ -761,22 +863,260 @@ class PactJoinResult {
   }
 }
 
+int? asIntOrNull(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse('$value');
+}
+
+class PactCommunityMember {
+  const PactCommunityMember({
+    required this.profileId,
+    required this.displayName,
+    this.weeklyPactXp = 0,
+    this.role = 'member',
+    this.status = 'active',
+    this.isYou = false,
+  });
+
+  final String profileId;
+  final String displayName;
+  final int weeklyPactXp;
+  final String role;
+  final String status;
+  final bool isYou;
+
+  factory PactCommunityMember.fromJson(Map<String, dynamic> json) {
+    return PactCommunityMember(
+      profileId: json['profileId']?.toString() ?? '',
+      displayName: json['displayName']?.toString() ?? 'Someone',
+      weeklyPactXp: asInt(json['weeklyPactXp']),
+      role: json['role']?.toString() ?? 'member',
+      status: json['status']?.toString() ?? 'active',
+      isYou: json['isYou'] == true,
+    );
+  }
+}
+
+class PactCommunity {
+  const PactCommunity({
+    required this.id,
+    required this.name,
+    this.kind = 'circle',
+    this.description = '',
+    this.memberCount = 0,
+    this.maxMembers = 12,
+    this.currentPactId,
+    this.myRole = 'member',
+    this.myStatus = 'active',
+    this.members = const [],
+  });
+
+  final String id;
+  final String kind;
+  final String name;
+  final String description;
+  final int memberCount;
+  final int maxMembers;
+  final String? currentPactId;
+  final String myRole;
+  final String myStatus;
+  final List<PactCommunityMember> members;
+
+  bool get isOwner => myRole == 'owner';
+
+  bool get isInvited => myStatus == 'invited';
+
+  bool get hasWave => currentPactId != null && currentPactId!.isNotEmpty;
+
+  String get seats => '$memberCount/$maxMembers';
+
+  factory PactCommunity.fromJson(Map<String, dynamic> json) {
+    final current = json['currentPactId']?.toString();
+    return PactCommunity(
+      id: json['id']?.toString() ?? '',
+      kind: json['kind']?.toString() ?? 'circle',
+      name: json['name']?.toString() ?? 'Circle',
+      description: json['description']?.toString() ?? '',
+      memberCount: asInt(json['memberCount']),
+      maxMembers: asInt(json['maxMembers'], 12),
+      currentPactId: current == null || current.isEmpty ? null : current,
+      myRole: json['myRole']?.toString() ?? 'member',
+      myStatus: json['myStatus']?.toString() ?? 'active',
+      members: pactRows(json['members'], PactCommunityMember.fromJson),
+    );
+  }
+}
+
+class PactTemplate {
+  const PactTemplate({
+    required this.slug,
+    required this.title,
+    this.description = '',
+    this.category = 'custom',
+    this.author = 'Seek Nirvana',
+    this.windowDays = 7,
+    this.requiredDays = 5,
+    this.goalMetric = 'custom',
+    this.goalValue,
+    this.goalUnit = '',
+    this.proofMode = 'both',
+    this.joinCount = 0,
+    this.available = true,
+    this.unlocksAt,
+  });
+
+  final String slug;
+  final String title;
+  final String description;
+  final String category;
+  final String author;
+  final int windowDays;
+  final int requiredDays;
+  final String goalMetric;
+  final double? goalValue;
+  final String goalUnit;
+  final String proofMode;
+  final int joinCount;
+  final bool available;
+  final int? unlocksAt;
+
+  PactCreateInput toCreate() => PactCreateInput(
+    title: title,
+    ruleText: description.isEmpty ? title : description,
+    category: category,
+    windowDays: windowDays,
+    requiredDays: requiredDays,
+    goalMetric: goalMetric,
+    goalValue: goalValue,
+    goalUnit: goalUnit,
+    proofMode: proofMode,
+    templateSlug: slug,
+  );
+
+  factory PactTemplate.fromJson(Map<String, dynamic> json) {
+    final create = json['createWith'];
+    final createMap = create is Map
+        ? Map<String, dynamic>.from(create)
+        : const <String, dynamic>{};
+    return PactTemplate(
+      slug: json['slug']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      category: json['category']?.toString() ?? 'custom',
+      author: json['author']?.toString() ?? 'Seek Nirvana',
+      windowDays: asInt(createMap['windowDays'] ?? json['windowDays'], 7),
+      requiredDays: asInt(createMap['requiredDays'] ?? json['requiredDays'], 5),
+      goalMetric:
+          (createMap['goalMetric'] ?? json['goalMetric'])?.toString() ??
+          'custom',
+      goalValue: asDouble(createMap['goalValue'] ?? json['goalValue']),
+      goalUnit: (createMap['goalUnit'] ?? json['goalUnit'])?.toString() ?? '',
+      proofMode:
+          (createMap['proofMode'] ?? json['proofMode'])?.toString() ?? 'both',
+      joinCount: asInt(json['joinCount']),
+      available: json['available'] != false,
+      unlocksAt: asIntOrNull(json['unlocksAt']),
+    );
+  }
+}
+
+class PactSuggestion {
+  const PactSuggestion({
+    required this.key,
+    required this.title,
+    this.reason = '',
+    this.category = 'custom',
+    this.goalMetric = 'custom',
+    this.goalValue,
+    this.goalUnit = '',
+    this.windowDays = 7,
+    this.requiredDays = 5,
+  });
+
+  final String key;
+  final String title;
+  final String reason;
+  final String category;
+  final String goalMetric;
+  final double? goalValue;
+  final String goalUnit;
+  final int windowDays;
+  final int requiredDays;
+
+  PactCreateInput toCreate() => PactCreateInput(
+    title: title,
+    ruleText: title,
+    category: category,
+    windowDays: windowDays,
+    requiredDays: requiredDays,
+    goalMetric: goalMetric,
+    goalValue: goalValue,
+    goalUnit: goalUnit,
+  );
+
+  factory PactSuggestion.fromJson(Map<String, dynamic> json) {
+    return PactSuggestion(
+      key: json['key']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      reason: json['reason']?.toString() ?? '',
+      category: json['category']?.toString() ?? 'custom',
+      goalMetric: json['goalMetric']?.toString() ?? 'custom',
+      goalValue: asDouble(json['goalValue']),
+      goalUnit: json['goalUnit']?.toString() ?? '',
+      windowDays: asInt(json['windowDays'], 7),
+      requiredDays: asInt(json['requiredDays'], 5),
+    );
+  }
+}
+
 class PactLeaderboard {
   const PactLeaderboard({
     required this.scope,
     this.weekStart = '',
     this.entries = const [],
+    this.availableScopes = const [],
+    this.myCommunityIds = const [],
+    this.communityId,
+    this.weeklyPactXp = 0,
+    this.population = 0,
+    this.rank,
+    this.percentile,
   });
 
   final String scope;
   final String weekStart;
   final List<PactProfile> entries;
+  final List<String> availableScopes;
+  final List<String> myCommunityIds;
+  final String? communityId;
+  final int weeklyPactXp;
+  final int population;
+  final int? rank;
+  final int? percentile;
+
+  bool get isPercentile => scope == 'global';
 
   factory PactLeaderboard.fromJson(Map<String, dynamic> json) {
+    final communityId = json['communityId']?.toString();
     return PactLeaderboard(
       scope: json['scope']?.toString() ?? 'friends',
       weekStart: json['weekStart']?.toString() ?? '',
       entries: pactRows(json['entries'], PactProfile.fromJson),
+      availableScopes: json['availableScopes'] is List
+          ? (json['availableScopes'] as List).map((s) => s.toString()).toList()
+          : const [],
+      myCommunityIds: json['myCommunityIds'] is List
+          ? (json['myCommunityIds'] as List).map((s) => s.toString()).toList()
+          : const [],
+      communityId: communityId == null || communityId.isEmpty
+          ? null
+          : communityId,
+      weeklyPactXp: asInt(json['weeklyPactXp']),
+      population: asInt(json['population']),
+      rank: asIntOrNull(json['rank']),
+      percentile: asIntOrNull(json['percentile']),
     );
   }
 }
@@ -805,7 +1145,11 @@ class PactFeedItem {
 }
 
 class PactInviteCode {
-  const PactInviteCode({required this.code, this.role = 'friend', this.expiresAt = ''});
+  const PactInviteCode({
+    required this.code,
+    this.role = 'friend',
+    this.expiresAt = '',
+  });
 
   final String code;
   final String role;
@@ -832,27 +1176,37 @@ class PactException implements Exception {
 }
 
 String pactErrorMessage(String error) => switch (error) {
-      'unauthorized' => 'Sign in to keep a Pact.',
-      'pact_cap_reached' => 'You already have an active Pact.',
-      'mode_locked' => 'That way of playing is still locked.',
-      'stake_locked' => 'That stake is still locked.',
-      'stake_not_allowed_for_mode' => 'A solo Pact cannot carry a stake.',
-      'pact_full' => 'That Pact is full.',
-      'pact_not_joinable' => 'That Pact is not open to join.',
-      'not_friends' => 'You can only invite people you are friends with.',
-      'already_backed' => 'You already backed this person.',
-      'cannot_back_self' => 'You cannot back yourself.',
-      'pact_not_backable' => 'That Pact is no longer open to back.',
-      'invite_invalid' => 'That invite is no longer valid.',
-      'pact_not_found' => 'No Pact matches that code.',
-      'pact_not_active' => 'This Pact is not running.',
-      'date_too_old' => 'Proof is only for today or yesterday.',
-      'date_in_future' => 'That day has not started yet.',
-      'day_already_saved' => 'That day already has a freeze or restore.',
-      'no_saves_remaining' => 'No freezes or restores left.',
-      'nothing_to_restore' => 'Nothing to restore right now.',
-      'restore_window_passed' => 'The restore window has closed.',
-      'auth_not_configured' => 'Seek Nirvana auth is not configured.',
-      'database_not_configured' => 'Seek Nirvana is not reachable right now.',
-      _ => error.replaceAll('_', ' '),
-    };
+  'unauthorized' => 'Sign in to keep a Pact.',
+  'pact_cap_reached' => 'You already have an active Pact.',
+  'mode_locked' => 'That way of playing is still locked.',
+  'stake_locked' => 'That stake is still locked.',
+  'stake_not_allowed_for_mode' => 'A solo Pact cannot carry a stake.',
+  'pact_full' => 'That Pact is full.',
+  'pact_not_joinable' => 'That Pact is not open to join.',
+  'not_friends' => 'You can only invite people you are friends with.',
+  'already_backed' => 'You already backed this person.',
+  'cannot_back_self' => 'You cannot back yourself.',
+  'pact_not_backable' => 'That Pact is no longer open to back.',
+  'invite_invalid' => 'That invite is no longer valid.',
+  'pact_not_found' => 'No Pact matches that code.',
+  'pact_not_active' => 'This Pact is not running.',
+  'date_too_old' => 'Proof is only for today or yesterday.',
+  'date_in_future' => 'That day has not started yet.',
+  'day_already_saved' => 'That day already has a freeze or restore.',
+  'no_saves_remaining' => 'No freezes or restores left.',
+  'nothing_to_restore' => 'Nothing to restore right now.',
+  'restore_window_passed' => 'The restore window has closed.',
+  'auth_not_configured' => 'Seek Nirvana auth is not configured.',
+  'database_not_configured' => 'Seek Nirvana is not reachable right now.',
+  'circles_locked' => 'Circles unlock after 7 successful pacts.',
+  'already_owns_circle' => 'You already have a circle.',
+  'templates_locked' => 'Templates are not open yet.',
+  'suggestions_locked' => 'Suggestions are not open yet.',
+  'community_full' => 'That circle is full.',
+  'community_not_found' => 'That circle is gone.',
+  'community_pact_in_flight' => 'This circle already has a pact running.',
+  'not_community_owner' => 'Only the owner can do that.',
+  'owner_cannot_leave_occupied_circle' =>
+    'Hand the circle off, or wait until you are the last one in it.',
+  _ => error.replaceAll('_', ' '),
+};

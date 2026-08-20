@@ -23,13 +23,12 @@ class PactHttpResponse {
   final String body;
 }
 
-typedef PactTransport = Future<PactHttpResponse> Function(PactHttpRequest request);
+typedef PactTransport =
+    Future<PactHttpResponse> Function(PactHttpRequest request);
 
 typedef PactTokenReader = Future<String?> Function();
-typedef PactTokenWriter = Future<void> Function({
-  required String accessToken,
-  String? refreshToken,
-});
+typedef PactTokenWriter =
+    Future<void> Function({required String accessToken, String? refreshToken});
 
 Future<PactHttpResponse> defaultPactTransport(PactHttpRequest req) async {
   final client = HttpClient();
@@ -102,7 +101,8 @@ class PactClient {
   Future<PactRecord> create(PactCreateInput input) async {
     final json = await _json('POST', '/api/pacts', body: input.toJson());
     final pact = json['pact'];
-    if (pact is Map) return PactRecord.fromJson(Map<String, dynamic>.from(pact));
+    if (pact is Map)
+      return PactRecord.fromJson(Map<String, dynamic>.from(pact));
     return PactRecord.fromJson(json);
   }
 
@@ -112,11 +112,11 @@ class PactClient {
     required bool satisfied,
     String source = 'manual',
   }) async {
-    final json = await _json('PUT', '/api/pacts/$id/proof', body: {
-      'date': date,
-      'satisfied': satisfied,
-      'source': source,
-    });
+    final json = await _json(
+      'PUT',
+      '/api/pacts/$id/proof',
+      body: {'date': date, 'satisfied': satisfied, 'source': source},
+    );
     final me = json['me'];
     if (me is Map) return PactMe.fromJson(Map<String, dynamic>.from(me));
     throw const PactException(502, 'proof_missing_progress');
@@ -161,40 +161,138 @@ class PactClient {
     String? inviteCode,
     String? profileId,
   }) {
-    return _json('POST', '/api/friends/requests', body: {
-      'email': ?email,
-      'inviteCode': ?inviteCode,
-      'profileId': ?profileId,
-    });
+    return _json(
+      'POST',
+      '/api/friends/requests',
+      body: {
+        'email': ?email,
+        'inviteCode': ?inviteCode,
+        'profileId': ?profileId,
+      },
+    );
   }
 
   Future<void> respondFriendRequest(String id, String action) {
-    return _json('POST', '/api/friends/requests/$id/respond', body: {'action': action});
+    return _json(
+      'POST',
+      '/api/friends/requests/$id/respond',
+      body: {'action': action},
+    );
   }
 
-  Future<PactInviteCode> createFriendInvite({String role = 'friend', String? pactId}) async {
-    final json = await _json('POST', '/api/friends/invites', body: {
-      'role': role,
-      'pactId': ?pactId,
-    });
+  Future<PactInviteCode> createFriendInvite({
+    String role = 'friend',
+    String? pactId,
+  }) async {
+    final json = await _json(
+      'POST',
+      '/api/friends/invites',
+      body: {'role': role, 'pactId': ?pactId},
+    );
     return PactInviteCode.fromJson(json);
   }
 
   Future<PactJoinResult> join({String? shareCode, String? inviteCode}) async {
-    final json = await _json('POST', '/api/pacts/join', body: {
-      'shareCode': ?shareCode,
-      'inviteCode': ?inviteCode,
-    });
+    final json = await _json(
+      'POST',
+      '/api/pacts/join',
+      body: {'shareCode': ?shareCode, 'inviteCode': ?inviteCode},
+    );
     return PactJoinResult.fromJson(json);
   }
 
   Future<void> inviteToPact(String pactId, List<String> profileIds) {
-    return _json('POST', '/api/pacts/$pactId/invites', body: {'profileIds': profileIds});
+    return _json(
+      'POST',
+      '/api/pacts/$pactId/invites',
+      body: {'profileIds': profileIds},
+    );
   }
 
-  Future<PactLeaderboard> leaderboard({String scope = 'friends'}) async {
-    final json = await _json('GET', '/api/pacts/leaderboard', query: {'scope': scope});
+  Future<PactLeaderboard> leaderboard({
+    String scope = 'friends',
+    String? communityId,
+  }) async {
+    final json = await _json(
+      'GET',
+      '/api/pacts/leaderboard',
+      query: {
+        'scope': scope,
+        if (communityId != null && communityId.isNotEmpty)
+          'communityId': communityId,
+      },
+    );
     return PactLeaderboard.fromJson(json);
+  }
+
+  Future<List<PactCommunity>> communities() async {
+    final json = await _json('GET', '/api/communities');
+    return pactRows(json['communities'], PactCommunity.fromJson);
+  }
+
+  Future<PactCommunity> createCommunity({
+    required String name,
+    String description = '',
+  }) async {
+    final json = await _json(
+      'POST',
+      '/api/communities',
+      body: {
+        'name': name,
+        if (description.isNotEmpty) 'description': description,
+      },
+    );
+    return PactCommunity.fromJson(json);
+  }
+
+  Future<PactCommunity> community(String id) async {
+    final json = await _json('GET', '/api/communities/$id');
+    return PactCommunity.fromJson(json);
+  }
+
+  Future<void> inviteToCommunity(String id, List<String> profileIds) {
+    return _json(
+      'POST',
+      '/api/communities/$id/invites',
+      body: {'profileIds': profileIds},
+    );
+  }
+
+  Future<void> joinCommunity(String id) =>
+      _json('POST', '/api/communities/$id/join');
+
+  Future<void> leaveCommunity(String id) =>
+      _json('POST', '/api/communities/$id/leave');
+
+  Future<PactRecord> startCommunityPact(
+    String id,
+    PactCreateInput input,
+  ) async {
+    final json = await _json(
+      'POST',
+      '/api/communities/$id/pact',
+      body: input.toJson(),
+    );
+    final pact = json['pact'];
+    if (pact is Map)
+      return PactRecord.fromJson(Map<String, dynamic>.from(pact));
+    return PactRecord.fromJson(json);
+  }
+
+  Future<List<PactTemplate>> templates({String? category}) async {
+    final json = await _json(
+      'GET',
+      '/api/pacts/templates',
+      query: {
+        if (category != null && category.isNotEmpty) 'category': category,
+      },
+    );
+    return pactRows(json['templates'], PactTemplate.fromJson);
+  }
+
+  Future<List<PactSuggestion>> suggested() async {
+    final json = await _json('GET', '/api/pacts/suggested');
+    return pactRows(json['suggestions'], PactSuggestion.fromJson);
   }
 
   Future<List<PactFeedItem>> feed() async {
@@ -207,6 +305,16 @@ class PactClient {
     return pactRows(json['candidates'], PactBackable.fromJson);
   }
 
+  Future<List<PactBackable>> myBackings() async {
+    final json = await _json('GET', '/api/pacts/backing');
+    return pactRows(json['pledges'], PactBackable.fromJson);
+  }
+
+  Future<List<PactBacking>> backings(String pactId) async {
+    final json = await _json('GET', '/api/pacts/$pactId/backings');
+    return pactRows(json['backings'], PactBacking.fromJson);
+  }
+
   Future<void> backPact(
     String pactId, {
     required String participantId,
@@ -214,12 +322,16 @@ class PactClient {
     String message = '',
     String pledgeType = 'item',
   }) {
-    return _json('POST', '/api/pacts/$pactId/backings', body: {
-      'participantId': participantId,
-      'pledgeType': pledgeType,
-      'itemLabel': itemLabel,
-      'message': message,
-    });
+    return _json(
+      'POST',
+      '/api/pacts/$pactId/backings',
+      body: {
+        'participantId': participantId,
+        'pledgeType': pledgeType,
+        'itemLabel': itemLabel,
+        'message': message,
+      },
+    );
   }
 
   Future<PactProgress> progress(String id) async {
@@ -232,10 +344,11 @@ class PactClient {
     required String participantId,
     required String message,
   }) {
-    return _json('POST', '/api/pacts/$pactId/encourage', body: {
-      'participantId': participantId,
-      'message': message,
-    });
+    return _json(
+      'POST',
+      '/api/pacts/$pactId/encourage',
+      body: {'participantId': participantId, 'message': message},
+    );
   }
 
   Future<PactSettlement> settlement(String pactId) async {

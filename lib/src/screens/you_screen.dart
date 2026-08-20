@@ -335,6 +335,12 @@ class YouScreen extends ConsumerWidget {
               onTap: () => openPactFriends(context),
             ),
             _SettingsRow(
+              icon: 'users',
+              iconColor: t.gold,
+              label: 'Circle',
+              onTap: () => openPactCircle(context),
+            ),
+            _SettingsRow(
               icon: 'award',
               iconColor: t.gold,
               label: 'Pact board',
@@ -646,8 +652,10 @@ Widget? _pactTrailing(WidgetRef ref, VyanaColors t) {
   final state = ref.watch(pactControllerProvider);
   if (state.active.isEmpty) return null;
   if (state.active.length > 1) {
-    return Text('${state.active.length} live',
-        style: VyanaType.label.copyWith(color: t.gold));
+    return Text(
+      '${state.active.length} live',
+      style: VyanaType.label.copyWith(color: t.gold),
+    );
   }
   final active = state.primary!;
   return Text(

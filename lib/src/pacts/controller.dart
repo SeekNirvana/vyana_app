@@ -15,7 +15,8 @@ class PactTokenStore {
   static String? _memoryRefresh;
 
   static Future<String?> readAccess() async {
-    if (_memoryAccess != null && _memoryAccess!.isNotEmpty) return _memoryAccess;
+    if (_memoryAccess != null && _memoryAccess!.isNotEmpty)
+      return _memoryAccess;
     final env = EnvConfig.seekNirvanaAccessToken;
     if (env.isNotEmpty) return env;
     final prefs = await SharedPreferences.getInstance();
@@ -70,7 +71,11 @@ class PactState {
     this.friendRequests = const PactFriendRequests(),
     this.feed = const [],
     this.backable = const [],
+    this.backing = const [],
     this.friendsBoard,
+    this.communities = const [],
+    this.templates = const [],
+    this.suggestions = const [],
   });
 
   final bool loading;
@@ -85,9 +90,18 @@ class PactState {
   final PactFriendRequests friendRequests;
   final List<PactFeedItem> feed;
   final List<PactBackable> backable;
+  final List<PactBackable> backing;
   final PactLeaderboard? friendsBoard;
+  final List<PactCommunity> communities;
+  final List<PactTemplate> templates;
+  final List<PactSuggestion> suggestions;
 
   PactSnapshot? get primary => active.isEmpty ? null : active.first;
+
+  int get circleInvites => communities.where((c) => c.isInvited).length;
+
+  bool get ownsCircle =>
+      communities.any((c) => c.isOwner && c.kind == 'circle');
 
   bool canBack(String pactId, String? participantId) {
     if (participantId == null || participantId.isEmpty) return false;
@@ -110,7 +124,11 @@ class PactState {
     PactFriendRequests? friendRequests,
     List<PactFeedItem>? feed,
     List<PactBackable>? backable,
+    List<PactBackable>? backing,
     PactLeaderboard? friendsBoard,
+    List<PactCommunity>? communities,
+    List<PactTemplate>? templates,
+    List<PactSuggestion>? suggestions,
   }) {
     return PactState(
       loading: loading ?? this.loading,
@@ -125,7 +143,11 @@ class PactState {
       friendRequests: friendRequests ?? this.friendRequests,
       feed: feed ?? this.feed,
       backable: backable ?? this.backable,
+      backing: backing ?? this.backing,
       friendsBoard: friendsBoard ?? this.friendsBoard,
+      communities: communities ?? this.communities,
+      templates: templates ?? this.templates,
+      suggestions: suggestions ?? this.suggestions,
     );
   }
 }
@@ -155,7 +177,11 @@ class PactController extends StateNotifier<PactState> {
 
   Future<void> refresh() async {
     final signedIn = state.signedIn;
-    state = state.copyWith(loading: !signedIn, busy: signedIn, clearError: true);
+    state = state.copyWith(
+      loading: !signedIn,
+      busy: signedIn,
+      clearError: true,
+    );
     try {
       final access = await PactTokenStore.readAccess();
       final refreshToken = await PactTokenStore.readRefresh();
@@ -180,7 +206,11 @@ class PactController extends StateNotifier<PactState> {
       var friendRequests = const PactFriendRequests();
       var feed = const <PactFeedItem>[];
       var backable = const <PactBackable>[];
+      var backing = const <PactBackable>[];
       PactLeaderboard? friendsBoard;
+      var communities = const <PactCommunity>[];
+      var templates = const <PactTemplate>[];
+      var suggestions = const <PactSuggestion>[];
       try {
         friends = await _client.friends();
         friendRequests = await _client.friendRequests();
@@ -192,7 +222,19 @@ class PactController extends StateNotifier<PactState> {
         backable = await _client.backable();
       } catch (_) {}
       try {
+        backing = await _client.myBackings();
+      } catch (_) {}
+      try {
         friendsBoard = await _client.leaderboard(scope: 'friends');
+      } catch (_) {}
+      try {
+        communities = await _client.communities();
+      } catch (_) {}
+      try {
+        templates = await _client.templates();
+      } catch (_) {}
+      try {
+        suggestions = await _client.suggested();
       } catch (_) {}
       final active = <PactSnapshot>[];
       for (final row in today) {
@@ -202,7 +244,13 @@ class PactController extends StateNotifier<PactState> {
         }
         try {
           final progress = await _client.progress(row.pact.id);
-          active.add(row.copyWith(others: progress.others));
+          active.add(
+            row.copyWith(
+              me: progress.me,
+              others: progress.others,
+              backings: progress.backings,
+            ),
+          );
         } catch (_) {
           active.add(row);
         }
@@ -218,15 +266,16 @@ class PactController extends StateNotifier<PactState> {
         friendRequests: friendRequests,
         feed: feed,
         backable: backable,
+        backing: backing,
         friendsBoard: friendsBoard,
+        communities: communities,
+        templates: templates,
+        suggestions: suggestions,
       );
     } on PactException catch (error) {
       if (error.unauthorized) {
         await PactTokenStore.clear();
-        state = PactState(
-          loading: false,
-          error: pactErrorMessage(error.error),
-        );
+        state = PactState(loading: false, error: pactErrorMessage(error.error));
         return;
       }
       state = state.copyWith(
@@ -244,13 +293,12 @@ class PactController extends StateNotifier<PactState> {
   Future<bool> create(
     PactCreateInput input, {
     List<String> invitees = const [],
-  }) =>
-      _run(() async {
-        final pact = await _client.create(input);
-        if (invitees.isNotEmpty) {
-          await _client.inviteToPact(pact.id, invitees);
-        }
-      });
+  }) => _run(() async {
+    final pact = await _client.create(input);
+    if (invitees.isNotEmpty) {
+      await _client.inviteToPact(pact.id, invitees);
+    }
+  });
 
   Future<bool> proveToday(PactSnapshot snapshot, {required bool satisfied}) {
     if (snapshot.today.isEmpty) return Future.value(false);
@@ -281,17 +329,18 @@ class PactController extends StateNotifier<PactState> {
     });
   }
 
-  Future<bool> joinPact({String? shareCode, String? inviteCode}) => _run(() async {
+  Future<bool> joinPact({String? shareCode, String? inviteCode}) =>
+      _run(() async {
         await _client.join(shareCode: shareCode, inviteCode: inviteCode);
       });
 
   Future<bool> addFriend({String? email, String? inviteCode}) => _run(() async {
-        await _client.sendFriendRequest(email: email, inviteCode: inviteCode);
-      });
+    await _client.sendFriendRequest(email: email, inviteCode: inviteCode);
+  });
 
   Future<bool> respondFriend(String id, String action) => _run(() async {
-        await _client.respondFriendRequest(id, action);
-      });
+    await _client.respondFriendRequest(id, action);
+  });
 
   Future<PactInviteCode?> mintFriendInvite() async {
     try {
@@ -306,13 +355,17 @@ class PactController extends StateNotifier<PactState> {
     PactSnapshot snapshot, {
     required String participantId,
     required String message,
-  }) =>
+  }) => _run(() async {
+    await _client.encourage(
+      snapshot.pact.id,
+      participantId: participantId,
+      message: message,
+    );
+  });
+
+  Future<bool> inviteFriends(String pactId, List<String> profileIds) =>
       _run(() async {
-        await _client.encourage(
-          snapshot.pact.id,
-          participantId: participantId,
-          message: message,
-        );
+        await _client.inviteToPact(pactId, profileIds);
       });
 
   Future<bool> backSomeone({
@@ -320,15 +373,67 @@ class PactController extends StateNotifier<PactState> {
     required String participantId,
     required String itemLabel,
     String message = '',
-  }) =>
+  }) => _run(() async {
+    await _client.backPact(
+      pactId,
+      participantId: participantId,
+      itemLabel: itemLabel,
+      message: message,
+    );
+  });
+
+  Future<bool> createCircle({required String name}) => _run(() async {
+    await _client.createCommunity(name: name);
+  });
+
+  Future<PactCommunity?> loadCircle(String id) async {
+    try {
+      return await _client.community(id);
+    } on PactException catch (error) {
+      state = state.copyWith(error: pactErrorMessage(error.error));
+      return null;
+    } catch (_) {
+      state = state.copyWith(error: 'Could not reach Seek Nirvana.');
+      return null;
+    }
+  }
+
+  Future<bool> inviteToCircle(String id, List<String> profileIds) =>
       _run(() async {
-        await _client.backPact(
-          pactId,
-          participantId: participantId,
-          itemLabel: itemLabel,
-          message: message,
-        );
+        await _client.inviteToCommunity(id, profileIds);
       });
+
+  Future<bool> joinCircle(String id) => _run(() async {
+    await _client.joinCommunity(id);
+  });
+
+  Future<bool> leaveCircle(String id) => _run(() async {
+    await _client.leaveCommunity(id);
+  });
+
+  Future<PactRecord?> startCirclePact(String id, PactCreateInput input) async {
+    if (state.busy) return null;
+    state = state.copyWith(busy: true, clearError: true);
+    try {
+      final pact = await _client.startCommunityPact(id, input);
+      await refresh();
+      return pact;
+    } on PactException catch (error) {
+      state = state.copyWith(
+        busy: false,
+        loading: false,
+        error: pactErrorMessage(error.error),
+      );
+      return null;
+    } catch (_) {
+      state = state.copyWith(
+        busy: false,
+        loading: false,
+        error: 'Could not reach Seek Nirvana.',
+      );
+      return null;
+    }
+  }
 
   Future<bool> _run(Future<void> Function() action) async {
     if (state.busy) return false;
@@ -364,7 +469,8 @@ final pactClientProvider = Provider<PactClient>((ref) {
   );
 });
 
-final pactControllerProvider =
-    StateNotifierProvider<PactController, PactState>((ref) {
-  return PactController(ref.watch(pactClientProvider));
-});
+final pactControllerProvider = StateNotifierProvider<PactController, PactState>(
+  (ref) {
+    return PactController(ref.watch(pactClientProvider));
+  },
+);

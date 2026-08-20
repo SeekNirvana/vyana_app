@@ -90,6 +90,7 @@ class VyanaIcon extends StatelessWidget {
     'bolt': Icons.bolt_rounded,
     'calendar': Icons.calendar_month_rounded,
     'mapPin': Icons.location_on_rounded,
+    'users': Icons.groups_rounded,
     'pause': Icons.pause_rounded,
     'stop': Icons.stop_rounded,
     'tag': Icons.sell_rounded,
