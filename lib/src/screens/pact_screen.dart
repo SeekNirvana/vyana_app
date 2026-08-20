@@ -3,215 +3,228 @@ part of '../../main.dart';
 Future<void> openPact(BuildContext context) => Navigator.of(context)
     .push<void>(MaterialPageRoute(builder: (_) => const PactScreen()));
 
-// ---------------------------------------------------------------------------
-// Pact logic (pure — the only parts with real rules while the UI is a preview)
-// ---------------------------------------------------------------------------
-
-/// Where a Pact stands right now. Drives the status chip and its colour.
-enum PactStatus { secured, onTrack, atRisk, missed }
-
-/// Status of a Pact from its counts alone.
-///
-/// [done] days already proven, [required] days needed to succeed,
-/// [elapsed] days of the window that have passed, [total] window length.
-PactStatus pactStatus({
-  required int done,
-  required int required,
-  required int elapsed,
-  required int total,
-}) {
-  if (done >= required) return PactStatus.secured;
-  final needed = required - done;
-  final remaining = total - elapsed;
-  if (needed > remaining) return PactStatus.missed;
-  if (needed == remaining) return PactStatus.atRisk;
-  return PactStatus.onTrack;
-}
-
-String pactStatusLabel(PactStatus status) => switch (status) {
-      PactStatus.secured => 'Secured',
-      PactStatus.onTrack => 'On track',
-      PactStatus.atRisk => 'No days to spare',
-      PactStatus.missed => 'Missed',
-    };
-
-/// Friends-pool settlement (business doc §4.2): finishers get their own stake
-/// back plus an equal share of the stakes left by those who did not finish.
-/// Everyone finishing means everyone simply gets their stake back.
-double pactPoolPayout({
-  required double stake,
-  required int participants,
-  required int finishers,
-}) {
-  if (finishers <= 0) return 0;
-  final forfeited = stake * (participants - finishers);
-  return stake + forfeited / finishers;
-}
-
-// ---------------------------------------------------------------------------
-// Mock data — mirrors HomeSeed. Replaced by real Pacts when the layer lands.
-// ---------------------------------------------------------------------------
-
-class PactMode {
-  const PactMode(this.id, this.title, this.blurb, this.icon, this.accent);
-  final String id;
-  final String title;
-  final String blurb;
-  final String icon;
-  final String accent;
-}
-
-class PactProgram {
-  const PactProgram(this.title, this.category, this.window, this.by, this.icon,
-      this.accent);
-  final String title;
-  final String category;
-  final String window;
-  final String by;
-  final String icon;
-  final String accent;
-}
-
-class PactFriend {
-  const PactFriend(this.name, this.pact, this.done, this.required, this.backers);
-  final String name;
-  final String pact;
-  final int done;
-  final int required;
-  final int backers;
-}
-
-class PactBacker {
-  const PactBacker(this.name, this.pledge);
-  final String name;
-  final String pledge;
-}
-
-class PactSeed {
-  PactSeed._();
-
-  // The user's one live Pact.
-  static const activeTitle = '7-Day Earlier Night';
-  static const activeRule = 'In bed before 11:45 PM';
-  static const activeDone = 4;
-  static const activeRequired = 5;
-  static const activeElapsed = 5;
-  static const activeTotal = 7;
-  static const activeStake = '\$25 + coffee from Dev';
-
-  /// Per-day proof for the active window; `null` = day not reached yet.
-  static const activeDays = <bool?>[true, true, false, true, true, null, null];
-
-  static const backers = <PactBacker>[
-    PactBacker('Dev', 'Coffee'),
-    PactBacker('Meera', '\$20'),
-    PactBacker('Work', '\$50 wellness credit'),
-  ];
-
-  static const modes = <PactMode>[
-    PactMode('just_me', 'Just Me',
-        'A promise to yourself. Stake something or nothing.', 'target', 'readiness'),
-    PactMode('friends', 'With Friends',
-        'Same commitment, together. Finishers split what quitters left.', 'user', 'hrv'),
-    PactMode('challenge', 'Challenge Someone',
-        'Same goal, friendly stakes. Coffee, pizza, bragging rights.', 'flame', 'stress'),
-    PactMode('back', 'Back Someone',
-        "Put something behind someone you believe in.", 'award', 'bp'),
-  ];
-
-  static const programs = <PactProgram>[
-    PactProgram('21-Day Sleep Reset', 'Sleep', '21 days · 17 required',
-        'Seek Nirvana expert', 'moon', 'sleep'),
-    PactProgram('30-Day Meditation', 'Mindfulness', '30 days · 24 required',
-        'Community', 'meditate', 'readiness'),
-    PactProgram('Morning Walk Pact', 'Movement', '14 days · 11 required',
-        'Community', 'walk', 'steps'),
-    PactProgram('No Phone After 10 PM', 'Digital wellbeing', '30 days · 25 required',
-        'Seek Nirvana', 'moon', 'luna'),
-    PactProgram('Hydration Pact', 'Nutrition', '14 days · 12 required',
-        'Community', 'drop', 'spo2'),
-  ];
-
-  static const friends = <PactFriend>[
-    PactFriend('Shachindra', '21 days of meditation', 11, 17, 7),
-    PactFriend('Anna', 'In bed before 11 PM', 18, 24, 3),
-  ];
-
-  // Friends-pool example rendered on the "With Friends" explainer.
-  static const poolStake = 10.0;
-  static const poolParticipants = 5;
-  static const poolFinishers = 4;
-}
-
-// ---------------------------------------------------------------------------
-// Screen
-// ---------------------------------------------------------------------------
-
-/// Pact — the commitment layer. Preview build: the whole surface renders from
-/// [PactSeed] and every action opens the "coming soon" sheet. Nothing here
-/// creates, settles, or shares a real Pact yet.
-class PactScreen extends StatelessWidget {
+/// Pact hub — live promises, XP run, and a Friends tab for the social layer.
+class PactScreen extends ConsumerStatefulWidget {
   const PactScreen({super.key});
+
+  @override
+  ConsumerState<PactScreen> createState() => _PactScreenState();
+}
+
+class _PactScreenState extends ConsumerState<PactScreen> {
+  String _tab = 'mine';
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
+    final state = ref.watch(pactControllerProvider);
     return Scaffold(
       body: DecoratedBox(
         decoration: BoxDecoration(gradient: t.bgGradient),
         child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 28),
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  IconBtn(icon: 'chevL', onTap: () => Navigator.of(context).pop()),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('PACT',
-                            style: VyanaType.eyebrow.copyWith(color: t.gold)),
-                        Text('Keep your word',
-                            style: VyanaType.appBarSerif.copyWith(color: t.text)),
-                      ],
+          child: RefreshIndicator(
+            color: t.gold,
+            onRefresh: () => ref.read(pactControllerProvider.notifier).refresh(),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 28),
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    IconBtn(icon: 'chevL', onTap: () => Navigator.of(context).pop()),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('PACT',
+                              style: VyanaType.eyebrow.copyWith(color: t.gold)),
+                          Text('Keep your word',
+                              style: VyanaType.appBarSerif.copyWith(color: t.text)),
+                        ],
+                      ),
+                    ),
+                    if (state.signedIn) ...[
+                      const SizedBox(width: 8),
+                      _XpChip(xp: state.unlocks?.xpBalance ?? 0),
+                    ],
+                  ],
+                ),
+                if (state.signedIn) ...[
+                  const SizedBox(height: 14),
+                  const _PactRunHud(),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _PactTab(
+                          label: 'Mine',
+                          icon: 'target',
+                          active: _tab == 'mine',
+                          onTap: () => setState(() => _tab = 'mine'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _PactTab(
+                          label: 'Friends',
+                          icon: 'user',
+                          active: _tab == 'friends',
+                          badge: state.friendRequests.incoming.length,
+                          onTap: () => setState(() => _tab = 'friends'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (state.error != null) ...[
+                  const SizedBox(height: 12),
+                  _PactError(message: state.error!),
+                ],
+                if (state.loading) ...[
+                  const SizedBox(height: 24),
+                  Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: t.gold,
+                      ),
                     ),
                   ),
-                  const _PreviewBadge(),
+                ] else if (!state.signedIn) ...[
+                  const SizedBox(height: 18),
+                  const _SessionGate(),
+                ] else if (_tab == 'friends') ...[
+                  const SizedBox(height: 18),
+                  const PactFriendsBody(),
+                ] else ...[
+                  const SizedBox(height: 18),
+                  if (state.active.isNotEmpty) ...[
+                    SectionHead(
+                      eyebrow: state.active.length == 1 ? 'Live' : 'Live pacts',
+                      title: state.active.length == 1
+                          ? 'In play'
+                          : '${state.active.length} in play',
+                    ),
+                    for (final row in state.active) ...[
+                      _ActivePactCard(snapshot: row, busy: state.busy),
+                      const SizedBox(height: 10),
+                    ],
+                  ],
+                  if (state.unlocks?.canCreate ?? false) ...[
+                    SectionHead(
+                      eyebrow: state.active.isEmpty ? 'Start one' : 'Start another',
+                      title: 'Just Me, Versus, Friends',
+                    ),
+                    _CreatePactCard(
+                      unlocks: state.unlocks!,
+                      friends: state.friends,
+                    ),
+                    const SizedBox(height: 10),
+                  ] else if (state.active.isEmpty) ...[
+                    const SectionHead(eyebrow: 'Your Pacts', title: 'Slot full'),
+                    const _CapNote(),
+                    const SizedBox(height: 10),
+                  ],
+                  if (state.unfinished.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    const SectionHead(eyebrow: 'Unfinished', title: 'Still yours'),
+                    for (final row in state.unfinished) ...[
+                      _EndedPactCard(snapshot: row),
+                      const SizedBox(height: 10),
+                    ],
+                  ],
+                  if (state.past.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    const SectionHead(eyebrow: 'Kept', title: 'Finished'),
+                    for (final row in state.past.take(5)) ...[
+                      _EndedPactCard(snapshot: row, succeeded: true),
+                      const SizedBox(height: 10),
+                    ],
+                  ],
                 ],
-              ),
-              const SizedBox(height: 14),
-              const _PactHero(),
-              const SizedBox(height: 18),
-              const SectionHead(eyebrow: 'Your Pact', title: 'In progress'),
-              const _ActivePactCard(),
-              const SizedBox(height: 10),
-              const _BackersCard(),
-              const SizedBox(height: 18),
-              const SectionHead(
-                  eyebrow: 'Start one', title: 'Four ways to commit'),
-              for (final mode in PactSeed.modes) ...[
-                _ModeCard(mode: mode),
-                const SizedBox(height: 10),
+                if (_tab == 'mine') ...[
+                  const SizedBox(height: 8),
+                  const _PrivacyNote(),
+                ],
               ],
-              const SizedBox(height: 8),
-              const SectionHead(
-                  eyebrow: 'From your signals', title: 'Suggested by Vyana'),
-              const _SuggestedPactCard(),
-              const SizedBox(height: 18),
-              const SectionHead(
-                  eyebrow: 'Explore', title: 'Commitment programs'),
-              const _ProgramRail(),
-              const SizedBox(height: 18),
-              const SectionHead(eyebrow: 'People', title: 'Back someone'),
-              for (final friend in PactSeed.friends) ...[
-                _FriendPactCard(friend: friend),
-                const SizedBox(height: 10),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PactError extends StatelessWidget {
+  const _PactError({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Panel(
+      pad: 14,
+      accent: t.gold,
+      child: Text(message,
+          style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45)),
+    );
+  }
+}
+
+class _PactTab extends StatelessWidget {
+  const _PactTab({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.onTap,
+    this.badge = 0,
+  });
+
+  final String label;
+  final String icon;
+  final bool active;
+  final VoidCallback onTap;
+  final int badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Material(
+      color: active ? t.gold.withValues(alpha: t.isDark ? 0.2 : 0.14) : Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 11),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: active ? t.gold : t.border),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              VyanaIcon(icon, size: 15, color: active ? t.gold : t.textSec),
+              const SizedBox(width: 7),
+              Text(label,
+                  style: VyanaType.label
+                      .copyWith(color: active ? t.gold : t.textSec)),
+              if (badge > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: t.gold,
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                  child: Text('$badge',
+                      style: VyanaType.mono10.copyWith(color: t.bg)),
+                ),
               ],
-              const SizedBox(height: 8),
-              const _PrivacyNote(),
             ],
           ),
         ),
@@ -220,73 +233,115 @@ class PactScreen extends StatelessWidget {
   }
 }
 
-/// Every action in this preview lands here, so nothing looks broken or fakes
-/// a result. Names the feature and says what it will do.
-void pactComingSoon(BuildContext context, String feature, String detail) {
-  final t = context.vyana;
-  showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: Colors.transparent,
-    isScrollControlled: true,
-    builder: (sheetContext) => Padding(
-      padding: EdgeInsets.fromLTRB(
-          16, 0, 16, 16 + MediaQuery.paddingOf(sheetContext).bottom),
-      child: Panel(
-        pad: 20,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+class _PactRunHud extends ConsumerWidget {
+  const _PactRunHud();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.vyana;
+    final state = ref.watch(pactControllerProvider);
+    final unlocks = state.unlocks;
+    final xp = unlocks?.xpBalance ?? 0;
+    final streak = unlocks?.currentStreak ?? 0;
+    final kept = unlocks?.completed ?? 0;
+    final used = unlocks?.slotsUsed ?? state.active.length;
+    final cap = unlocks?.cap ?? 3;
+    final next = unlocks?.nextLockedTier;
+    final progress = next == null || next.unlockAt <= 0
+        ? 1.0
+        : (kept / next.unlockAt).clamp(0.0, 1.0);
+
+    return Panel(
+      grad: true,
+      pad: 18,
+      accent: t.gold,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('$xp',
+                        style: VyanaType.appBarSerif
+                            .copyWith(color: t.gold, fontSize: 36, height: 1)),
+                    const SizedBox(height: 4),
+                    Text('XP',
+                        style: VyanaType.eyebrow.copyWith(color: t.gold)),
+                  ],
+                ),
+              ),
+              _HudStat(label: 'streak', value: '$streak'),
+              const SizedBox(width: 16),
+              _HudStat(label: 'kept', value: '$kept'),
+              const SizedBox(width: 16),
+              _HudStat(label: 'live', value: '$used/$cap'),
+            ],
+          ),
+          if (next != null) ...[
+            const SizedBox(height: 16),
             Row(
               children: [
-                VyanaIconBadge(name: 'timer', color: t.gold, size: 40),
-                const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('COMING SOON',
-                          style: VyanaType.eyebrow.copyWith(color: t.gold)),
-                      const SizedBox(height: 3),
-                      Text(feature,
-                          style: VyanaType.titleSerif
-                              .copyWith(color: t.text, fontSize: 20)),
-                    ],
-                  ),
+                  child: Text('Next · ${next.label}',
+                      style: VyanaType.caption.copyWith(color: t.textSec)),
+                ),
+                Text(
+                  '${(next.unlockAt - kept).clamp(0, next.unlockAt)} more',
+                  style: VyanaType.mono10.copyWith(color: t.gold),
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            Text(detail,
-                style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5)),
-            const SizedBox(height: 18),
-            Cta(
-              label: 'Got it',
-              icon: 'check',
-              onTap: () => Navigator.of(sheetContext).pop(),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(100),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 7,
+                backgroundColor: t.gold.withValues(alpha: t.isDark ? 0.16 : 0.12),
+                color: t.gold,
+              ),
             ),
           ],
-        ),
+        ],
       ),
-    ),
-  );
+    );
+  }
 }
 
-/// Home-tab entry: the live Pact at a glance, or the invitation to make one.
-/// Progress only — never a vital.
-class _PactHomeCard extends StatelessWidget {
-  const _PactHomeCard();
+class _HudStat extends StatelessWidget {
+  const _HudStat({required this.label, required this.value});
+  final String label;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
-    final status = pactStatus(
-      done: PactSeed.activeDone,
-      required: PactSeed.activeRequired,
-      elapsed: PactSeed.activeElapsed,
-      total: PactSeed.activeTotal,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(value,
+            style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 20)),
+        const SizedBox(height: 2),
+        Text(label, style: VyanaType.mono10.copyWith(color: t.textMuted)),
+      ],
     );
+  }
+}
+
+/// Home-tab entry: live Pact at a glance, or the invitation to make one.
+class _PactHomeCard extends ConsumerWidget {
+  const _PactHomeCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.vyana;
+    final state = ref.watch(pactControllerProvider);
+    final active = state.primary;
+    final status = active?.me.standing;
     return Panel(
       pad: 14,
       radius: 20,
@@ -301,23 +356,23 @@ class _PactHomeCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(PactSeed.activeTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: VyanaType.titleSerif
-                              .copyWith(color: t.text, fontSize: 17)),
-                    ),
-                    const SizedBox(width: 8),
-                    const _PreviewBadge(),
-                  ],
+                Text(
+                  active?.pact.title ?? 'Pact',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: VyanaType.titleSerif
+                      .copyWith(color: t.text, fontSize: 17),
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '${PactSeed.activeDone}/${PactSeed.activeRequired} days · '
-                  '${pactStatusLabel(status)}',
+                  active == null
+                      ? (state.signedIn
+                          ? 'Make a 3-day promise to yourself'
+                          : 'Keep your word')
+                      : state.active.length > 1
+                          ? '${state.active.length} live · ${active.me.done}/${active.me.required} on ${active.pact.title}'
+                          : '${active.me.done}/${active.me.required} days · '
+                              '${pactStatusLabel(status!)}',
                   style: VyanaType.caption.copyWith(color: t.textSec),
                 ),
               ],
@@ -331,59 +386,84 @@ class _PactHomeCard extends StatelessWidget {
   }
 }
 
-/// Honest label so a preview screen is never mistaken for a live feature.
-class _PreviewBadge extends StatelessWidget {
-  const _PreviewBadge();
+class _SessionGate extends StatefulWidget {
+  const _SessionGate();
 
   @override
-  Widget build(BuildContext context) {
-    final t = context.vyana;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: t.gold.withValues(alpha: t.isDark ? 0.18 : 0.1),
-        borderRadius: BorderRadius.circular(100),
-        border: Border.all(color: t.gold.withValues(alpha: 0.45)),
-      ),
-      child: Text('PREVIEW',
-          style: VyanaType.mono10.copyWith(color: t.gold, letterSpacing: 0.6)),
-    );
-  }
+  State<_SessionGate> createState() => _SessionGateState();
 }
 
-class _PactHero extends StatelessWidget {
-  const _PactHero();
+class _SessionGateState extends State<_SessionGate> {
+  final _access = TextEditingController();
+  final _refresh = TextEditingController();
+
+  @override
+  void dispose() {
+    _access.dispose();
+    _refresh.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
     return Panel(
-      grad: true,
-      pad: 20,
-      accent: t.gold,
+      pad: 16,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Bet on the person you want to become.',
-              style: VyanaType.titleSerif
-                  .copyWith(color: t.text, fontSize: 23, height: 1.25)),
-          const SizedBox(height: 10),
+          Text('Connect your Seek Nirvana session',
+              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 19)),
+          const SizedBox(height: 8),
           Text(
-            'Vyana helps you know what to change. Pact helps you actually do '
-            'it — a commitment with something behind it. Money, coffee, or '
-            'simply your word.',
-            style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
+            'Pacts live on your account. Paste the access token (and refresh '
+            'token, so it lasts) from a signed-in seeknirvana.com session, or '
+            'set them in .env.',
+            style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45),
           ),
-          const SizedBox(height: 16),
-          Cta(
-            label: 'Make a Pact',
-            icon: 'target',
-            onTap: () => pactComingSoon(
-              context,
-              'Making a Pact',
-              'Pact creation is in build. You will choose the commitment, the '
-                  'window, what counts as a day, who joins, and what — if '
-                  'anything — is at stake.',
+          const SizedBox(height: 14),
+          _FieldBox(
+            child: TextField(
+              controller: _access,
+              onChanged: (_) => setState(() {}),
+              obscureText: true,
+              style: VyanaType.body.copyWith(color: t.text),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: 'Access token',
+                hintStyle: VyanaType.body.copyWith(color: t.textMuted),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _FieldBox(
+            child: TextField(
+              controller: _refresh,
+              onChanged: (_) => setState(() {}),
+              obscureText: true,
+              style: VyanaType.body.copyWith(color: t.text),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: 'Refresh token (optional)',
+                hintStyle: VyanaType.body.copyWith(color: t.textMuted),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Consumer(
+            builder: (context, ref, _) => Cta(
+              label: 'Connect',
+              icon: 'key',
+              disabled: _access.text.trim().isEmpty && _refresh.text.trim().isEmpty,
+              onTap: () {
+                final access = _access.text.trim();
+                final refresh = _refresh.text.trim();
+                if (access.isEmpty && refresh.isEmpty) return;
+                ref.read(pactControllerProvider.notifier).saveSession(
+                      accessToken: access,
+                      refreshToken: refresh.isEmpty ? null : refresh,
+                    );
+              },
             ),
           ),
         ],
@@ -392,51 +472,45 @@ class _PactHero extends StatelessWidget {
   }
 }
 
-class _ActivePactCard extends StatelessWidget {
-  const _ActivePactCard();
+class _ActivePactCard extends ConsumerWidget {
+  const _ActivePactCard({required this.snapshot, required this.busy});
+
+  final PactSnapshot snapshot;
+  final bool busy;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = context.vyana;
-    const done = PactSeed.activeDone;
-    const required = PactSeed.activeRequired;
-    final status = pactStatus(
-      done: done,
-      required: required,
-      elapsed: PactSeed.activeElapsed,
-      total: PactSeed.activeTotal,
-    );
+    final me = snapshot.me;
+    final status = me.standing;
     final c = switch (status) {
       PactStatus.secured => t.green,
       PactStatus.onTrack => t.green,
       PactStatus.atRisk => t.gold,
-      PactStatus.missed => t.vit('hr'),
+      PactStatus.missed => t.textMuted,
     };
+    final daysLeft = (me.total - me.elapsed).clamp(0, me.total);
+    final actions = ref.read(pactControllerProvider.notifier);
+    final social = snapshot.pact.isSocial;
 
     return Panel(
       pad: 16,
       accent: c,
-      onTap: () => pactComingSoon(
-        context,
-        'Pact detail',
-        'The full Pact view — day-by-day proof, participants, stakes and '
-            'settlement — arrives with the commitment layer.',
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               ProgressRing(
-                value: done.toDouble(),
-                max: required.toDouble(),
+                value: me.done.toDouble(),
+                max: me.required <= 0 ? 1 : me.required.toDouble(),
                 size: 58,
                 stroke: 5,
                 color: c,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('$done/$required',
+                    Text('${me.done}/${me.required}',
                         style: VyanaType.label.copyWith(color: t.text)),
                     Text('days',
                         style: VyanaType.mono10.copyWith(color: t.textMuted)),
@@ -449,13 +523,13 @@ class _ActivePactCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(PactSeed.activeTitle,
+                    Text(snapshot.pact.title,
                         style: VyanaType.titleSerif
                             .copyWith(color: t.text, fontSize: 18)),
                     const SizedBox(height: 3),
                     Text(
-                      '${PactSeed.activeRule} · '
-                      '${PactSeed.activeTotal - PactSeed.activeElapsed} days left',
+                      '${snapshot.pact.ruleText} · $daysLeft days left'
+                      '${social ? ' · ${_pactModeLabel(snapshot.pact.mode)}' : ''}',
                       style: VyanaType.caption.copyWith(color: t.textSec),
                     ),
                     const SizedBox(height: 8),
@@ -466,94 +540,249 @@ class _ActivePactCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          const _DayDots(days: PactSeed.activeDays),
+          _DayDots(days: me.days),
+          if (social && snapshot.pact.shareCode.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _ShareCodeRow(code: snapshot.pact.shareCode),
+          ],
+          if (snapshot.others.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('With them',
+                style: VyanaType.caption.copyWith(color: t.textMuted)),
+            const SizedBox(height: 8),
+            for (final other in snapshot.others) ...[
+              _OtherRow(
+                other: other,
+                busy: busy,
+                onEncourage: other.participantId == null
+                    ? null
+                    : () => _encourage(context, ref, snapshot, other),
+              ),
+              const SizedBox(height: 6),
+            ],
+          ],
           const SizedBox(height: 14),
+          if (snapshot.todayDone)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: t.green.withValues(alpha: t.isDark ? 0.14 : 0.09),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  VyanaIcon('checkCircle', size: 16, color: t.green),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text("Today's commitment completed",
+                        style: VyanaType.label.copyWith(color: t.green)),
+                  ),
+                ],
+              ),
+            )
+          else
+            Cta(
+              label: snapshot.autoSatisfied == true
+                  ? 'Vyana can prove today — confirm'
+                  : 'Mark today complete',
+              icon: 'check',
+              disabled: busy || !snapshot.canProve,
+              onTap: () => actions.proveToday(snapshot, satisfied: true),
+            ),
+          if (snapshot.todayDone) ...[
+            const SizedBox(height: 9),
+            Cta(
+              label: 'Undo today',
+              icon: 'x',
+              solid: false,
+              disabled: busy,
+              onTap: () => actions.proveToday(snapshot, satisfied: false),
+            ),
+          ],
+          const SizedBox(height: 10),
           Row(
             children: [
-              VyanaIcon('wallet', size: 15, color: t.gold),
-              const SizedBox(width: 7),
               Expanded(
-                child: Text('At stake · ${PactSeed.activeStake}',
-                    style: VyanaType.caption.copyWith(color: t.textSec)),
+                child: Cta(
+                  label: 'Freeze',
+                  icon: 'snow',
+                  solid: false,
+                  disabled: busy || me.freezesRemaining <= 0,
+                  onTap: () => actions.freezeToday(snapshot),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Cta(
+                  label: 'Restore',
+                  icon: 'repeat',
+                  solid: false,
+                  disabled: busy || me.restoresRemaining <= 0,
+                  onTap: () => actions.restoreStreak(snapshot),
+                ),
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          Text(
+            '${me.currentStreak} streak · ${me.freezesRemaining} freeze · '
+            '${me.restoresRemaining} restore',
+            style: VyanaType.caption.copyWith(color: t.textMuted),
+          ),
           const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              color: t.green.withValues(alpha: t.isDark ? 0.14 : 0.09),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                VyanaIcon('checkCircle', size: 16, color: t.green),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    "Today's commitment completed",
-                    style: VyanaType.label.copyWith(color: t.green),
-                  ),
-                ),
-              ],
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: busy ? null : () => actions.leaveActive(snapshot),
+              child: Text('Leave this Pact',
+                  style: VyanaType.caption.copyWith(color: t.textMuted)),
             ),
           ),
         ],
       ),
     );
   }
+
+  Future<void> _encourage(
+    BuildContext context,
+    WidgetRef ref,
+    PactSnapshot snapshot,
+    PactOther other,
+  ) async {
+    final id = other.participantId;
+    if (id == null) return;
+    final note = TextEditingController(text: 'Keep going.');
+    final sent = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final t = context.vyana;
+        return AlertDialog(
+          backgroundColor: t.card,
+          title: Text('Encourage ${other.displayName}',
+              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 20)),
+          content: _FieldBox(
+            child: TextField(
+              controller: note,
+              autofocus: true,
+              maxLength: 200,
+              style: VyanaType.body.copyWith(color: t.text),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: 'A short note',
+                hintStyle: VyanaType.body.copyWith(color: t.textMuted),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Cancel',
+                  style: VyanaType.label.copyWith(color: t.textMuted)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text('Send', style: VyanaType.label.copyWith(color: t.gold)),
+            ),
+          ],
+        );
+      },
+    );
+    final message = note.text.trim();
+    note.dispose();
+    if (sent != true || message.isEmpty || !context.mounted) return;
+    await ref.read(pactControllerProvider.notifier).encourage(
+          snapshot,
+          participantId: id,
+          message: message,
+        );
+  }
 }
 
-/// Seven dots — proven, missed, or still ahead. Reads at a glance without
-/// exposing a single number from the night behind it.
 class _DayDots extends StatelessWidget {
   const _DayDots({required this.days});
 
-  final List<bool?> days;
+  final List<PactDay> days;
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
+    if (days.isEmpty) {
+      return Text('No days yet',
+          style: VyanaType.caption.copyWith(color: t.textMuted));
+    }
     return Row(
       children: [
         for (var i = 0; i < days.length; i++) ...[
           if (i > 0) const SizedBox(width: 7),
-          Expanded(
-            child: Column(
-              children: [
-                Container(
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: switch (days[i]) {
-                      true => t.green.withValues(alpha: t.isDark ? 0.24 : 0.16),
-                      false => t.vit('hr').withValues(alpha: t.isDark ? 0.2 : 0.12),
-                      null => Colors.transparent,
-                    },
-                    borderRadius: BorderRadius.circular(9),
-                    border: Border.all(
-                      color: switch (days[i]) {
-                        true => t.green.withValues(alpha: 0.5),
-                        false => t.vit('hr').withValues(alpha: 0.4),
-                        null => t.border,
-                      },
-                    ),
-                  ),
-                  child: Center(
-                    child: days[i] == null
-                        ? Text('${i + 1}',
-                            style: VyanaType.mono10.copyWith(color: t.textMuted))
-                        : VyanaIcon(
-                            days[i]! ? 'check' : 'x',
-                            size: 13,
-                            color: days[i]! ? t.green : t.vit('hr'),
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          Expanded(child: _DayCell(day: days[i])),
         ],
       ],
+    );
+  }
+}
+
+class _DayCell extends StatelessWidget {
+  const _DayCell({required this.day});
+  final PactDay day;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final (Color fill, Color border, String? icon, Color? iconColor) =
+        switch (day.status) {
+      PactDayStatus.done => (
+          t.green.withValues(alpha: t.isDark ? 0.24 : 0.16),
+          t.green.withValues(alpha: 0.5),
+          'check',
+          t.green,
+        ),
+      PactDayStatus.freeze => (
+          t.gold.withValues(alpha: t.isDark ? 0.2 : 0.12),
+          t.gold.withValues(alpha: 0.5),
+          'snow',
+          t.gold,
+        ),
+      PactDayStatus.restore => (
+          t.gold.withValues(alpha: t.isDark ? 0.2 : 0.12),
+          t.gold.withValues(alpha: 0.5),
+          'repeat',
+          t.gold,
+        ),
+      PactDayStatus.missed => (
+          Colors.transparent,
+          t.border,
+          null,
+          null,
+        ),
+      PactDayStatus.today => (
+          t.gold.withValues(alpha: t.isDark ? 0.12 : 0.08),
+          t.gold.withValues(alpha: 0.55),
+          null,
+          null,
+        ),
+      PactDayStatus.future => (
+          Colors.transparent,
+          t.border,
+          null,
+          null,
+        ),
+    };
+
+    return Container(
+      height: 28,
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: border),
+      ),
+      child: Center(
+        child: icon == null
+            ? Text('${day.dayNumber}',
+                style: VyanaType.mono10.copyWith(
+                  color: day.status == PactDayStatus.today ? t.gold : t.textMuted,
+                ))
+            : VyanaIcon(icon, size: 13, color: iconColor),
+      ),
     );
   }
 }
@@ -579,58 +808,294 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-class _BackersCard extends StatelessWidget {
-  const _BackersCard();
+class _CreatePactCard extends ConsumerStatefulWidget {
+  const _CreatePactCard({required this.unlocks, this.friends = const []});
+  final PactUnlocks unlocks;
+  final List<PactProfile> friends;
+
+  @override
+  ConsumerState<_CreatePactCard> createState() => _CreatePactCardState();
+}
+
+class _CreatePactCardState extends ConsumerState<_CreatePactCard> {
+  final _title = TextEditingController();
+  final _rule = TextEditingController();
+  String _category = 'mindfulness';
+  String _mode = 'just_me';
+  String? _stake;
+  final Set<String> _invitees = {};
+  late int _window = _firstUnlockedDays(widget.unlocks);
+  late int _required = _window;
+
+  List<PactWindowTier> get _tiers => widget.unlocks.windowTiers.isNotEmpty
+      ? widget.unlocks.windowTiers
+      : pactWindowTiersFor(
+          completed: widget.unlocks.completed,
+          unlockedDays: widget.unlocks.windowDays,
+        );
+
+  bool get _social => _mode != 'just_me';
+
+  bool get _modeLocked => widget.unlocks.modeLockHint(_mode).isNotEmpty;
+
+  bool get _stakeLocked =>
+      _stake != null && !widget.unlocks.stakes.contains(_stake);
+
+  PactWindowTier get _selected => _tiers.firstWhere(
+        (t) => t.days == _window,
+        orElse: () => _tiers.first,
+      );
+
+  static int _firstUnlockedDays(PactUnlocks unlocks) {
+    final tiers = unlocks.windowTiers.isNotEmpty
+        ? unlocks.windowTiers
+        : pactWindowTiersFor(
+            completed: unlocks.completed,
+            unlockedDays: unlocks.windowDays,
+          );
+    return tiers
+        .where((t) => t.unlocked)
+        .map((t) => t.days)
+        .followedBy(unlocks.windowDays)
+        .followedBy(const [3])
+        .first;
+  }
+
+  @override
+  void didUpdateWidget(covariant _CreatePactCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final days = _tiers.map((t) => t.days).toList();
+    if (!days.contains(_window)) {
+      _window = _firstUnlockedDays(widget.unlocks);
+      if (_required > _window) _required = _window;
+    }
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _rule.dispose();
+    super.dispose();
+  }
+
+  void _pickWindow(int days) {
+    setState(() {
+      _window = days;
+      if (_required > days) _required = days;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
+    final selected = _selected;
+    final accent = _pactWindowColor(t, selected.days);
+    final canSave = _title.text.trim().isNotEmpty && _rule.text.trim().isNotEmpty;
+    final busy = ref.watch(pactControllerProvider).busy;
+    final locked = !selected.unlocked;
+
     return Panel(
       pad: 16,
+      accent: accent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              VyanaIconBadge(name: 'award', color: t.gold, size: 34, iconSize: 17),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Text('${PactSeed.backers.length} people backing you',
-                    style: VyanaType.label.copyWith(color: t.text, fontSize: 15)),
+          Text(
+            _social
+                ? 'A promise with someone. The stake is an IOU — coffee, not money.'
+                : 'A promise to yourself. No stake, no audience.',
+            style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45),
+          ),
+          const SizedBox(height: 14),
+          _FieldBox(
+            child: TextField(
+              controller: _title,
+              onChanged: (_) => setState(() {}),
+              textCapitalization: TextCapitalization.sentences,
+              style: VyanaType.body.copyWith(color: t.text),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: 'Title',
+                hintStyle: VyanaType.body.copyWith(color: t.textMuted),
               ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _FieldBox(
+            child: TextField(
+              controller: _rule,
+              onChanged: (_) => setState(() {}),
+              maxLines: 2,
+              textCapitalization: TextCapitalization.sentences,
+              style: VyanaType.body.copyWith(color: t.text),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: 'What counts as a day',
+                hintStyle: VyanaType.body.copyWith(color: t.textMuted),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final category in pactCategories)
+                Pill(
+                  label: category,
+                  active: _category == category,
+                  onTap: () => setState(() => _category = category),
+                ),
             ],
           ),
           const SizedBox(height: 12),
-          for (final backer in PactSeed.backers)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final mode in const ['just_me', 'challenge', 'friends'])
+                Pill(
+                  label: _pactModeLabel(mode),
+                  icon: widget.unlocks.modeLockHint(mode).isEmpty ? null : 'lock',
+                  active: _mode == mode,
+                  onTap: () => setState(() {
+                    _mode = mode;
+                    if (!_social) {
+                      _stake = null;
+                      _invitees.clear();
+                    }
+                  }),
+                ),
+            ],
+          ),
+          if (_modeLocked) ...[
+            const SizedBox(height: 10),
+            _LockHint(
+              message: widget.unlocks.modeLockHint(_mode),
+              color: t.gold,
+            ),
+          ],
+          const SizedBox(height: 16),
+          Text('How long',
+              style: VyanaType.caption.copyWith(color: t.textMuted)),
+          const SizedBox(height: 6),
+          Text(selected.label,
+              style: VyanaType.titleSerif.copyWith(color: accent, fontSize: 22)),
+          const SizedBox(height: 10),
+          _DurationRail(
+            tiers: _tiers,
+            selectedDays: _window,
+            onSelect: _pickWindow,
+          ),
+          if (locked) ...[
+            const SizedBox(height: 10),
+            _LockHint(message: selected.lockHint, color: accent),
+          ],
+          if (_social) ...[
+            const SizedBox(height: 14),
+            Text('Stake',
+                style: VyanaType.caption.copyWith(color: t.textMuted)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Pill(
+                  label: 'none',
+                  active: _stake == null,
+                  onTap: () => setState(() => _stake = null),
+                ),
+                for (final stake in pactStakes)
+                  Pill(
+                    label: stake,
+                    icon: widget.unlocks.stakes.contains(stake) ? null : 'lock',
+                    active: _stake == stake,
+                    onTap: () => setState(() => _stake = stake),
+                  ),
+              ],
+            ),
+            if (_stakeLocked) ...[
+              const SizedBox(height: 10),
+              _LockHint(message: _stakeLockHint(_stake!), color: t.gold),
+            ],
+            const SizedBox(height: 14),
+            Text('Invite',
+                style: VyanaType.caption.copyWith(color: t.textMuted)),
+            const SizedBox(height: 8),
+            if (widget.friends.isEmpty)
+              Text(
+                'Add a friend first, or start and share the code.',
+                style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.4),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  Container(
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      color: t.gold.withValues(alpha: t.isDark ? 0.2 : 0.13),
-                      shape: BoxShape.circle,
+                  for (final friend in widget.friends)
+                    Pill(
+                      label: friend.displayName,
+                      active: _invitees.contains(friend.profileId),
+                      onTap: () => setState(() {
+                        if (_invitees.contains(friend.profileId)) {
+                          _invitees.remove(friend.profileId);
+                        } else if (_mode == 'challenge') {
+                          _invitees
+                            ..clear()
+                            ..add(friend.profileId);
+                        } else if (_invitees.length < 3) {
+                          _invitees.add(friend.profileId);
+                        }
+                      }),
                     ),
-                    child: Center(
-                      child: Text(backer.name.characters.first,
-                          style: VyanaType.mono10.copyWith(color: t.gold)),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(backer.name,
-                        style: VyanaType.bodySm.copyWith(color: t.textSec)),
-                  ),
-                  Text(backer.pledge,
-                      style: VyanaType.label.copyWith(color: t.gold)),
                 ],
               ),
+          ],
+          const SizedBox(height: 12),
+          Text('Need $_required of $_window days',
+              style: VyanaType.caption.copyWith(color: t.textSec)),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: accent,
+              inactiveTrackColor: accent.withValues(alpha: t.isDark ? 0.22 : 0.16),
+              thumbColor: accent,
+              overlayColor: accent.withValues(alpha: 0.16),
+              valueIndicatorColor: accent,
             ),
-          Text(
-            'Pledges unlock only if you finish. Nothing moves until then.',
-            style: VyanaType.caption.copyWith(color: t.textMuted, height: 1.45),
+            child: Slider(
+              value: _required.toDouble().clamp(1, _window.toDouble()),
+              min: 1,
+              max: _window.toDouble(),
+              divisions: _window - 1,
+              label: '$_required',
+              onChanged: (value) => setState(() => _required = value.round()),
+            ),
+          ),
+          Cta(
+            label: 'Start this Pact',
+            icon: locked || _modeLocked || _stakeLocked ? 'lock' : 'target',
+            disabled: busy || !canSave || locked || _modeLocked || _stakeLocked,
+            onTap: () {
+              if (locked || _modeLocked || _stakeLocked) return;
+              ref.read(pactControllerProvider.notifier).create(
+                    PactCreateInput(
+                      title: _title.text.trim(),
+                      ruleText: _rule.text.trim(),
+                      category: _category,
+                      windowDays: _window,
+                      requiredDays: _required,
+                      mode: _mode,
+                      stakeCatalog: _social ? _stake : null,
+                      visibility: _social ? 'friends' : 'private',
+                      maxParticipants: _mode == 'challenge'
+                          ? 2
+                          : _mode == 'friends'
+                              ? 4
+                              : 1,
+                    ),
+                    invitees: _invitees.toList(),
+                  );
+            },
           ),
         ],
       ),
@@ -638,282 +1103,377 @@ class _BackersCard extends StatelessWidget {
   }
 }
 
-class _ModeCard extends StatelessWidget {
-  const _ModeCard({required this.mode});
+Color _pactWindowColor(VyanaColors t, int days) => switch (days) {
+      3 => t.green,
+      5 => t.gold,
+      7 => t.vit('sleep'),
+      14 => t.vit('spo2'),
+      30 => t.vit('luna'),
+      _ => t.gold,
+    };
 
-  final PactMode mode;
+String _pactModeLabel(String mode) => switch (mode) {
+      'challenge' => 'Versus',
+      'friends' => 'Friends',
+      _ => 'Just Me',
+    };
+
+String _stakeLockHint(String stake) {
+  final n = switch (stake) {
+    'coffee' => 2,
+    'dinner' || 'custom' => 5,
+    _ => 3,
+  };
+  return 'Unlock after $n successful pacts';
+}
+
+class _ShareCodeRow extends StatelessWidget {
+  const _ShareCodeRow({required this.code});
+  final String code;
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
-    final c = t.vit(mode.accent);
-    final extra = mode.id == 'friends'
-        ? '5 friends × \$10 · 4 finish → '
-            '\$${pactPoolPayout(
-              stake: PactSeed.poolStake,
-              participants: PactSeed.poolParticipants,
-              finishers: PactSeed.poolFinishers,
-            ).toStringAsFixed(2)} each'
-        : null;
+    return GestureDetector(
+      onTap: () async {
+        await Clipboard.setData(ClipboardData(text: code));
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Copied $code',
+                style: VyanaType.caption.copyWith(color: Colors.white)),
+          ),
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: t.gold.withValues(alpha: t.isDark ? 0.14 : 0.08),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            VyanaIcon('key', size: 14, color: t.gold),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Code $code · tap to copy',
+                  style: VyanaType.label.copyWith(color: t.gold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-    return Panel(
-      pad: 14,
-      radius: 20,
-      onTap: () => pactComingSoon(
-        context,
-        mode.title,
-        '${mode.blurb} This mode is designed and in build — creation, invites '
-            'and settlement are not live yet.',
+class _OtherRow extends StatelessWidget {
+  const _OtherRow({required this.other, required this.busy, this.onEncourage});
+
+  final PactOther other;
+  final bool busy;
+  final VoidCallback? onEncourage;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '${other.displayName} · ${other.done}/${other.required}',
+            style: VyanaType.label.copyWith(color: t.text),
+          ),
+        ),
+        if (onEncourage != null)
+          TextButton(
+            onPressed: busy ? null : onEncourage,
+            child: Text('Encourage',
+                style: VyanaType.caption.copyWith(color: t.gold)),
+          ),
+      ],
+    );
+  }
+}
+
+class _XpChip extends StatelessWidget {
+  const _XpChip({required this.xp});
+  final int xp;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: t.gold.withValues(alpha: t.isDark ? 0.16 : 0.1),
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: t.gold.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          VyanaIcon('sparkles', size: 14, color: t.gold),
+          const SizedBox(width: 6),
+          Text('$xp XP',
+              style: VyanaType.mono10.copyWith(color: t.gold, letterSpacing: 0.4)),
+        ],
+      ),
+    );
+  }
+}
+
+class _LockHint extends StatelessWidget {
+  const _LockHint({required this.message, required this.color});
+  final String message;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: t.isDark ? 0.16 : 0.1),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          VyanaIconBadge(
-              name: mode.icon, color: c, size: 44, iconSize: 21, borderRadius: 14),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(mode.title,
-                    style: VyanaType.label.copyWith(color: t.text, fontSize: 15)),
-                const SizedBox(height: 3),
-                Text(mode.blurb,
-                    style: VyanaType.caption
-                        .copyWith(color: t.textSec, height: 1.4)),
-                if (extra != null) ...[
-                  const SizedBox(height: 6),
-                  Text(extra, style: VyanaType.mono10.copyWith(color: c)),
-                ],
-              ],
-            ),
-          ),
+          VyanaIcon('lock', size: 14, color: color),
           const SizedBox(width: 8),
-          VyanaIcon('chevR', size: 17, color: t.textMuted),
+          Expanded(
+            child: Text(message,
+                style: VyanaType.label.copyWith(color: color, height: 1.35)),
+          ),
         ],
       ),
     );
   }
 }
 
-/// The loop from the business doc: a Vyana signal becomes a commitment.
-class _SuggestedPactCard extends StatelessWidget {
-  const _SuggestedPactCard();
+/// Draggable duration rail. Locked stops stay reachable so the lock copy can
+/// fire; Start stays disabled until that stop is earned.
+class _DurationRail extends StatelessWidget {
+  const _DurationRail({
+    required this.tiers,
+    required this.selectedDays,
+    required this.onSelect,
+  });
+
+  final List<PactWindowTier> tiers;
+  final int selectedDays;
+  final ValueChanged<int> onSelect;
+
+  int get _index {
+    final i = tiers.indexWhere((t) => t.days == selectedDays);
+    return i < 0 ? 0 : i;
+  }
+
+  void _selectFromDx(double dx, double width) {
+    if (tiers.isEmpty || width <= 0) return;
+    final t = ((dx / width) * tiers.length).floor().clamp(0, tiers.length - 1);
+    final next = tiers[t].days;
+    if (next != selectedDays) onSelect(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Column(
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (d) => _selectFromDx(d.localPosition.dx, width),
+              onHorizontalDragUpdate: (d) =>
+                  _selectFromDx(d.localPosition.dx, width),
+              child: SizedBox(
+                height: 36,
+                width: width,
+                child: CustomPaint(
+                  painter: _DurationRailPainter(
+                    colors: [
+                      for (final tier in tiers) _pactWindowColor(t, tier.days)
+                    ],
+                    unlocked: [for (final tier in tiers) tier.unlocked],
+                    selected: _index,
+                    track: t.border,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            for (var i = 0; i < tiers.length; i++)
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => onSelect(tiers[i].days),
+                  behavior: HitTestBehavior.opaque,
+                  child: Column(
+                    children: [
+                      Text(
+                        tiers[i].shortLabel,
+                        textAlign: TextAlign.center,
+                        style: VyanaType.mono10.copyWith(
+                          color: i == _index
+                              ? _pactWindowColor(t, tiers[i].days)
+                              : t.textMuted,
+                        ),
+                      ),
+                      if (!tiers[i].unlocked)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: VyanaIcon('lock',
+                              size: 10,
+                              color: i == _index
+                                  ? _pactWindowColor(t, tiers[i].days)
+                                  : t.textMuted),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _DurationRailPainter extends CustomPainter {
+  _DurationRailPainter({
+    required this.colors,
+    required this.unlocked,
+    required this.selected,
+    required this.track,
+  });
+
+  final List<Color> colors;
+  final List<bool> unlocked;
+  final int selected;
+  final Color track;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (colors.isEmpty) return;
+    const gap = 4.0;
+    const radius = 7.0;
+    final n = colors.length;
+    final segW = (size.width - gap * (n - 1)) / n;
+    final cy = size.height / 2;
+    const barH = 10.0;
+
+    for (var i = 0; i < n; i++) {
+      final x = i * (segW + gap);
+      final color = colors[i];
+      final open = unlocked[i];
+      final rrect = RRect.fromLTRBR(
+        x,
+        cy - barH / 2,
+        x + segW,
+        cy + barH / 2,
+        const Radius.circular(radius),
+      );
+      canvas.drawRRect(
+        rrect,
+        Paint()
+          ..color = color.withValues(alpha: open ? (i == selected ? 0.95 : 0.55) : 0.22),
+      );
+      if (!open) {
+        canvas.drawRRect(
+          rrect,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1
+            ..color = color.withValues(alpha: 0.45),
+        );
+      }
+    }
+
+    final thumbX = selected * (segW + gap) + segW / 2;
+    final thumbColor = colors[selected.clamp(0, n - 1)];
+    canvas.drawCircle(
+      Offset(thumbX, cy),
+      11,
+      Paint()..color = thumbColor.withValues(alpha: 0.22),
+    );
+    canvas.drawCircle(Offset(thumbX, cy), 8, Paint()..color = thumbColor);
+    canvas.drawCircle(
+      Offset(thumbX, cy),
+      8,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.85),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_DurationRailPainter old) =>
+      old.selected != selected ||
+      old.colors != colors ||
+      old.unlocked != unlocked ||
+      old.track != track;
+}
+
+class _CapNote extends StatelessWidget {
+  const _CapNote();
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
     return Panel(
       pad: 16,
-      accent: t.vit('sleep'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              VyanaIconBadge(
-                  name: 'moon', color: t.vit('sleep'), size: 34, iconSize: 17),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Text(
-                  'Your bedtime moved about 45 minutes later over the past two '
-                  'weeks.',
-                  style:
-                      VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text('7-Day Earlier Night',
-              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 19)),
-          const SizedBox(height: 4),
-          Text('Be in bed before 11:45 PM on at least 5 of the next 7 nights.',
-              style: VyanaType.caption.copyWith(color: t.textSec, height: 1.45)),
-          const SizedBox(height: 14),
-          Cta(
-            label: 'Make this a Pact',
-            icon: 'target',
-            onTap: () => pactComingSoon(
-              context,
-              'Suggested Pacts',
-              'Vyana will turn a pattern it notices into a ready-made Pact you '
-                  'can accept in one tap. Your signals never leave the phone — '
-                  'the Pact only carries whether the day counted.',
-            ),
-          ),
-          const SizedBox(height: 9),
-          Row(
-            children: [
-              Expanded(
-                child: Cta(
-                  label: 'Invite a friend',
-                  icon: 'user',
-                  solid: false,
-                  onTap: () => pactComingSoon(
-                    context,
-                    'Invites',
-                    'Invite links that bring a friend into the same commitment '
-                        'are part of the social layer, still in build.',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Cta(
-                  label: 'Ask to be backed',
-                  icon: 'award',
-                  solid: false,
-                  onTap: () => pactComingSoon(
-                    context,
-                    'Backing',
-                    'Friends, family or your employer will be able to put '
-                        'something behind your Pact that you unlock by '
-                        'finishing.',
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+      child: Text(
+        'Three live Pacts at once is the cap. Leave one, or wait until a '
+        'window settles, to start another.',
+        style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45),
       ),
     );
   }
 }
 
-class _ProgramRail extends StatelessWidget {
-  const _ProgramRail();
+class _EndedPactCard extends StatelessWidget {
+  const _EndedPactCard({required this.snapshot, this.succeeded = false});
 
-  @override
-  Widget build(BuildContext context) {
-    final t = context.vyana;
-    return SizedBox(
-      height: 158,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.zero,
-        itemCount: PactSeed.programs.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 10),
-        itemBuilder: (context, i) {
-          final p = PactSeed.programs[i];
-          final c = t.vit(p.accent);
-          return SizedBox(
-            width: 208,
-            child: Panel(
-              pad: 14,
-              radius: 20,
-              onTap: () => pactComingSoon(
-                context,
-                p.title,
-                'Expert, community and sponsored programs will be joinable '
-                    'here, with an optional Pact attached to keep you in it.',
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  VyanaIconBadge(
-                      name: p.icon, color: c, size: 38, iconSize: 19),
-                  const SizedBox(height: 12),
-                  Text(p.category.toUpperCase(),
-                      style: VyanaType.eyebrow.copyWith(color: c)),
-                  const SizedBox(height: 5),
-                  Text(p.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: VyanaType.label
-                          .copyWith(color: t.text, fontSize: 15, height: 1.3)),
-                  const Spacer(),
-                  Text(p.window,
-                      style: VyanaType.caption.copyWith(color: t.textSec)),
-                  const SizedBox(height: 2),
-                  Text(p.by,
-                      style: VyanaType.mono10.copyWith(color: t.textMuted)),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _FriendPactCard extends StatelessWidget {
-  const _FriendPactCard({required this.friend});
-
-  final PactFriend friend;
+  final PactSnapshot snapshot;
+  final bool succeeded;
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
     return Panel(
       pad: 14,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: t.green.withValues(alpha: t.isDark ? 0.2 : 0.13),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(friend.name.characters.first,
-                      style: VyanaType.label.copyWith(color: t.green)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('${friend.name} started a Pact',
-                        style: VyanaType.label.copyWith(color: t.text)),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${friend.pact} · day ${friend.done}/${friend.required} '
-                      '· ${friend.backers} backing',
-                      style: VyanaType.caption.copyWith(color: t.textSec),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          VyanaIconBadge(
+            name: succeeded ? 'checkCircle' : 'target',
+            color: succeeded ? t.green : t.textMuted,
+            size: 38,
+            iconSize: 18,
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Cta(
-                  label: 'Back them',
-                  icon: 'award',
-                  onTap: () => pactComingSoon(
-                    context,
-                    'Backing ${friend.name}',
-                    'Pledging a coffee, a reward or a stake behind someone '
-                        "else's Pact is next up after Pact creation.",
-                  ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(snapshot.pact.title,
+                    style: VyanaType.label.copyWith(color: t.text)),
+                const SizedBox(height: 3),
+                Text(
+                  succeeded
+                      ? '${snapshot.me.done}/${snapshot.me.required} days · kept'
+                      : '${snapshot.me.done}/${snapshot.me.required} days · this Pact ended',
+                  style: VyanaType.caption.copyWith(color: t.textSec),
                 ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Cta(
-                  label: 'Encourage',
-                  icon: 'send',
-                  solid: false,
-                  onTap: () => pactComingSoon(
-                    context,
-                    'Encouragement',
-                    'Short notes of support — no feed, no comments, no metrics '
-                        'shared.',
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -942,10 +1502,8 @@ class _PrivacyNote extends StatelessWidget {
                     style: VyanaType.label.copyWith(color: t.text)),
                 const SizedBox(height: 6),
                 Text(
-                  'Your phone decides whether a day counted. Everyone else — '
-                  'friends, sponsors, your employer — sees only “completed ✓”. '
-                  'Sleep, HRV, resting heart rate and bedtimes stay on this '
-                  'device.',
+                  'Only whether the day counted is stored. Sleep, HRV, resting '
+                  'heart rate and bedtimes stay on this device.',
                   style:
                       VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
                 ),

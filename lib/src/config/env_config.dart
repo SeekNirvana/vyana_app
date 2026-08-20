@@ -32,4 +32,38 @@ class EnvConfig {
     if (fromDefine.isNotEmpty) return fromDefine;
     return 'https://api.mainnet-beta.solana.com';
   }
+
+  /// Seek Nirvana webapp origin used by Pact (no trailing slash).
+  static String get seekNirvanaApiUrl {
+    final fromFile = _fileEnv('SEEK_NIRVANA_API_URL');
+    if (fromFile.isNotEmpty) {
+      return fromFile.replaceAll(RegExp(r'/$'), '');
+    }
+    const fromDefine = String.fromEnvironment('SEEK_NIRVANA_API_URL');
+    if (fromDefine.isNotEmpty) return fromDefine.replaceAll(RegExp(r'/$'), '');
+    return 'https://seeknirvana.com';
+  }
+
+  /// Optional Bearer access token for Pact (15-minute JWT). Prefer a refresh
+  /// token — the client will mint a new access token from it.
+  static String get seekNirvanaAccessToken {
+    final fromFile = _fileEnv('SEEK_NIRVANA_ACCESS_TOKEN');
+    if (fromFile.isNotEmpty) return fromFile;
+    return const String.fromEnvironment('SEEK_NIRVANA_ACCESS_TOKEN');
+  }
+
+  /// Optional 30-day refresh token (`sn_refresh` cookie on the webapp).
+  static String get seekNirvanaRefreshToken {
+    final fromFile = _fileEnv('SEEK_NIRVANA_REFRESH_TOKEN');
+    if (fromFile.isNotEmpty) return fromFile;
+    return const String.fromEnvironment('SEEK_NIRVANA_REFRESH_TOKEN');
+  }
+
+  static String _fileEnv(String key) {
+    try {
+      return dotenv.env[key]?.trim() ?? '';
+    } on Object {
+      return '';
+    }
+  }
 }

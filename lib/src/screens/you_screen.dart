@@ -325,9 +325,20 @@ class YouScreen extends ConsumerWidget {
               icon: 'target',
               iconColor: t.gold,
               label: 'Your Pacts',
-              trailing: Text('Preview',
-                  style: VyanaType.mono10.copyWith(color: t.gold)),
+              trailing: _pactTrailing(ref, t),
               onTap: () => openPact(context),
+            ),
+            _SettingsRow(
+              icon: 'user',
+              iconColor: t.gold,
+              label: 'Friends',
+              onTap: () => openPactFriends(context),
+            ),
+            _SettingsRow(
+              icon: 'award',
+              iconColor: t.gold,
+              label: 'Pact board',
+              onTap: () => openPactBoard(context),
             ),
           ],
         ),
@@ -629,6 +640,20 @@ class _SettingsGroup extends StatelessWidget {
       ),
     );
   }
+}
+
+Widget? _pactTrailing(WidgetRef ref, VyanaColors t) {
+  final state = ref.watch(pactControllerProvider);
+  if (state.active.isEmpty) return null;
+  if (state.active.length > 1) {
+    return Text('${state.active.length} live',
+        style: VyanaType.label.copyWith(color: t.gold));
+  }
+  final active = state.primary!;
+  return Text(
+    '${active.me.done}/${active.me.required}',
+    style: VyanaType.label.copyWith(color: t.gold),
+  );
 }
 
 class _SettingsRow extends StatelessWidget {

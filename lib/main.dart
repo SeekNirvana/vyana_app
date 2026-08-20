@@ -18,6 +18,8 @@ import 'package:vyana_sdk/vyana_sdk.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'src/config/env_config.dart';
+import 'src/pacts/controller.dart';
+import 'src/pacts/models.dart';
 import 'src/services/device_capability_service.dart';
 import 'src/services/vyana_storage_service.dart';
 import 'src/services/guide_model_manager.dart';
@@ -88,6 +90,7 @@ part 'src/mwa_wallet_picker.dart';
 part 'src/screens/wallet_screen.dart';
 part 'src/screens/ring_order_screen.dart';
 part 'src/screens/pact_screen.dart';
+part 'src/screens/pact_social_screens.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
