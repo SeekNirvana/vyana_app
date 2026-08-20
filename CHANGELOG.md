@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.0.5 — 2026-08-20
+
+### Added
+
+- **Ring onboarding** after first pair — a four-step wizard to name the ring,
+  turn on vitals monitoring, optionally wipe previous on-ring health data
+  (skippable for a new ring), and enable the always-on Android foreground
+  service that keeps BLE alive in the background.
+- **Ring sync interval** on the You tab — configurable app-side history fetch
+  (5–60 minutes, default 20) independent of the ring's own monitoring cadence.
+- **Explicit health monitoring** — ring-side periodic checks are no longer
+  auto-applied; you set them during onboarding or later from You.
+- **Background sync heartbeat** — Android foreground service isolate ticks the
+  main isolate so history is pulled while the app is backgrounded.
+- **Reconnect backoff** — passive BLE retries grow exponentially when the ring
+  is out of range; user-driven reconnects still retry immediately.
+- Home header shows live ring status: connected, syncing, or offline and
+  reconnecting.
+
+### Changed
+
+- You-tab settings: health monitoring, sync interval, and foreground-service
+  rows with current values; data wipe during onboarding is optional.
+- UI polish — icon badges, card gradients, icon colors, onboarding, and
+  settings consistency; refreshed homescreen type and ring status indicator.
+
 ## v1.0.4 — 2026-07-06
 
 ### Added

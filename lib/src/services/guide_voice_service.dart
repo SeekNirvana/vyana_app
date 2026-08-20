@@ -269,7 +269,7 @@ class GuideVoiceService extends ChangeNotifier {
         await Future<void>.delayed(
           Duration(milliseconds: 200 * (attempt + 1)),
         );
-        return _refreshVoices(notify: notify, attempt: attempt + 1);
+        return await _refreshVoices(notify: notify, attempt: attempt + 1);
       }
 
       _voices = parsed.toSet().toList()

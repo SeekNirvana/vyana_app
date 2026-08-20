@@ -113,4 +113,47 @@ void main() {
       );
     },
   );
+
+  test('v1.0.5 ring onboarding, sync interval, foreground heartbeat', () {
+    final onboarding = readLib('src/screens/ring_onboarding_screen.dart');
+    expect(onboarding, contains('Name your ring'));
+    expect(onboarding, contains('Wipe old ring data'));
+    expect(onboarding, contains('Skip — keep existing data'));
+    expect(onboarding, contains('Keep Vyana running'));
+    expect(onboarding, contains("Let's Go!"));
+    expect(onboarding, contains('completeRingOnboarding'));
+
+    final syncSettings = readLib('src/screens/sync_settings_screen.dart');
+    expect(syncSettings, contains('Ring sync interval'));
+    expect(syncSettings, contains('applyPeriodicSyncInterval'));
+
+    final youScreen = readLib('src/screens/you_screen.dart');
+    expect(youScreen, contains('Health monitoring'));
+    expect(youScreen, contains('Foreground service'));
+
+    final foreground = readLib('src/services/ring_foreground_service.dart');
+    expect(foreground, contains('kRingForegroundSyncTick'));
+    expect(foreground, contains('Vyana is running'));
+    expect(foreground, contains('Keeping your ring connected'));
+
+    final ringController = readLib('src/state/ring_controller.dart');
+    expect(ringController, contains('_growReconnectBackoff'));
+    expect(ringController, contains('_resetReconnectBackoff'));
+    expect(ringController, contains('applyPeriodicSyncInterval'));
+    expect(ringController, contains('completeRingOnboarding'));
+
+    final homeScreen = readLib('src/screens/home_screen.dart');
+    expect(homeScreen, contains('Ring offline · reconnecting'));
+    expect(homeScreen, contains('Syncing your ring…'));
+
+    final trendsScreen = readLib('src/screens/trends_screen.dart');
+    expect(trendsScreen, contains('Health metrics'));
+    expect(trendsScreen, contains('IN DEPTH'));
+
+    final manifest = File('scripts/release-manifest.txt').readAsStringSync();
+    expect(manifest, contains('completeRingOnboarding'));
+    expect(manifest, contains('ring_foreground_sync_tick'));
+    expect(manifest, contains('Checking paired PRANA ring'));
+    expect(manifest, contains('Health metrics'));
+  });
 }

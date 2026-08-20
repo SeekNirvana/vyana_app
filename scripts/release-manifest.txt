@@ -25,17 +25,14 @@ Stress rhythm
 Activated
 Couldn't get a clean reading
 
-HOW YOU’RE BEING
+How you’re being
 scrubRecordFields
 
-# v1.0.4 — Calm redesign: number-free Home + "Your numbers" (Trends) screen
-Check in with your body
-Check in again
-reads each vital in turn
-Your numbers
+# v1.0.4 — Calm redesign: Health metrics (Trends) screen
+Health metrics
+IN DEPTH
 TODAY'S MOVEMENT
-Moving in a steady rhythm
-Battery getting low
+Check vitals
 
 # v1.0.4 — Live outdoor sessions: real map, 10-min spoken splits, km + terrain cues
 tile.openstreetmap.org
@@ -52,3 +49,22 @@ Tap to zoom
 Remove this meal
 Remove this entry
 MEAL PHOTO
+
+# v1.0.5 — Ring onboarding wizard
+Name your ring
+Wipe old ring data
+Skip — keep existing data
+Keep Vyana running
+Always-on service
+Let's Go!
+completeRingOnboarding
+
+# v1.0.5 — Sync interval, health monitoring, foreground heartbeat, reconnect backoff
+Ring sync interval
+Sync interval saved.
+applyPeriodicSyncInterval
+ring_foreground_sync_tick
+Vyana is running
+Keeping your ring connected
+Checking paired PRANA ring
+Ring offline
