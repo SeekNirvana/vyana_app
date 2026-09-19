@@ -9,8 +9,6 @@ Future<void> openWakeCapture(BuildContext context) => Navigator.of(context)
 Future<void> openMealLog(BuildContext context) => Navigator.of(context)
     .push<void>(MaterialPageRoute(builder: (_) => const MealLogScreen()));
 
-Future<void> openPastJournal(BuildContext context) => Navigator.of(context)
-    .push<void>(MaterialPageRoute(builder: (_) => const PastJournalScreen()));
 
 /// Shared editor chrome: back affordance, serif title, scrolling body, and a
 /// sticky CTA at the bottom.
@@ -134,6 +132,43 @@ class _NewEntryScreenState extends ConsumerState<NewEntryScreen> {
     });
   }
 
+  /// Dictation — every word-kind composer offers "tap to speak", since the
+  /// point is to get it down before it is lost or reasoned away.
+  Future<void> _toggleVoiceCapture() async {
+    final voice = ref.read(guideVoiceServiceProvider);
+    if (voice.isTranscribing) return;
+    try {
+      if (voice.isRecording) {
+        final transcript = (await voice.stopRecordingAndTranscribe()).trim();
+        if (transcript.isNotEmpty) {
+          final existing = _body.text.trim();
+          final next = existing.isEmpty ? transcript : '$existing\n\n$transcript';
+          _body
+            ..text = next
+            ..selection = TextSelection.collapsed(offset: next.length);
+        }
+      } else {
+        if (!voice.whisperModelReady) {
+          if (voice.isPreparingWhisperModel) {
+            _snack('Downloading Vani Voice… try again shortly.');
+            return;
+          }
+          unawaited(voice.preloadWhisperModel());
+        }
+        await voice.startRecording();
+      }
+    } catch (e) {
+      _snack(voice.lastError ?? 'Voice error: $e');
+    } finally {
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _save() async {
     final db = ref.read(databaseProvider);
     await db.addJournalEntry(
@@ -150,7 +185,8 @@ class _NewEntryScreenState extends ConsumerState<NewEntryScreen> {
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
-    final ac = t.vit(_entryAccent(_type));
+    final ac = journalKindInk(t, _type);
+    final voice = ref.watch(guideVoiceServiceProvider);
     return _EditorScaffold(
       title: 'New entry',
       sub: 'Journal',
@@ -200,6 +236,42 @@ class _NewEntryScreenState extends ConsumerState<NewEntryScreen> {
               hintStyle: VyanaType.body.copyWith(color: t.textMuted),
             ),
           ),
+        ),
+        const SizedBox(height: 12),
+        if (voice.isRecording || voice.isTranscribing)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                VyanaIcon(
+                  voice.isRecording ? 'waveform' : 'refresh',
+                  size: 15,
+                  color: ac,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    voice.isRecording
+                        ? 'Listening… tap again when you\'re done'
+                        : 'Transcribing…',
+                    style: VyanaType.caption.copyWith(color: t.textMuted),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Cta(
+          label: voice.isTranscribing
+              ? 'Transcribing…'
+              : voice.isRecording
+                  ? 'Tap to stop'
+                  : 'Tap to speak',
+          icon: voice.isTranscribing
+              ? 'refresh'
+              : (voice.isRecording ? 'stop' : 'mic'),
+          solid: voice.isRecording,
+          disabled: voice.isTranscribing,
+          onTap: voice.isTranscribing ? null : _toggleVoiceCapture,
         ),
         const SizedBox(height: 14),
         Row(
@@ -265,7 +337,7 @@ class _TypeChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
-    final ac = t.vit(_entryAccent(type));
+    final ac = journalKindInk(t, type);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -351,13 +423,43 @@ class _WakeCaptureScreenState extends ConsumerState<WakeCaptureScreen> {
     }
   }
 
-  void _exploreWithGuide() {
-    // On-device guide reflection lands in M9; this is a gentle canned prompt.
-    setState(() {
-      _reflection =
-          'Notice the feeling the dream left behind, not just the events. '
-          'What in waking life carries that same texture right now?';
-    });
+  bool _reflecting = false;
+
+  /// Ask Nova for one reflection on the dream. Runs fully on-device when the
+  /// guide model is installed; otherwise a gentle prompt stands in.
+  Future<void> _exploreWithGuide() async {
+    if (_reflecting) return;
+    final text = _body.text.trim();
+    final ready = ref.read(guideModelReadyProvider);
+    if (!ready || text.isEmpty) {
+      setState(() {
+        _reflection =
+            'Notice the feeling the dream left behind, not just the events. '
+            'What in waking life carries that same texture right now?';
+      });
+      return;
+    }
+    setState(() => _reflecting = true);
+    try {
+      final reply = await ref.read(guideRuntimeServiceProvider).generateResponse(
+        guide: GuideKind.nova,
+        prompt: 'The user just woke and recorded this dream: "$text". '
+            'Offer one short reflection (two sentences at most) that notices '
+            'a feeling or image in it and gently connects it to waking life. '
+            'No analysis, no lists, no questions about what it means.',
+      );
+      if (!mounted) return;
+      setState(() => _reflection = stripGuideMarkdown(reply).trim());
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _reflection =
+            'Notice the feeling the dream left behind, not just the events. '
+            'What in waking life carries that same texture right now?';
+      });
+    } finally {
+      if (mounted) setState(() => _reflecting = false);
+    }
   }
 
   Future<void> _save() async {
@@ -370,8 +472,10 @@ class _WakeCaptureScreenState extends ConsumerState<WakeCaptureScreen> {
           ? 'Dream'
           : (text.length > 40 ? '${text.substring(0, 40)}…' : text),
       body: text,
-      refined: _reflection != null,
+      reflection: _reflection,
     );
+    // A saved dream consumes last night's lucid attempt.
+    await ref.read(lucidArmedProvider.notifier).disarm();
     if (!mounted) return;
     Navigator.of(context).pop();
   }
@@ -379,16 +483,20 @@ class _WakeCaptureScreenState extends ConsumerState<WakeCaptureScreen> {
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
-    final ac = t.vit('luna');
+    final ac = t.jDream;
     final voice = ref.watch(guideVoiceServiceProvider);
+    final armedAt = ref.watch(lucidArmedProvider);
+    final armed = ref.read(lucidArmedProvider.notifier).isArmed;
     final voiceLabel = voice.isTranscribing
         ? 'Transcribing…'
         : voice.isRecording
             ? 'Tap to stop'
             : 'Tap to speak';
     return _EditorScaffold(
-      title: 'Wake capture',
-      sub: 'Journal · Dream',
+      title: armed ? 'Did you catch it?' : 'Wake capture',
+      sub: armed && armedAt != null
+          ? 'Lucid attempt · ${armedAt.hour.toString().padLeft(2, '0')}:${armedAt.minute.toString().padLeft(2, '0')}'
+          : 'Journal · Dream',
       ctaLabel: 'Save dream',
       ctaIcon: 'moon',
       canSave: _body.text.trim().isNotEmpty,
@@ -403,7 +511,7 @@ class _WakeCaptureScreenState extends ConsumerState<WakeCaptureScreen> {
             style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 20, height: 1.4),
             decoration: InputDecoration(
               border: InputBorder.none,
-              hintText: 'I was…',
+              hintText: armed ? 'Anything at all — a fragment counts…' : 'I was…',
               hintStyle: VyanaType.titleSerif.copyWith(color: t.textMuted, fontSize: 20),
             ),
           ),
@@ -445,9 +553,10 @@ class _WakeCaptureScreenState extends ConsumerState<WakeCaptureScreen> {
             ),
             const SizedBox(height: 10),
             Cta(
-              label: 'Ask Ravi',
+              label: _reflecting ? 'Nova is reading…' : 'Ask Nova',
               icon: 'sparkles',
               solid: false,
+              disabled: _reflecting,
               onTap: _exploreWithGuide,
             ),
           ],
@@ -464,7 +573,7 @@ class _WakeCaptureScreenState extends ConsumerState<WakeCaptureScreen> {
                   children: [
                     VyanaIcon('sparkles', size: 14, color: ac),
                     const SizedBox(width: 7),
-                    Text('RAVI', style: VyanaType.mono10.copyWith(color: ac)),
+                    Text('NOVA', style: VyanaType.mono10.copyWith(color: ac)),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -772,147 +881,6 @@ class _PhotoChip extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ── Past journal ─────────────────────────────────────────────────────────────
-class PastJournalScreen extends ConsumerWidget {
-  const PastJournalScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = context.vyana;
-    final db = ref.watch(databaseProvider);
-    return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(gradient: t.bgGradient),
-        child: SafeArea(
-          child: StreamBuilder<List<JournalEntryRow>>(
-            stream: db.watchEntries(),
-            builder: (context, entrySnap) {
-              return StreamBuilder<List<MealRow>>(
-                stream: db.watchMeals(),
-                builder: (context, mealSnap) {
-                  final entries = entrySnap.data ?? const <JournalEntryRow>[];
-                  final meals = mealSnap.data ?? const <MealRow>[];
-                  final days = _groupByDay(entries, meals);
-                  return ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-                    children: [
-                      Row(
-                        children: [
-                          IconBtn(icon: 'chevL', onTap: () => Navigator.of(context).pop()),
-                          const SizedBox(width: 11),
-                          Text('Past',
-                              style: VyanaType.appBarSerif.copyWith(color: t.text)),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      if (days.isEmpty)
-                        const EmptyState(
-                          icon: Icons.history_edu,
-                          text: 'Your journal history will gather here.',
-                        )
-                      else
-                        for (final day in days)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 11),
-                            child: _PastDayCard(day: day),
-                          ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  List<_PastDay> _groupByDay(
-      List<JournalEntryRow> entries, List<MealRow> meals) {
-    final map = <String, _PastDay>{};
-    DateTime dayKey(DateTime d) => DateTime(d.year, d.month, d.day);
-    String key(DateTime d) => dayKey(d).toIso8601String();
-
-    for (final e in entries) {
-      final k = key(e.createdAt);
-      final d = map.putIfAbsent(k, () => _PastDay(dayKey(e.createdAt)));
-      d.entries++;
-      if (e.type == 'dream') d.dreams++;
-    }
-    for (final m in meals) {
-      final k = key(m.createdAt);
-      final d = map.putIfAbsent(k, () => _PastDay(dayKey(m.createdAt)));
-      d.meals++;
-    }
-    final list = map.values.toList()
-      ..sort((a, b) => b.day.compareTo(a.day));
-    return list;
-  }
-}
-
-class _PastDay {
-  _PastDay(this.day);
-  final DateTime day;
-  int entries = 0;
-  int dreams = 0;
-  int meals = 0;
-}
-
-class _PastDayCard extends StatelessWidget {
-  const _PastDayCard({required this.day});
-  final _PastDay day;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.vyana;
-    final date = day.day;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final diff = today.difference(date).inDays;
-    final label = diff == 0
-        ? 'Today'
-        : diff == 1
-            ? 'Yesterday'
-            : '${date.day}/${date.month}';
-    return Panel(
-      pad: 16,
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(label,
-                style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 18)),
-          ),
-          _Count(icon: 'feather', value: day.entries, color: t.vit('nova')),
-          const SizedBox(width: 12),
-          _Count(icon: 'dream', value: day.dreams, color: t.vit('luna')),
-          const SizedBox(width: 12),
-          _Count(icon: 'bowl', value: day.meals, color: t.vit('steps')),
-        ],
-      ),
-    );
-  }
-}
-
-class _Count extends StatelessWidget {
-  const _Count({required this.icon, required this.value, required this.color});
-  final String icon;
-  final int value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.vyana;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        VyanaIcon(icon, size: 14, color: color),
-        const SizedBox(width: 4),
-        Text('$value', style: VyanaType.caption.copyWith(color: t.textSec)),
-      ],
     );
   }
 }

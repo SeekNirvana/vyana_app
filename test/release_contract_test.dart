@@ -52,16 +52,15 @@ void main() {
     final homeScreen = readLib('src/screens/home_screen.dart');
     expect(homeScreen, contains('runAllVitals'));
     expect(homeScreen, contains('Check vitals'));
-    expect(homeScreen, contains('How you’re being'));
     expect(homeScreen, contains('homeMomentAt'));
     expect(homeScreen, contains('Suggested practice'));
     expect(homeScreen, contains('suggestedPracticeId'));
 
-    // Contextual morning/night summaries complement the full Trends screen.
-    final trendsScreen = readLib('src/screens/trends_screen.dart');
-    expect(trendsScreen, contains('openVitalDetail'));
-    expect(trendsScreen, contains('openMeasurements'));
-    expect(trendsScreen, contains('READINESS'));
+    // The Trends screen became the Metrics tab in v1.1.0.
+    final metricsScreen = readLib('src/screens/metrics_screen.dart');
+    expect(metricsScreen, contains('openVitalDetail'));
+    expect(metricsScreen, contains('openMeasurements'));
+    expect(metricsScreen, contains('READINESS TODAY'));
 
     final ringController = readLib('src/state/ring_controller.dart');
     expect(ringController, contains('runAllVitals'));
@@ -124,12 +123,13 @@ void main() {
     expect(onboarding, contains('completeRingOnboarding'));
 
     final syncSettings = readLib('src/screens/sync_settings_screen.dart');
-    expect(syncSettings, contains('Ring sync interval'));
+    expect(syncSettings, contains('Sync interval saved.'));
     expect(syncSettings, contains('applyPeriodicSyncInterval'));
+    // The Android foreground toggle folded into the Sync screen in v1.1.0.
+    expect(syncSettings, contains('setForegroundServiceEnabled'));
 
     final youScreen = readLib('src/screens/you_screen.dart');
     expect(youScreen, contains('Health monitoring'));
-    expect(youScreen, contains('Foreground service'));
 
     final foreground = readLib('src/services/ring_foreground_service.dart');
     expect(foreground, contains('kRingForegroundSyncTick'));
@@ -142,18 +142,68 @@ void main() {
     expect(ringController, contains('applyPeriodicSyncInterval'));
     expect(ringController, contains('completeRingOnboarding'));
 
-    final homeScreen = readLib('src/screens/home_screen.dart');
-    expect(homeScreen, contains('Ring offline · reconnecting'));
-    expect(homeScreen, contains('Syncing your ring…'));
-
-    final trendsScreen = readLib('src/screens/trends_screen.dart');
-    expect(trendsScreen, contains('Health metrics'));
-    expect(trendsScreen, contains('IN DEPTH'));
+    // Ring status copy moved into the shared chrome in v1.1.0.
+    final chrome = readLib('src/shell/vyana_chrome.dart');
+    expect(chrome, contains('RING OUT OF REACH'));
+    expect(chrome, contains('SYNCING YOUR RING'));
 
     final manifest = File('scripts/release-manifest.txt').readAsStringSync();
     expect(manifest, contains('completeRingOnboarding'));
     expect(manifest, contains('ring_foreground_sync_tick'));
     expect(manifest, contains('Checking paired PRANA ring'));
-    expect(manifest, contains('Health metrics'));
+  });
+
+  test('v1.1.0 Vyana 2.0 — five tabs, Nova pill, patterns, exports', () {
+    final shell = readLib('src/shell/vyana_shell.dart');
+    expect(shell, contains('MetricsScreen()'));
+    expect(shell, contains('NovaPill()'));
+    expect(shell, isNot(contains('GuidesScreen()')));
+
+    final chrome = readLib('src/shell/vyana_chrome.dart');
+    expect(chrome, contains('Install private AI guide'));
+    expect(chrome, contains("'Ask Nova'"));
+    expect(chrome, contains('class PatternCard'));
+    expect(chrome, contains('DashedPillPainter'));
+
+    final home = readLib('src/screens/home_screen.dart');
+    expect(home, contains("Today's read"));
+    expect(home, contains('IntentRow()'));
+    expect(home, contains('homeMetricCards'));
+
+    final metrics = readLib('src/screens/metrics_screen.dart');
+    expect(metrics, contains('See all & test'));
+    expect(metrics, contains('ecgClassification'));
+    expect(metrics, contains('readinessSeries'));
+
+    final practice = readLib('src/screens/practice_screen.dart');
+    expect(practice, contains('SUGGESTED TODAY'));
+    expect(practice, contains('ReorderableListView'));
+    expect(practice, contains('Pin your practices'));
+
+    final journal = readLib('src/screens/journal_screen.dart');
+    expect(journal, contains('Search entries'));
+    expect(journal, contains('Did you catch it?'));
+
+    final you = readLib('src/screens/you_screen.dart');
+    expect(you, contains('Export and sovereignty'));
+    expect(you, contains('How often you train'));
+    expect(you, contains('openNovaFootprint'));
+
+    final engine = readLib('src/state/pattern_engine.dart');
+    expect(engine, contains('journalPatternCandidate'));
+    expect(engine, contains('metricsPatternCandidate'));
+
+    final db = readLib('src/data/db.dart');
+    expect(db, contains('class Patterns extends Table'));
+    expect(db, contains('int get schemaVersion => 8;'));
+
+    final catalog = readLib('src/data/catalog.dart');
+    expect(catalog, contains('kLucidDreamingId'));
+    expect(catalog, isNot(contains("id: 'ravi'")));
+
+    final manifest = File('scripts/release-manifest.txt').readAsStringSync();
+    expect(manifest, contains('NOVA FOUND A PATTERN'));
+    expect(manifest, contains('Search entries'));
+    expect(manifest, contains('3.1 GB'));
   });
 }

@@ -4,10 +4,10 @@ part of '../../main.dart';
 /// (e.g. Home's "Choose a practice" jumps to the Practice tab).
 final tabIndexProvider = StateProvider<int>((_) => 0);
 
-/// Root navigation shell: five persistent tabs with the elevated lotus
-/// "Practice" button in the centre, per the handoff's TabBar. Pushed
-/// sub-screens (scan, measurements, session, editors) use the root navigator
-/// and cover the bar.
+/// Root navigation shell: Home · Metrics · Practice · Journal · You — five
+/// identical tab items (Practice sits centre for thumb reach) and Nova as a
+/// right-aligned pill above the nav on every tab. Pushed sub-screens (scan, measurements, session,
+/// editors, Nova's chat) use the root navigator and cover the bar.
 class VyanaShell extends ConsumerStatefulWidget {
   const VyanaShell({super.key});
 
@@ -22,11 +22,15 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
 
   static const _tabs = <Widget>[
     HomeScreen(),
-    JournalScreen(),
+    MetricsScreen(),
     PracticeScreen(),
-    GuidesScreen(),
+    JournalScreen(),
     YouScreen(),
   ];
+
+  /// Tab indices, so screens deep-link by name rather than by number.
+  static const homeTab = 0;
+  static const metricsTab = 1;
 
   @override
   void initState() {
@@ -44,7 +48,9 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
   /// it (either on cold start or while running) we jump to Home and kick off a
   /// hands-off Monitor-all-vitals run.
   void _listenForWidgetLaunch() {
-    _widgetClickSub = HomeWidgetService.instance.clicks.listen(_handleWidgetUri);
+    _widgetClickSub = HomeWidgetService.instance.clicks.listen(
+      _handleWidgetUri,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final uri = await HomeWidgetService.instance.initialLaunchUri();
       _handleWidgetUri(uri);
@@ -102,18 +108,28 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
       });
     });
 
+    // Push-worthy ring alerts (offline, stale, low battery, health) — evaluated
+    // whenever the ring controller changes; each fires at most once per episode.
+    ref.listen<RingController>(ringControllerProvider, (_, c) {
+      unawaited(ref.read(ringAlertServiceProvider).evaluate(c));
+    });
+
     final t = context.vyana;
     final index = ref.watch(tabIndexProvider);
+    final ring = ref.watch(ringControllerProvider);
     final sessionRecording = ref.watch(sessionControllerProvider).active;
+    // On Home the stale banner takes the pill's place above the nav, so the
+    // user can fix the ring where they noticed it; elsewhere Nova stays.
+    final showHomeBanner =
+        index == homeTab &&
+        (ringUiStateOf(ring) == RingUiState.stale ||
+            ringUiStateOf(ring) == RingUiState.disconnected);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         unawaited(
-          confirmExitVyanaApp(
-            context,
-            sessionRecording: sessionRecording,
-          ),
+          confirmExitVyanaApp(context, sessionRecording: sessionRecording),
         );
       },
       child: Scaffold(
@@ -128,6 +144,14 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
         bottomNavigationBar: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Right edge flush with the content's 16px margin; 14px of air
+            // above the nav so the pill never reads as part of it.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+              child: showHomeBanner
+                  ? RingStaleBanner(controller: ring)
+                  : const NovaPill(),
+            ),
             const SessionResumeBar(),
             VTabBar(
               active: index,
@@ -184,8 +208,7 @@ class SessionResumeBar extends ConsumerWidget {
                   style: VyanaType.label.copyWith(color: t.text),
                 ),
               ),
-              Text('Resume',
-                  style: VyanaType.label.copyWith(color: ac)),
+              Text('Resume', style: VyanaType.label.copyWith(color: ac)),
               const SizedBox(width: 6),
               VyanaIcon('chevR', size: 16, color: ac),
             ],
@@ -208,28 +231,36 @@ class VTabBar extends StatelessWidget {
   final int active;
   final ValueChanged<int> onTap;
 
+  /// Practice glyph — the design uses the runner (`directions_run`); the
+  /// meditation pose (`self_improvement`) reads as the whole catalogue rather
+  /// than sport alone. Swap here.
+  static const kPracticeTabIcon = 'meditate';
+
   static const _items = <_TabItem>[
     _TabItem('home', 'Home'),
+    _TabItem('stats', 'Metrics'),
+    _TabItem(kPracticeTabIcon, 'Practice'),
     _TabItem('book', 'Journal'),
-    _TabItem('lotus', 'Practice'),
-    _TabItem('sparkles', 'Guides'),
     _TabItem('user', 'You'),
   ];
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
+    // Only the real bottom inset (gesture bar / home indicator) goes under the
+    // items; phones with hardware buttons get the same 8px as the top.
+    final inset = MediaQuery.paddingOf(context).bottom;
     return Container(
-      padding: const EdgeInsets.only(top: 10, bottom: 22),
+      padding: EdgeInsets.only(top: 8, bottom: 8 + inset),
       decoration: BoxDecoration(
         color: t.bg.withValues(alpha: 0.92),
         border: Border(top: BorderSide(color: t.borderSoft)),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           for (var i = 0; i < _items.length; i++)
-            _buildItem(context, i, _items[i]),
+            Expanded(child: _buildItem(context, i, _items[i])),
         ],
       ),
     );
@@ -238,58 +269,40 @@ class VTabBar extends StatelessWidget {
   Widget _buildItem(BuildContext context, int i, _TabItem item) {
     final t = context.vyana;
     final on = active == i;
-    final isCenter = i == 2;
+    // Five identical items: 36px icon box, 4px, label. Practice behaves like
+    // the rest — green when selected, grey otherwise, no circle.
     return InkWell(
       onTap: () => onTap(i),
       borderRadius: BorderRadius.circular(14),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (isCenter)
-              Container(
-                width: 40,
-                height: 40,
-                margin: const EdgeInsets.only(bottom: 2),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      t.green.withValues(alpha: on ? 1 : 0.9),
-                      t.greenDark.withValues(alpha: on ? 1 : 0.9),
-                    ],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: t.green.withValues(alpha: on ? 0.45 : 0.3),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: const Center(
-                  child: VyanaIcon('lotus', size: 21, color: Colors.white, stroke: 1.7),
-                ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: Center(
                 child: VyanaIcon(
                   item.icon,
-                  size: 22,
+                  size: 24,
                   color: on ? t.green : t.textMuted,
-                  stroke: on ? 2 : 1.7,
                 ),
               ),
-            Text(
-              item.label,
-              style: VyanaType.mono10.copyWith(
-                fontFamily: VyanaType.sans,
-                fontWeight: on ? FontWeight.w700 : FontWeight.w500,
-                color: on ? t.green : t.textMuted,
+            ),
+            const SizedBox(height: 4),
+            // Scales down rather than overflowing at very large text sizes.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                item.label,
+                maxLines: 1,
+                style: VyanaType.caption.copyWith(
+                  fontSize: 12.5,
+                  height: 1.1,
+                  fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                  color: on ? t.green : t.textMuted,
+                ),
               ),
             ),
           ],
@@ -301,10 +314,7 @@ class VTabBar extends StatelessWidget {
 
 /// Soft launch prompt until first name and age are saved for wellness baselines.
 class _ProfileLaunchSheet extends StatelessWidget {
-  const _ProfileLaunchSheet({
-    required this.onSetUp,
-    required this.onLater,
-  });
+  const _ProfileLaunchSheet({required this.onSetUp, required this.onLater});
 
   final VoidCallback onSetUp;
   final VoidCallback onLater;
@@ -325,8 +335,10 @@ class _ProfileLaunchSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Welcome to Vyana',
-                style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 22)),
+            Text(
+              'Welcome to Vyana',
+              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 22),
+            ),
             const SizedBox(height: 10),
             Text(
               'A quick profile helps baseline heart rate and SpO₂ for your age. '

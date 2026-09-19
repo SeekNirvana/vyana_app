@@ -299,7 +299,7 @@ class _SubtleChainDot extends StatelessWidget {
           child: Text(
             label,
             style: VyanaType.mono10.copyWith(
-              fontSize: 9,
+              fontSize: 12,
               letterSpacing: 0.6,
               fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               color: selected
@@ -404,7 +404,7 @@ class _ConnectedWalletView extends StatelessWidget {
                         const SizedBox(width: 6),
                         Text('Live',
                             style: VyanaType.mono10.copyWith(
-                                color: t.green, fontSize: 10)),
+                                color: t.green, fontSize: 12)),
                       ],
                     ),
                   ),

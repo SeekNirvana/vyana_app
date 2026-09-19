@@ -30,6 +30,7 @@ class UserProfile {
     this.gender,
     this.heightCm,
     this.weightKg,
+    this.trainingFrequency,
   });
 
   final String firstName;
@@ -38,6 +39,12 @@ class UserProfile {
   final UserGender? gender;
   final double? heightCm;
   final double? weightKg;
+
+  /// How often the user trains (`mostDays` | `fewTimesAWeek` | `rarely`), the
+  /// one behaviour question behind the personal resting-HR band. Stored as the
+  /// enum name so this library stays free of the app's `part` graph; null
+  /// means unanswered and the band falls back to the clinical 60–100.
+  final String? trainingFrequency;
 
   bool get hasFirstName => firstName.trim().isNotEmpty;
 
@@ -80,6 +87,8 @@ class UserProfile {
     bool clearHeightCm = false,
     double? weightKg,
     bool clearWeightKg = false,
+    String? trainingFrequency,
+    bool clearTrainingFrequency = false,
   }) {
     return UserProfile(
       firstName: firstName ?? this.firstName,
@@ -88,6 +97,9 @@ class UserProfile {
       gender: clearGender ? null : (gender ?? this.gender),
       heightCm: clearHeightCm ? null : (heightCm ?? this.heightCm),
       weightKg: clearWeightKg ? null : (weightKg ?? this.weightKg),
+      trainingFrequency: clearTrainingFrequency
+          ? null
+          : (trainingFrequency ?? this.trainingFrequency),
     );
   }
 
@@ -98,6 +110,7 @@ class UserProfile {
         if (gender != null) 'gender': gender!.name,
         if (heightCm != null) 'heightCm': heightCm,
         if (weightKg != null) 'weightKg': weightKg,
+        if (trainingFrequency != null) 'trainingFrequency': trainingFrequency,
       };
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -108,6 +121,7 @@ class UserProfile {
       gender: UserGender.fromStored(json['gender']?.toString()),
       heightCm: _parseDouble(json['heightCm']),
       weightKg: _parseDouble(json['weightKg']),
+      trainingFrequency: json['trainingFrequency']?.toString(),
     );
   }
 

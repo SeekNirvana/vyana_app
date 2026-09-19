@@ -843,7 +843,7 @@ class SleepPeriodBarChartPainter extends CustomPainter {
     final gridPaint = Paint()
       ..color = gridColor
       ..strokeWidth = 1;
-    final labelStyle = TextStyle(color: labelColor, fontSize: 10);
+    final labelStyle = TextStyle(color: labelColor, fontSize: 12);
 
     for (var i = 0; i <= 4; i += 1) {
       final y = top + plotHeight * i / 4;
@@ -883,7 +883,7 @@ class SleepPeriodBarChartPainter extends CustomPainter {
         canvas,
         durationText(day.breakdown.asleepSeconds),
         Offset(centerX - 18, cursorY - 16),
-        TextStyle(color: valueColor, fontSize: 10, fontWeight: FontWeight.w700),
+        TextStyle(color: valueColor, fontSize: 12, fontWeight: FontWeight.w700),
       );
       _paintText(
         canvas,
@@ -1201,7 +1201,7 @@ class SleepWaveformPainter extends CustomPainter {
       ..strokeWidth = 1;
     final labelStyle = TextStyle(
       color: dark ? const Color(0xFFCDBFD0) : const Color(0xFF52616B),
-      fontSize: 10,
+      fontSize: 12,
     );
 
     for (var lane = 0; lane < 4; lane += 1) {

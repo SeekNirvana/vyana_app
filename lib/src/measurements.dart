@@ -1105,7 +1105,7 @@ class TimeSeriesPainter extends CustomPainter {
       );
     }
 
-    const labelStyle = TextStyle(color: Color(0xFF98A2B3), fontSize: 10);
+    const labelStyle = TextStyle(color: Color(0xFF98A2B3), fontSize: 12);
     _paintText(
       canvas,
       maxValue.toStringAsFixed(1),

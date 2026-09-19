@@ -360,6 +360,11 @@ class SessionController extends ChangeNotifier {
         unawaited(_ref.read(sessionSyncServiceProvider).queue(id));
       }
     }
+    // Lucid dreaming is the one practice whose result arrives the next
+    // morning: finishing it arms the Journal's wake capture.
+    if (a?.id == kLucidDreamingId && _elapsed.inMinutes >= 2) {
+      unawaited(_ref.read(lucidArmedProvider.notifier).arm());
+    }
 
     _active = false;
     _paused = false;

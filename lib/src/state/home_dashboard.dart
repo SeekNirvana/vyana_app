@@ -191,7 +191,7 @@ class HomeDashboard {
       if (drop >= 12) {
         insights.add(
           HomeInsight(
-            'luna',
+            'nova',
             'Sleep',
             'Sleep score dipped ${drop}pts vs your previous night. Wind down earlier if you can.',
             'luna',
@@ -200,7 +200,7 @@ class HomeDashboard {
       } else if (latest.score >= 80 && latest.score > prior.score) {
         insights.add(
           HomeInsight(
-            'luna',
+            'nova',
             'Sleep',
             'Last night scored ${latest.score} — one of your stronger recent sleeps.',
             'luna',

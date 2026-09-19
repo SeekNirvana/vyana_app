@@ -178,6 +178,34 @@ class RingController extends ChangeNotifier {
   bool get supportsFindRing =>
       _features?.supports('isSupportFindDevice') ?? false;
 
+  /// The ring can take an ECG. There is no `isSupportStart…` key for ECG the
+  /// way the seven spot vitals have; the capability lives under these three
+  /// feature flags, which is what the Record control gates on.
+  bool get supportsEcg =>
+      _features?.supportsAny(const [
+        'isSupportRealTimeECG',
+        'isSupportHistoricalECG',
+        'isSupportECGDiagnosis',
+      ]) ??
+      false;
+
+  /// When the ring last handed its data over — a live sync, or the sync the
+  /// hydrated cache came from. Null until the first sync ever.
+  DateTime? get lastSyncedAt => _cachedHistorySyncedAt;
+
+  /// When the ring was last confirmed connected; null before the first
+  /// connection this launch. Lets the UI tell a momentary drop (reconnect in
+  /// progress) from a ring that is genuinely out of reach.
+  DateTime? get lastConnectionConfirmedAt => _lastConnectionConfirmedAt;
+
+  /// Battery percent from the newest source that reported one.
+  int? get batteryPercent {
+    final v = _vitals.battery;
+    if (v != null && v > 0) return v;
+    final b = _basicInfo?.batteryPower;
+    return b != null && b > 0 ? b : null;
+  }
+
   bool get supportsFactoryReset =>
       _features?.supports('isSupportFactorySettings') ?? false;
 

@@ -145,6 +145,30 @@ class VitalsNotificationService {
     await _safeShow(_resultId, "Couldn't finish your check-in", reason, details);
   }
 
+  /// A one-off push alert (ring offline / stale / low battery, or a health
+  /// alert). Each caller owns its [id] so an alert replaces itself rather
+  /// than stacking.
+  Future<void> showAlert({
+    required int id,
+    required String title,
+    required String body,
+  }) async {
+    await ensureInitialized();
+    if (!_ready) return;
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDescription,
+        importance: Importance.high,
+        priority: Priority.high,
+        styleInformation: BigTextStyleInformation(body),
+      ),
+      iOS: const DarwinNotificationDetails(),
+    );
+    await _safeShow(id, title, body, details);
+  }
+
   Future<void> cancelProgress() async {
     try {
       await _plugin.cancel(_progressId);

@@ -158,6 +158,10 @@ class VitalsDetailScreen extends StatelessWidget {
                     ),
                   ),
               ],
+              if (_retestActionFor(metric, controller) != null) ...[
+                const SizedBox(height: 14),
+                _RetestButton(controller: controller, metric: metric),
+              ],
               const SizedBox(height: 14),
               Panel(
                 pad: 14,
@@ -834,4 +838,93 @@ class _StressBandPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _StressBandPainter oldDelegate) =>
       !listEquals(oldDelegate.values, values);
+}
+
+
+/// The spot measurement behind a report, if the ring can take one on demand.
+/// Gated on the metric's own `isSupportStart…Measurement` flag — the same
+/// keys `info_panels.dart` threads through as `testKey` — so sleep, steps and
+/// ECG (which have no such flag) show no control at all rather than a
+/// disabled one.
+MeasurementAction? _retestActionFor(
+  VitalsMetricKind kind,
+  RingController controller,
+) {
+  final features = controller.features;
+  if (features == null) return null;
+  final type = switch (kind) {
+    VitalsMetricKind.heartRate => DeviceAppControlMeasureHealthDataType.heartRate,
+    VitalsMetricKind.spo2 => DeviceAppControlMeasureHealthDataType.bloodOxygen,
+    VitalsMetricKind.bloodPressure =>
+      DeviceAppControlMeasureHealthDataType.bloodPressure,
+    VitalsMetricKind.temperature =>
+      DeviceAppControlMeasureHealthDataType.bodyTemperature,
+    VitalsMetricKind.hrv => DeviceAppControlMeasureHealthDataType.hrv,
+    VitalsMetricKind.stress => DeviceAppControlMeasureHealthDataType.pressure,
+    VitalsMetricKind.glucose => DeviceAppControlMeasureHealthDataType.bloodGlucose,
+    _ => null,
+  };
+  if (type == null) return null;
+  for (final action in realtimeMeasurementActions) {
+    if (action.type != type) continue;
+    // Only the explicit start-measurement key counts as "re-testable".
+    if (features.supports(action.featureKeys.first)) return action;
+  }
+  return null;
+}
+
+class _RetestButton extends StatelessWidget {
+  const _RetestButton({required this.controller, required this.metric});
+  final RingController controller;
+  final VitalsMetricKind metric;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final action = _retestActionFor(metric, controller)!;
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final busy = controller.isMeasuring || controller.allVitalsRunning;
+        final canRun = controller.isConnected && !busy;
+        return Panel(
+          pad: 14,
+          onTap: canRun ? () => unawaited(controller.runMeasurement(action)) : null,
+          child: Row(
+            children: [
+              VyanaIconBadge(name: 'refresh', color: t.heading),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      busy ? 'Measuring…' : 'Take a new reading',
+                      style: VyanaType.label.copyWith(color: t.text),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      busy
+                          ? (controller.testStatus.isEmpty
+                              ? 'Keep the ring on and still.'
+                              : controller.testStatus)
+                          : controller.isConnected
+                              ? 'Runs a ${action.label.toLowerCase()} measurement on the ring now.'
+                              : 'Connect the ring to retest.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: VyanaType.caption.copyWith(color: t.textSec, height: 1.4),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              VyanaIcon('chevR', size: 17, color: t.textMuted),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }

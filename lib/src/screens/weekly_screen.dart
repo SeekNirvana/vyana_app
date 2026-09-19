@@ -141,6 +141,36 @@ class WeeklyInsightsScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 18),
+              // Every pattern Nova has found — holding, weakening and ended —
+              // lives here; the cards on Metrics and Journal show only the
+              // strongest current one.
+              const SectionHead(eyebrow: 'Nova', title: 'Patterns'),
+              Builder(builder: (context) {
+                final rows =
+                    ref.watch(patternsProvider).valueOrNull ?? const <PatternRow>[];
+                if (rows.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'No patterns yet. Nova needs a few weeks of dreams, '
+                      'sessions and sleep to find one — and will say when one ends.',
+                      style: VyanaType.caption.copyWith(color: t.textSec, height: 1.45),
+                    ),
+                  );
+                }
+                return Column(
+                  children: [
+                    for (final p in rows)
+                      PatternCard(
+                        pattern: p,
+                        tint: patternLook(p, t).tint,
+                        glyph: patternLook(p, t).glyph,
+                        margin: const EdgeInsets.only(bottom: 8),
+                      ),
+                  ],
+                );
+              }),
+              const SizedBox(height: 10),
               const SectionHead(eyebrow: 'Insights', title: 'For your week'),
               for (final c in WeeklySeed.cards)
                 Padding(
@@ -168,8 +198,7 @@ class WeeklyInsightsScreen extends ConsumerWidget {
                 solid: false,
                 onTap: () {
                   ref.read(activeGuideIdProvider.notifier).state = 'nova';
-                  ref.read(tabIndexProvider.notifier).state = 3;
-                  Navigator.of(context).pop();
+                  openGuideChat(context);
                 },
               ),
             ],

@@ -97,6 +97,17 @@ class VyanaIcon extends StatelessWidget {
     'dream': Icons.nights_stay_rounded,
     'idea': Icons.lightbulb_rounded,
     'gauge': Icons.speed_rounded,
+    'arrowUp': Icons.arrow_upward_rounded,
+    'arrowDown': Icons.arrow_downward_rounded,
+    'search': Icons.search_rounded,
+    'pin': Icons.push_pin_rounded,
+    'pinOff': Icons.push_pin_outlined,
+    'sync': Icons.sync_rounded,
+    'battery': Icons.battery_std_rounded,
+    'more': Icons.more_horiz_rounded,
+    'filter': Icons.tune_rounded,
+    'stats': Icons.bar_chart_rounded,
+    'insights': Icons.insights_rounded,
   };
 
   static const Map<String, String> brandPaths = {

@@ -2447,6 +2447,17 @@ class $JournalEntriesTable extends JournalEntries
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _reflectionMeta = const VerificationMeta(
+    'reflection',
+  );
+  @override
+  late final GeneratedColumn<String> reflection = GeneratedColumn<String>(
+    'reflection',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -2466,6 +2477,7 @@ class $JournalEntriesTable extends JournalEntries
     body,
     tags,
     refined,
+    reflection,
     createdAt,
   ];
   @override
@@ -2521,6 +2533,12 @@ class $JournalEntriesTable extends JournalEntries
         refined.isAcceptableOrUnknown(data['refined']!, _refinedMeta),
       );
     }
+    if (data.containsKey('reflection')) {
+      context.handle(
+        _reflectionMeta,
+        reflection.isAcceptableOrUnknown(data['reflection']!, _reflectionMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -2562,6 +2580,10 @@ class $JournalEntriesTable extends JournalEntries
         DriftSqlType.bool,
         data['${effectivePrefix}refined'],
       )!,
+      reflection: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reflection'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -2588,6 +2610,10 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
 
   /// Whether a guide reflection has been attached.
   final bool refined;
+
+  /// Nova's reflection on this entry, shown inset under the body. Null until
+  /// one is attached (the `refined` flag alone would waste the feature).
+  final String? reflection;
   final DateTime createdAt;
   const JournalEntryRow({
     required this.id,
@@ -2596,6 +2622,7 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
     required this.body,
     required this.tags,
     required this.refined,
+    this.reflection,
     required this.createdAt,
   });
   @override
@@ -2607,6 +2634,9 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
     map['body'] = Variable<String>(body);
     map['tags'] = Variable<String>(tags);
     map['refined'] = Variable<bool>(refined);
+    if (!nullToAbsent || reflection != null) {
+      map['reflection'] = Variable<String>(reflection);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
   }
@@ -2619,6 +2649,9 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
       body: Value(body),
       tags: Value(tags),
       refined: Value(refined),
+      reflection: reflection == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reflection),
       createdAt: Value(createdAt),
     );
   }
@@ -2635,6 +2668,7 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
       body: serializer.fromJson<String>(json['body']),
       tags: serializer.fromJson<String>(json['tags']),
       refined: serializer.fromJson<bool>(json['refined']),
+      reflection: serializer.fromJson<String?>(json['reflection']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
   }
@@ -2648,6 +2682,7 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
       'body': serializer.toJson<String>(body),
       'tags': serializer.toJson<String>(tags),
       'refined': serializer.toJson<bool>(refined),
+      'reflection': serializer.toJson<String?>(reflection),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
   }
@@ -2659,6 +2694,7 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
     String? body,
     String? tags,
     bool? refined,
+    Value<String?> reflection = const Value.absent(),
     DateTime? createdAt,
   }) => JournalEntryRow(
     id: id ?? this.id,
@@ -2667,6 +2703,7 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
     body: body ?? this.body,
     tags: tags ?? this.tags,
     refined: refined ?? this.refined,
+    reflection: reflection.present ? reflection.value : this.reflection,
     createdAt: createdAt ?? this.createdAt,
   );
   JournalEntryRow copyWithCompanion(JournalEntriesCompanion data) {
@@ -2677,6 +2714,9 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
       body: data.body.present ? data.body.value : this.body,
       tags: data.tags.present ? data.tags.value : this.tags,
       refined: data.refined.present ? data.refined.value : this.refined,
+      reflection: data.reflection.present
+          ? data.reflection.value
+          : this.reflection,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -2690,6 +2730,7 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
           ..write('body: $body, ')
           ..write('tags: $tags, ')
           ..write('refined: $refined, ')
+          ..write('reflection: $reflection, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -2697,7 +2738,7 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
 
   @override
   int get hashCode =>
-      Object.hash(id, type, title, body, tags, refined, createdAt);
+      Object.hash(id, type, title, body, tags, refined, reflection, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2708,6 +2749,7 @@ class JournalEntryRow extends DataClass implements Insertable<JournalEntryRow> {
           other.body == this.body &&
           other.tags == this.tags &&
           other.refined == this.refined &&
+          other.reflection == this.reflection &&
           other.createdAt == this.createdAt);
 }
 
@@ -2718,6 +2760,7 @@ class JournalEntriesCompanion extends UpdateCompanion<JournalEntryRow> {
   final Value<String> body;
   final Value<String> tags;
   final Value<bool> refined;
+  final Value<String?> reflection;
   final Value<DateTime> createdAt;
   final Value<int> rowid;
   const JournalEntriesCompanion({
@@ -2727,6 +2770,7 @@ class JournalEntriesCompanion extends UpdateCompanion<JournalEntryRow> {
     this.body = const Value.absent(),
     this.tags = const Value.absent(),
     this.refined = const Value.absent(),
+    this.reflection = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -2737,6 +2781,7 @@ class JournalEntriesCompanion extends UpdateCompanion<JournalEntryRow> {
     required String body,
     this.tags = const Value.absent(),
     this.refined = const Value.absent(),
+    this.reflection = const Value.absent(),
     required DateTime createdAt,
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -2751,6 +2796,7 @@ class JournalEntriesCompanion extends UpdateCompanion<JournalEntryRow> {
     Expression<String>? body,
     Expression<String>? tags,
     Expression<bool>? refined,
+    Expression<String>? reflection,
     Expression<DateTime>? createdAt,
     Expression<int>? rowid,
   }) {
@@ -2761,6 +2807,7 @@ class JournalEntriesCompanion extends UpdateCompanion<JournalEntryRow> {
       if (body != null) 'body': body,
       if (tags != null) 'tags': tags,
       if (refined != null) 'refined': refined,
+      if (reflection != null) 'reflection': reflection,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -2773,6 +2820,7 @@ class JournalEntriesCompanion extends UpdateCompanion<JournalEntryRow> {
     Value<String>? body,
     Value<String>? tags,
     Value<bool>? refined,
+    Value<String?>? reflection,
     Value<DateTime>? createdAt,
     Value<int>? rowid,
   }) {
@@ -2783,6 +2831,7 @@ class JournalEntriesCompanion extends UpdateCompanion<JournalEntryRow> {
       body: body ?? this.body,
       tags: tags ?? this.tags,
       refined: refined ?? this.refined,
+      reflection: reflection ?? this.reflection,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
     );
@@ -2809,6 +2858,9 @@ class JournalEntriesCompanion extends UpdateCompanion<JournalEntryRow> {
     if (refined.present) {
       map['refined'] = Variable<bool>(refined.value);
     }
+    if (reflection.present) {
+      map['reflection'] = Variable<String>(reflection.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -2827,6 +2879,7 @@ class JournalEntriesCompanion extends UpdateCompanion<JournalEntryRow> {
           ..write('body: $body, ')
           ..write('tags: $tags, ')
           ..write('refined: $refined, ')
+          ..write('reflection: $reflection, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -6743,6 +6796,683 @@ class EcgRecordingsCompanion extends UpdateCompanion<EcgRecordingRow> {
   }
 }
 
+class $PatternsTable extends Patterns
+    with TableInfo<$PatternsTable, PatternRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PatternsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _subjectMeta = const VerificationMeta(
+    'subject',
+  );
+  @override
+  late final GeneratedColumn<String> subject = GeneratedColumn<String>(
+    'subject',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _claimMeta = const VerificationMeta('claim');
+  @override
+  late final GeneratedColumn<String> claim = GeneratedColumn<String>(
+    'claim',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _evidenceIdsJsonMeta = const VerificationMeta(
+    'evidenceIdsJson',
+  );
+  @override
+  late final GeneratedColumn<String> evidenceIdsJson = GeneratedColumn<String>(
+    'evidence_ids_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _evidenceCountMeta = const VerificationMeta(
+    'evidenceCount',
+  );
+  @override
+  late final GeneratedColumn<int> evidenceCount = GeneratedColumn<int>(
+    'evidence_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _matchCountMeta = const VerificationMeta(
+    'matchCount',
+  );
+  @override
+  late final GeneratedColumn<int> matchCount = GeneratedColumn<int>(
+    'match_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _firstSeenMeta = const VerificationMeta(
+    'firstSeen',
+  );
+  @override
+  late final GeneratedColumn<DateTime> firstSeen = GeneratedColumn<DateTime>(
+    'first_seen',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lastConfirmedMeta = const VerificationMeta(
+    'lastConfirmed',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastConfirmed =
+      GeneratedColumn<DateTime>(
+        'last_confirmed',
+        aliasedName,
+        false,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _endedAtMeta = const VerificationMeta(
+    'endedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> endedAt = GeneratedColumn<DateTime>(
+    'ended_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    source,
+    subject,
+    claim,
+    status,
+    evidenceIdsJson,
+    evidenceCount,
+    matchCount,
+    firstSeen,
+    lastConfirmed,
+    endedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'patterns';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PatternRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('subject')) {
+      context.handle(
+        _subjectMeta,
+        subject.isAcceptableOrUnknown(data['subject']!, _subjectMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_subjectMeta);
+    }
+    if (data.containsKey('claim')) {
+      context.handle(
+        _claimMeta,
+        claim.isAcceptableOrUnknown(data['claim']!, _claimMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_claimMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_statusMeta);
+    }
+    if (data.containsKey('evidence_ids_json')) {
+      context.handle(
+        _evidenceIdsJsonMeta,
+        evidenceIdsJson.isAcceptableOrUnknown(
+          data['evidence_ids_json']!,
+          _evidenceIdsJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('evidence_count')) {
+      context.handle(
+        _evidenceCountMeta,
+        evidenceCount.isAcceptableOrUnknown(
+          data['evidence_count']!,
+          _evidenceCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('match_count')) {
+      context.handle(
+        _matchCountMeta,
+        matchCount.isAcceptableOrUnknown(data['match_count']!, _matchCountMeta),
+      );
+    }
+    if (data.containsKey('first_seen')) {
+      context.handle(
+        _firstSeenMeta,
+        firstSeen.isAcceptableOrUnknown(data['first_seen']!, _firstSeenMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_firstSeenMeta);
+    }
+    if (data.containsKey('last_confirmed')) {
+      context.handle(
+        _lastConfirmedMeta,
+        lastConfirmed.isAcceptableOrUnknown(
+          data['last_confirmed']!,
+          _lastConfirmedMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_lastConfirmedMeta);
+    }
+    if (data.containsKey('ended_at')) {
+      context.handle(
+        _endedAtMeta,
+        endedAt.isAcceptableOrUnknown(data['ended_at']!, _endedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PatternRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PatternRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      subject: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subject'],
+      )!,
+      claim: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}claim'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      evidenceIdsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}evidence_ids_json'],
+      )!,
+      evidenceCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}evidence_count'],
+      )!,
+      matchCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}match_count'],
+      )!,
+      firstSeen: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}first_seen'],
+      )!,
+      lastConfirmed: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_confirmed'],
+      )!,
+      endedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}ended_at'],
+      ),
+    );
+  }
+
+  @override
+  $PatternsTable createAlias(String alias) {
+    return $PatternsTable(attachedDatabase, alias);
+  }
+}
+
+class PatternRow extends DataClass implements Insertable<PatternRow> {
+  final String id;
+
+  /// `journal` | `metrics` — which card surfaces it.
+  final String source;
+
+  /// What the pattern is about (`dream` | `swimming` | …); the card borrows
+  /// the subject's tint, never Nova's.
+  final String subject;
+
+  /// One sentence. Shrinks to what is still true as the pattern weakens.
+  final String claim;
+
+  /// `holding` | `weakening` | `broken`
+  final String status;
+
+  /// JSON list of the record ids the claim was computed from (journal entry
+  /// ids, session ids, sleep-night keys) so the claim is auditable.
+  final String evidenceIdsJson;
+
+  /// How many records the claim rests on, e.g. 3 of 5 → "FROM 5 ENTRIES".
+  final int evidenceCount;
+  final int matchCount;
+  final DateTime firstSeen;
+  final DateTime lastConfirmed;
+  final DateTime? endedAt;
+  const PatternRow({
+    required this.id,
+    required this.source,
+    required this.subject,
+    required this.claim,
+    required this.status,
+    required this.evidenceIdsJson,
+    required this.evidenceCount,
+    required this.matchCount,
+    required this.firstSeen,
+    required this.lastConfirmed,
+    this.endedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['source'] = Variable<String>(source);
+    map['subject'] = Variable<String>(subject);
+    map['claim'] = Variable<String>(claim);
+    map['status'] = Variable<String>(status);
+    map['evidence_ids_json'] = Variable<String>(evidenceIdsJson);
+    map['evidence_count'] = Variable<int>(evidenceCount);
+    map['match_count'] = Variable<int>(matchCount);
+    map['first_seen'] = Variable<DateTime>(firstSeen);
+    map['last_confirmed'] = Variable<DateTime>(lastConfirmed);
+    if (!nullToAbsent || endedAt != null) {
+      map['ended_at'] = Variable<DateTime>(endedAt);
+    }
+    return map;
+  }
+
+  PatternsCompanion toCompanion(bool nullToAbsent) {
+    return PatternsCompanion(
+      id: Value(id),
+      source: Value(source),
+      subject: Value(subject),
+      claim: Value(claim),
+      status: Value(status),
+      evidenceIdsJson: Value(evidenceIdsJson),
+      evidenceCount: Value(evidenceCount),
+      matchCount: Value(matchCount),
+      firstSeen: Value(firstSeen),
+      lastConfirmed: Value(lastConfirmed),
+      endedAt: endedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(endedAt),
+    );
+  }
+
+  factory PatternRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PatternRow(
+      id: serializer.fromJson<String>(json['id']),
+      source: serializer.fromJson<String>(json['source']),
+      subject: serializer.fromJson<String>(json['subject']),
+      claim: serializer.fromJson<String>(json['claim']),
+      status: serializer.fromJson<String>(json['status']),
+      evidenceIdsJson: serializer.fromJson<String>(json['evidenceIdsJson']),
+      evidenceCount: serializer.fromJson<int>(json['evidenceCount']),
+      matchCount: serializer.fromJson<int>(json['matchCount']),
+      firstSeen: serializer.fromJson<DateTime>(json['firstSeen']),
+      lastConfirmed: serializer.fromJson<DateTime>(json['lastConfirmed']),
+      endedAt: serializer.fromJson<DateTime?>(json['endedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'source': serializer.toJson<String>(source),
+      'subject': serializer.toJson<String>(subject),
+      'claim': serializer.toJson<String>(claim),
+      'status': serializer.toJson<String>(status),
+      'evidenceIdsJson': serializer.toJson<String>(evidenceIdsJson),
+      'evidenceCount': serializer.toJson<int>(evidenceCount),
+      'matchCount': serializer.toJson<int>(matchCount),
+      'firstSeen': serializer.toJson<DateTime>(firstSeen),
+      'lastConfirmed': serializer.toJson<DateTime>(lastConfirmed),
+      'endedAt': serializer.toJson<DateTime?>(endedAt),
+    };
+  }
+
+  PatternRow copyWith({
+    String? id,
+    String? source,
+    String? subject,
+    String? claim,
+    String? status,
+    String? evidenceIdsJson,
+    int? evidenceCount,
+    int? matchCount,
+    DateTime? firstSeen,
+    DateTime? lastConfirmed,
+    Value<DateTime?> endedAt = const Value.absent(),
+  }) => PatternRow(
+    id: id ?? this.id,
+    source: source ?? this.source,
+    subject: subject ?? this.subject,
+    claim: claim ?? this.claim,
+    status: status ?? this.status,
+    evidenceIdsJson: evidenceIdsJson ?? this.evidenceIdsJson,
+    evidenceCount: evidenceCount ?? this.evidenceCount,
+    matchCount: matchCount ?? this.matchCount,
+    firstSeen: firstSeen ?? this.firstSeen,
+    lastConfirmed: lastConfirmed ?? this.lastConfirmed,
+    endedAt: endedAt.present ? endedAt.value : this.endedAt,
+  );
+  PatternRow copyWithCompanion(PatternsCompanion data) {
+    return PatternRow(
+      id: data.id.present ? data.id.value : this.id,
+      source: data.source.present ? data.source.value : this.source,
+      subject: data.subject.present ? data.subject.value : this.subject,
+      claim: data.claim.present ? data.claim.value : this.claim,
+      status: data.status.present ? data.status.value : this.status,
+      evidenceIdsJson: data.evidenceIdsJson.present
+          ? data.evidenceIdsJson.value
+          : this.evidenceIdsJson,
+      evidenceCount: data.evidenceCount.present
+          ? data.evidenceCount.value
+          : this.evidenceCount,
+      matchCount: data.matchCount.present
+          ? data.matchCount.value
+          : this.matchCount,
+      firstSeen: data.firstSeen.present ? data.firstSeen.value : this.firstSeen,
+      lastConfirmed: data.lastConfirmed.present
+          ? data.lastConfirmed.value
+          : this.lastConfirmed,
+      endedAt: data.endedAt.present ? data.endedAt.value : this.endedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PatternRow(')
+          ..write('id: $id, ')
+          ..write('source: $source, ')
+          ..write('subject: $subject, ')
+          ..write('claim: $claim, ')
+          ..write('status: $status, ')
+          ..write('evidenceIdsJson: $evidenceIdsJson, ')
+          ..write('evidenceCount: $evidenceCount, ')
+          ..write('matchCount: $matchCount, ')
+          ..write('firstSeen: $firstSeen, ')
+          ..write('lastConfirmed: $lastConfirmed, ')
+          ..write('endedAt: $endedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    source,
+    subject,
+    claim,
+    status,
+    evidenceIdsJson,
+    evidenceCount,
+    matchCount,
+    firstSeen,
+    lastConfirmed,
+    endedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PatternRow &&
+          other.id == this.id &&
+          other.source == this.source &&
+          other.subject == this.subject &&
+          other.claim == this.claim &&
+          other.status == this.status &&
+          other.evidenceIdsJson == this.evidenceIdsJson &&
+          other.evidenceCount == this.evidenceCount &&
+          other.matchCount == this.matchCount &&
+          other.firstSeen == this.firstSeen &&
+          other.lastConfirmed == this.lastConfirmed &&
+          other.endedAt == this.endedAt);
+}
+
+class PatternsCompanion extends UpdateCompanion<PatternRow> {
+  final Value<String> id;
+  final Value<String> source;
+  final Value<String> subject;
+  final Value<String> claim;
+  final Value<String> status;
+  final Value<String> evidenceIdsJson;
+  final Value<int> evidenceCount;
+  final Value<int> matchCount;
+  final Value<DateTime> firstSeen;
+  final Value<DateTime> lastConfirmed;
+  final Value<DateTime?> endedAt;
+  final Value<int> rowid;
+  const PatternsCompanion({
+    this.id = const Value.absent(),
+    this.source = const Value.absent(),
+    this.subject = const Value.absent(),
+    this.claim = const Value.absent(),
+    this.status = const Value.absent(),
+    this.evidenceIdsJson = const Value.absent(),
+    this.evidenceCount = const Value.absent(),
+    this.matchCount = const Value.absent(),
+    this.firstSeen = const Value.absent(),
+    this.lastConfirmed = const Value.absent(),
+    this.endedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PatternsCompanion.insert({
+    required String id,
+    required String source,
+    required String subject,
+    required String claim,
+    required String status,
+    this.evidenceIdsJson = const Value.absent(),
+    this.evidenceCount = const Value.absent(),
+    this.matchCount = const Value.absent(),
+    required DateTime firstSeen,
+    required DateTime lastConfirmed,
+    this.endedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       source = Value(source),
+       subject = Value(subject),
+       claim = Value(claim),
+       status = Value(status),
+       firstSeen = Value(firstSeen),
+       lastConfirmed = Value(lastConfirmed);
+  static Insertable<PatternRow> custom({
+    Expression<String>? id,
+    Expression<String>? source,
+    Expression<String>? subject,
+    Expression<String>? claim,
+    Expression<String>? status,
+    Expression<String>? evidenceIdsJson,
+    Expression<int>? evidenceCount,
+    Expression<int>? matchCount,
+    Expression<DateTime>? firstSeen,
+    Expression<DateTime>? lastConfirmed,
+    Expression<DateTime>? endedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (source != null) 'source': source,
+      if (subject != null) 'subject': subject,
+      if (claim != null) 'claim': claim,
+      if (status != null) 'status': status,
+      if (evidenceIdsJson != null) 'evidence_ids_json': evidenceIdsJson,
+      if (evidenceCount != null) 'evidence_count': evidenceCount,
+      if (matchCount != null) 'match_count': matchCount,
+      if (firstSeen != null) 'first_seen': firstSeen,
+      if (lastConfirmed != null) 'last_confirmed': lastConfirmed,
+      if (endedAt != null) 'ended_at': endedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PatternsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? source,
+    Value<String>? subject,
+    Value<String>? claim,
+    Value<String>? status,
+    Value<String>? evidenceIdsJson,
+    Value<int>? evidenceCount,
+    Value<int>? matchCount,
+    Value<DateTime>? firstSeen,
+    Value<DateTime>? lastConfirmed,
+    Value<DateTime?>? endedAt,
+    Value<int>? rowid,
+  }) {
+    return PatternsCompanion(
+      id: id ?? this.id,
+      source: source ?? this.source,
+      subject: subject ?? this.subject,
+      claim: claim ?? this.claim,
+      status: status ?? this.status,
+      evidenceIdsJson: evidenceIdsJson ?? this.evidenceIdsJson,
+      evidenceCount: evidenceCount ?? this.evidenceCount,
+      matchCount: matchCount ?? this.matchCount,
+      firstSeen: firstSeen ?? this.firstSeen,
+      lastConfirmed: lastConfirmed ?? this.lastConfirmed,
+      endedAt: endedAt ?? this.endedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (subject.present) {
+      map['subject'] = Variable<String>(subject.value);
+    }
+    if (claim.present) {
+      map['claim'] = Variable<String>(claim.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (evidenceIdsJson.present) {
+      map['evidence_ids_json'] = Variable<String>(evidenceIdsJson.value);
+    }
+    if (evidenceCount.present) {
+      map['evidence_count'] = Variable<int>(evidenceCount.value);
+    }
+    if (matchCount.present) {
+      map['match_count'] = Variable<int>(matchCount.value);
+    }
+    if (firstSeen.present) {
+      map['first_seen'] = Variable<DateTime>(firstSeen.value);
+    }
+    if (lastConfirmed.present) {
+      map['last_confirmed'] = Variable<DateTime>(lastConfirmed.value);
+    }
+    if (endedAt.present) {
+      map['ended_at'] = Variable<DateTime>(endedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PatternsCompanion(')
+          ..write('id: $id, ')
+          ..write('source: $source, ')
+          ..write('subject: $subject, ')
+          ..write('claim: $claim, ')
+          ..write('status: $status, ')
+          ..write('evidenceIdsJson: $evidenceIdsJson, ')
+          ..write('evidenceCount: $evidenceCount, ')
+          ..write('matchCount: $matchCount, ')
+          ..write('firstSeen: $firstSeen, ')
+          ..write('lastConfirmed: $lastConfirmed, ')
+          ..write('endedAt: $endedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$VyanaDatabase extends GeneratedDatabase {
   _$VyanaDatabase(QueryExecutor e) : super(e);
   $VyanaDatabaseManager get managers => $VyanaDatabaseManager(this);
@@ -6763,6 +7493,7 @@ abstract class _$VyanaDatabase extends GeneratedDatabase {
       $RingHistoryCachesTable(this);
   late final $RingOrdersTable ringOrders = $RingOrdersTable(this);
   late final $EcgRecordingsTable ecgRecordings = $EcgRecordingsTable(this);
+  late final $PatternsTable patterns = $PatternsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -6779,6 +7510,7 @@ abstract class _$VyanaDatabase extends GeneratedDatabase {
     ringHistoryCaches,
     ringOrders,
     ecgRecordings,
+    patterns,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -8621,6 +9353,7 @@ typedef $$JournalEntriesTableCreateCompanionBuilder =
       required String body,
       Value<String> tags,
       Value<bool> refined,
+      Value<String?> reflection,
       required DateTime createdAt,
       Value<int> rowid,
     });
@@ -8632,6 +9365,7 @@ typedef $$JournalEntriesTableUpdateCompanionBuilder =
       Value<String> body,
       Value<String> tags,
       Value<bool> refined,
+      Value<String?> reflection,
       Value<DateTime> createdAt,
       Value<int> rowid,
     });
@@ -8672,6 +9406,11 @@ class $$JournalEntriesTableFilterComposer
 
   ColumnFilters<bool> get refined => $composableBuilder(
     column: $table.refined,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reflection => $composableBuilder(
+    column: $table.reflection,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8720,6 +9459,11 @@ class $$JournalEntriesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get reflection => $composableBuilder(
+    column: $table.reflection,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -8752,6 +9496,11 @@ class $$JournalEntriesTableAnnotationComposer
 
   GeneratedColumn<bool> get refined =>
       $composableBuilder(column: $table.refined, builder: (column) => column);
+
+  GeneratedColumn<String> get reflection => $composableBuilder(
+    column: $table.reflection,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -8800,6 +9549,7 @@ class $$JournalEntriesTableTableManager
                 Value<String> body = const Value.absent(),
                 Value<String> tags = const Value.absent(),
                 Value<bool> refined = const Value.absent(),
+                Value<String?> reflection = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => JournalEntriesCompanion(
@@ -8809,6 +9559,7 @@ class $$JournalEntriesTableTableManager
                 body: body,
                 tags: tags,
                 refined: refined,
+                reflection: reflection,
                 createdAt: createdAt,
                 rowid: rowid,
               ),
@@ -8820,6 +9571,7 @@ class $$JournalEntriesTableTableManager
                 required String body,
                 Value<String> tags = const Value.absent(),
                 Value<bool> refined = const Value.absent(),
+                Value<String?> reflection = const Value.absent(),
                 required DateTime createdAt,
                 Value<int> rowid = const Value.absent(),
               }) => JournalEntriesCompanion.insert(
@@ -8829,6 +9581,7 @@ class $$JournalEntriesTableTableManager
                 body: body,
                 tags: tags,
                 refined: refined,
+                reflection: reflection,
                 createdAt: createdAt,
                 rowid: rowid,
               ),
@@ -10744,6 +11497,325 @@ typedef $$EcgRecordingsTableProcessedTableManager =
       EcgRecordingRow,
       PrefetchHooks Function()
     >;
+typedef $$PatternsTableCreateCompanionBuilder =
+    PatternsCompanion Function({
+      required String id,
+      required String source,
+      required String subject,
+      required String claim,
+      required String status,
+      Value<String> evidenceIdsJson,
+      Value<int> evidenceCount,
+      Value<int> matchCount,
+      required DateTime firstSeen,
+      required DateTime lastConfirmed,
+      Value<DateTime?> endedAt,
+      Value<int> rowid,
+    });
+typedef $$PatternsTableUpdateCompanionBuilder =
+    PatternsCompanion Function({
+      Value<String> id,
+      Value<String> source,
+      Value<String> subject,
+      Value<String> claim,
+      Value<String> status,
+      Value<String> evidenceIdsJson,
+      Value<int> evidenceCount,
+      Value<int> matchCount,
+      Value<DateTime> firstSeen,
+      Value<DateTime> lastConfirmed,
+      Value<DateTime?> endedAt,
+      Value<int> rowid,
+    });
+
+class $$PatternsTableFilterComposer
+    extends Composer<_$VyanaDatabase, $PatternsTable> {
+  $$PatternsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get subject => $composableBuilder(
+    column: $table.subject,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get claim => $composableBuilder(
+    column: $table.claim,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get evidenceIdsJson => $composableBuilder(
+    column: $table.evidenceIdsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get evidenceCount => $composableBuilder(
+    column: $table.evidenceCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get matchCount => $composableBuilder(
+    column: $table.matchCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get firstSeen => $composableBuilder(
+    column: $table.firstSeen,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastConfirmed => $composableBuilder(
+    column: $table.lastConfirmed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get endedAt => $composableBuilder(
+    column: $table.endedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PatternsTableOrderingComposer
+    extends Composer<_$VyanaDatabase, $PatternsTable> {
+  $$PatternsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get subject => $composableBuilder(
+    column: $table.subject,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get claim => $composableBuilder(
+    column: $table.claim,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get evidenceIdsJson => $composableBuilder(
+    column: $table.evidenceIdsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get evidenceCount => $composableBuilder(
+    column: $table.evidenceCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get matchCount => $composableBuilder(
+    column: $table.matchCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get firstSeen => $composableBuilder(
+    column: $table.firstSeen,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastConfirmed => $composableBuilder(
+    column: $table.lastConfirmed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get endedAt => $composableBuilder(
+    column: $table.endedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PatternsTableAnnotationComposer
+    extends Composer<_$VyanaDatabase, $PatternsTable> {
+  $$PatternsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get subject =>
+      $composableBuilder(column: $table.subject, builder: (column) => column);
+
+  GeneratedColumn<String> get claim =>
+      $composableBuilder(column: $table.claim, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get evidenceIdsJson => $composableBuilder(
+    column: $table.evidenceIdsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get evidenceCount => $composableBuilder(
+    column: $table.evidenceCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get matchCount => $composableBuilder(
+    column: $table.matchCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get firstSeen =>
+      $composableBuilder(column: $table.firstSeen, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastConfirmed => $composableBuilder(
+    column: $table.lastConfirmed,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get endedAt =>
+      $composableBuilder(column: $table.endedAt, builder: (column) => column);
+}
+
+class $$PatternsTableTableManager
+    extends
+        RootTableManager<
+          _$VyanaDatabase,
+          $PatternsTable,
+          PatternRow,
+          $$PatternsTableFilterComposer,
+          $$PatternsTableOrderingComposer,
+          $$PatternsTableAnnotationComposer,
+          $$PatternsTableCreateCompanionBuilder,
+          $$PatternsTableUpdateCompanionBuilder,
+          (
+            PatternRow,
+            BaseReferences<_$VyanaDatabase, $PatternsTable, PatternRow>,
+          ),
+          PatternRow,
+          PrefetchHooks Function()
+        > {
+  $$PatternsTableTableManager(_$VyanaDatabase db, $PatternsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PatternsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PatternsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PatternsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<String> subject = const Value.absent(),
+                Value<String> claim = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<String> evidenceIdsJson = const Value.absent(),
+                Value<int> evidenceCount = const Value.absent(),
+                Value<int> matchCount = const Value.absent(),
+                Value<DateTime> firstSeen = const Value.absent(),
+                Value<DateTime> lastConfirmed = const Value.absent(),
+                Value<DateTime?> endedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PatternsCompanion(
+                id: id,
+                source: source,
+                subject: subject,
+                claim: claim,
+                status: status,
+                evidenceIdsJson: evidenceIdsJson,
+                evidenceCount: evidenceCount,
+                matchCount: matchCount,
+                firstSeen: firstSeen,
+                lastConfirmed: lastConfirmed,
+                endedAt: endedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String source,
+                required String subject,
+                required String claim,
+                required String status,
+                Value<String> evidenceIdsJson = const Value.absent(),
+                Value<int> evidenceCount = const Value.absent(),
+                Value<int> matchCount = const Value.absent(),
+                required DateTime firstSeen,
+                required DateTime lastConfirmed,
+                Value<DateTime?> endedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PatternsCompanion.insert(
+                id: id,
+                source: source,
+                subject: subject,
+                claim: claim,
+                status: status,
+                evidenceIdsJson: evidenceIdsJson,
+                evidenceCount: evidenceCount,
+                matchCount: matchCount,
+                firstSeen: firstSeen,
+                lastConfirmed: lastConfirmed,
+                endedAt: endedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PatternsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$VyanaDatabase,
+      $PatternsTable,
+      PatternRow,
+      $$PatternsTableFilterComposer,
+      $$PatternsTableOrderingComposer,
+      $$PatternsTableAnnotationComposer,
+      $$PatternsTableCreateCompanionBuilder,
+      $$PatternsTableUpdateCompanionBuilder,
+      (PatternRow, BaseReferences<_$VyanaDatabase, $PatternsTable, PatternRow>),
+      PatternRow,
+      PrefetchHooks Function()
+    >;
 
 class $VyanaDatabaseManager {
   final _$VyanaDatabase _db;
@@ -10770,4 +11842,6 @@ class $VyanaDatabaseManager {
       $$RingOrdersTableTableManager(_db, _db.ringOrders);
   $$EcgRecordingsTableTableManager get ecgRecordings =>
       $$EcgRecordingsTableTableManager(_db, _db.ecgRecordings);
+  $$PatternsTableTableManager get patterns =>
+      $$PatternsTableTableManager(_db, _db.patterns);
 }

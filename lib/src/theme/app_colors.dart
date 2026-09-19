@@ -56,6 +56,63 @@ class VyanaColors extends ThemeExtension<VyanaColors> {
   Color get goldDark => const Color(0xFFAA6A1E);
   Color get cyan => const Color(0xFF5D9FE8);
 
+  // ── 2.0 colour channels (theme-invariant) ─────────────────────────────────
+  // Three channels, never mixed; anything not in one of them is grey.
+  //
+  // A · Quality — "how is it?" Applied only to the readiness score and arc,
+  // Home's card verdicts, and Metrics' deltas. Nothing else may use these.
+  Color get qGood => const Color(0xFF20AD78);
+  Color get qGoodSoft => const Color(0xFF55C99A);
+  /// Middle band ("fair"): a yellow amber, deliberately yellower than the
+  /// orange-gold Perform intent so the two never read as one colour. Grey was
+  /// the design's choice here but on a phone it reads as "not connected".
+  Color get qLevel => const Color(0xFFD4B647);
+  Color get qLevelSoft => const Color(0xFFE6CC6B);
+  Color get qPoor => const Color(0xFFE16E80);
+  Color get qPoorSoft => const Color(0xFFEC8090);
+
+  // B · Identity — "which thing is it?" Icons only, and only the four KEY
+  // METRICS; every OTHER VITALS icon is bright grey on a lighter tile.
+  Color get idHrv => const Color(0xFF4FB8C9);
+  Color get idSleep => const Color(0xFF8E8FD8);
+  Color get idRestHr => const Color(0xFFE08FA8);
+  Color get idStress => const Color(0xFFC48FD8);
+  Color get idOther => isDark ? const Color(0xFFC3D0CA) : const Color(0xFF65717A);
+
+  /// Journal kinds — type eyebrow only. Dream shares sleep's violet on purpose.
+  Color get jDream => const Color(0xFF8E8FD8);
+  Color get jReflection => const Color(0xFF6789A8);
+  Color get jIdea => const Color(0xFFB4914C);
+  Color get jMeal => const Color(0xFF7E9B5E);
+
+  /// Pinned practices take a hue per pin slot, never per activity type.
+  List<Color> get pinPalette => const [
+        Color(0xFF6789A8),
+        Color(0xFF7BA05B),
+        Color(0xFFB4914C),
+        Color(0xFFB76AA5),
+        Color(0xFFD2735A),
+      ];
+
+  // C · Intent — "what did I choose?" Selected chip + suggested practice tile
+  // and play button. Must never recolour the score, the arc, or a metric card.
+  Color get intentRecover => const Color(0xFF6E7BBF);
+  Color get intentRecoverSoft => const Color(0xFF9DA8DB);
+  Color get intentPerform => const Color(0xFFE3A448);
+  Color get intentPerformSoft => const Color(0xFFF2C676);
+  Color get intentSettle => const Color(0xFF00D4FF);
+  Color get intentSettleSoft => const Color(0xFF66E4FF);
+
+  /// Neutral section heading — a coloured heading would read as a verdict.
+  Color get heading => isDark ? const Color(0xFFC3D0CA) : const Color(0xFF3C4C47);
+
+  /// Quiet mono eyebrow / caption grey.
+  Color get mutedInk => isDark ? const Color(0xFF8FA39B) : const Color(0xFF7A8A84);
+
+  /// Hairline card border used by the 2.0 metric/entry cards.
+  Color get hairline =>
+      isDark ? const Color(0xCC24433A) : const Color(0xFFE8E0D8);
+
   // ── Derived gradients & shadows ───────────────────────────────────────────
   LinearGradient get bgGradient => LinearGradient(
         begin: Alignment.topCenter,

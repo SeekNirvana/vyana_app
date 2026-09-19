@@ -4,8 +4,28 @@ part of '../../main.dart';
 /// [GuideRuntimeService] (flutter_gemma / Gemma E2B). Chat is gated until the
 /// shared model bundle is downloaded; voice prompts use the offline Vani Voice
 /// speech model. Switch among installed personas; "+" opens the library.
+/// Nova's chat as a pushed route — Guides is no longer a tab; the Nova pill
+/// above every tab's nav opens this.
+class GuideChatScreen extends StatelessWidget {
+  const GuideChatScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Scaffold(
+      body: DecoratedBox(
+        decoration: BoxDecoration(gradient: t.bgGradient),
+        child: const SafeArea(child: GuidesScreen(pushed: true)),
+      ),
+    );
+  }
+}
+
 class GuidesScreen extends ConsumerStatefulWidget {
-  const GuidesScreen({super.key});
+  const GuidesScreen({super.key, this.pushed = false});
+
+  /// When pushed (rather than hosted as a tab) the app bar leads with back.
+  final bool pushed;
 
   @override
   ConsumerState<GuidesScreen> createState() => _GuidesScreenState();
@@ -166,15 +186,22 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
           child: VAppBar(
             title: guide.name,
             sub: 'on-device · ${guide.role}',
-            leading: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: ac.withValues(alpha: t.isDark ? 0.2 : 0.13),
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: Center(child: VyanaIcon(guide.icon, size: 21, color: ac)),
-            ),
+            leading: widget.pushed
+                ? IconBtn(
+                    icon: 'chevL',
+                    onTap: () => Navigator.of(context).pop(),
+                  )
+                : Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: ac.withValues(alpha: t.isDark ? 0.2 : 0.13),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Center(
+                      child: VyanaIcon(guide.icon, size: 21, color: ac),
+                    ),
+                  ),
             actions: [
               if (modelReady)
                 IconBtn(
@@ -322,8 +349,8 @@ class _GuideDownloadGate extends ConsumerWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'One private model powers every guide. Download it once and '
-                  'all your guides work offline — no account, no servers.',
+                  'One private model runs Nova. Download it once and she '
+                  'works offline — no account, no servers.',
                   style:
                       VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
                 ),
@@ -334,11 +361,11 @@ class _GuideDownloadGate extends ConsumerWidget {
                     accent: ac,
                     label: downloading.status == GuideModelStatus.verifying
                         ? 'Verifying…'
-                        : 'Downloading the guide model…',
+                        : 'Downloading Nova\'s model…',
                   )
                 else ...[
                   Cta(
-                    label: failed ? 'Retry download' : 'Download guide model',
+                    label: failed ? 'Retry download' : 'Download Nova',
                     icon: 'download',
                     onTap: () => manager.downloadModel(kind),
                   ),
@@ -355,7 +382,7 @@ class _GuideDownloadGate extends ConsumerWidget {
           const SizedBox(height: 12),
           TextButton(
             onPressed: () => openGuideStore(context),
-            child: Text('Browse the full guide library',
+            child: Text('Model, voice and storage',
                 style: VyanaType.label.copyWith(color: t.green)),
           ),
         ],

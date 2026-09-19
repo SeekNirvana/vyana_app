@@ -8,7 +8,10 @@ Future<void> openSyncSettings(BuildContext context, RingController c) {
   );
 }
 
-/// Configure how often the app fetches fresh ring history while it is open.
+/// The one Sync row's contents: how often the app fetches fresh ring history,
+/// and (Android) the background service whose persistent notification is a
+/// consequence of background sync — plumbing, folded in here and named on the
+/// parent row rather than sitting beside "Find my ring".
 class RingSyncSettingsScreen extends StatefulWidget {
   const RingSyncSettingsScreen({super.key, required this.controller});
 
@@ -46,8 +49,8 @@ class _RingSyncSettingsScreenState extends State<RingSyncSettingsScreen> {
     final changed = _interval != widget.controller.periodicSyncIntervalMinutes;
 
     return _EditorScaffold(
-      title: 'Ring sync interval',
-      sub: 'App',
+      title: 'Sync',
+      sub: 'Ring',
       ctaLabel: 'Save',
       ctaIcon: 'check',
       canSave: changed,
@@ -117,6 +120,59 @@ class _RingSyncSettingsScreenState extends State<RingSyncSettingsScreen> {
               ),
           ],
         ),
+        if (Platform.isAndroid) ...[
+          const SizedBox(height: 22),
+          Text(
+            'Background service',
+            style: VyanaType.label.copyWith(color: t.textSec),
+          ),
+          const SizedBox(height: 8),
+          ListenableBuilder(
+            listenable: widget.controller,
+            builder: (context, _) {
+              final c = widget.controller;
+              return Panel(
+                pad: 14,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Keep syncing in the background',
+                            style: VyanaType.label.copyWith(color: t.text),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Shows a persistent Android notification while it runs. '
+                            'This is plumbing, not an alert — alerts are in Notifications.',
+                            style: VyanaType.caption.copyWith(
+                              color: t.textSec,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    VSwitch(
+                      on: c.foregroundServiceEnabled,
+                      onTap: c.foregroundServiceAllowed
+                          ? () => unawaited(
+                                c.setForegroundServiceEnabled(
+                                  !c.foregroundServiceEnabled,
+                                ),
+                              )
+                          : null,
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
         if (_saved) ...[
           const SizedBox(height: 16),
           Panel(

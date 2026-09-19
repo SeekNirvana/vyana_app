@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -96,7 +98,51 @@ class JournalEntries extends Table {
 
   /// Whether a guide reflection has been attached.
   BoolColumn get refined => boolean().withDefault(const Constant(false))();
+
+  /// Nova's reflection on this entry, shown inset under the body. Null until
+  /// one is attached (the `refined` flag alone would waste the feature).
+  TextColumn get reflection => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// A finding Nova has made by joining the user's own words to their ring data
+/// ("water in three of five dreams, each on a night sleep broke after 3am").
+///
+/// A pattern is a claim with a lifespan, not a fact: it is found, holds,
+/// weakens, and ends — and the ending is often the payoff. Persisting them is
+/// what lets the app say "this stopped after you acted on it" instead of
+/// silently discarding the finding the moment a new one is computed.
+@DataClassName('PatternRow')
+class Patterns extends Table {
+  TextColumn get id => text()();
+
+  /// `journal` | `metrics` — which card surfaces it.
+  TextColumn get source => text()();
+
+  /// What the pattern is about (`dream` | `swimming` | …); the card borrows
+  /// the subject's tint, never Nova's.
+  TextColumn get subject => text()();
+
+  /// One sentence. Shrinks to what is still true as the pattern weakens.
+  TextColumn get claim => text()();
+
+  /// `holding` | `weakening` | `broken`
+  TextColumn get status => text()();
+
+  /// JSON list of the record ids the claim was computed from (journal entry
+  /// ids, session ids, sleep-night keys) so the claim is auditable.
+  TextColumn get evidenceIdsJson => text().withDefault(const Constant('[]'))();
+
+  /// How many records the claim rests on, e.g. 3 of 5 → "FROM 5 ENTRIES".
+  IntColumn get evidenceCount => integer().withDefault(const Constant(0))();
+  IntColumn get matchCount => integer().withDefault(const Constant(0))();
+
+  DateTimeColumn get firstSeen => dateTime()();
+  DateTimeColumn get lastConfirmed => dateTime()();
+  DateTimeColumn get endedAt => dateTime().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -264,6 +310,7 @@ class GuideVoicePrefs extends Table {
     RingHistoryCaches,
     RingOrders,
     EcgRecordings,
+    Patterns,
   ],
 )
 class VyanaDatabase extends _$VyanaDatabase {
@@ -280,7 +327,7 @@ class VyanaDatabase extends _$VyanaDatabase {
   }
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -314,6 +361,14 @@ class VyanaDatabase extends _$VyanaDatabase {
           try {
             await m.createTable(ecgRecordings);
           } on Object catch (_) {/* already exists */}
+          try {
+            await m.createTable(patterns);
+          } on Object catch (_) {/* already exists */}
+          if (from < 8) {
+            try {
+              await m.addColumn(journalEntries, journalEntries.reflection);
+            } on Object catch (_) {/* already exists */}
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
@@ -478,6 +533,7 @@ class VyanaDatabase extends _$VyanaDatabase {
     required String body,
     List<String> tags = const [],
     bool refined = false,
+    String? reflection,
     DateTime? createdAt,
   }) {
     return into(journalEntries).insert(
@@ -487,7 +543,8 @@ class VyanaDatabase extends _$VyanaDatabase {
         title: title,
         body: body,
         tags: Value(tags.join(',')),
-        refined: Value(refined),
+        refined: Value(refined || (reflection != null && reflection.isNotEmpty)),
+        reflection: Value(reflection),
         createdAt: createdAt ?? DateTime.now(),
       ),
     );
@@ -495,6 +552,20 @@ class VyanaDatabase extends _$VyanaDatabase {
 
   Future<void> deleteJournalEntry(String id) =>
       (delete(journalEntries)..where((t) => t.id.equals(id))).go();
+
+  /// Attach (or replace) Nova's reflection on an entry and mark it refined.
+  Future<void> setJournalReflection(String id, String? reflection) =>
+      (update(journalEntries)..where((t) => t.id.equals(id))).write(
+        JournalEntriesCompanion(
+          reflection: Value(reflection),
+          refined: Value(reflection != null && reflection.trim().isNotEmpty),
+        ),
+      );
+
+  Future<List<JournalEntryRow>> allEntries() =>
+      (select(journalEntries)
+            ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+          .get();
 
   Stream<List<JournalEntryRow>> watchEntries() =>
       (select(journalEntries)
@@ -742,6 +813,51 @@ class VyanaDatabase extends _$VyanaDatabase {
         .getSingle();
     return row.read(count) ?? 0;
   }
+
+  // ── Patterns (Nova's findings) ────────────────────────────────────────────
+  Stream<List<PatternRow>> watchPatterns() =>
+      (select(patterns)..orderBy([(t) => OrderingTerm.desc(t.lastConfirmed)]))
+          .watch();
+
+  Future<List<PatternRow>> allPatterns() =>
+      (select(patterns)..orderBy([(t) => OrderingTerm.desc(t.lastConfirmed)]))
+          .get();
+
+  Future<PatternRow?> getPattern(String id) =>
+      (select(patterns)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  Future<void> upsertPattern({
+    required String id,
+    required String source,
+    required String subject,
+    required String claim,
+    required String status,
+    required List<String> evidenceIds,
+    required int evidenceCount,
+    required int matchCount,
+    required DateTime firstSeen,
+    required DateTime lastConfirmed,
+    DateTime? endedAt,
+  }) {
+    return into(patterns).insertOnConflictUpdate(
+      PatternsCompanion.insert(
+        id: id,
+        source: source,
+        subject: subject,
+        claim: claim,
+        status: status,
+        evidenceIdsJson: Value(jsonEncode(evidenceIds)),
+        evidenceCount: Value(evidenceCount),
+        matchCount: Value(matchCount),
+        firstSeen: firstSeen,
+        lastConfirmed: lastConfirmed,
+        endedAt: Value(endedAt),
+      ),
+    );
+  }
+
+  Future<int> deletePattern(String id) =>
+      (delete(patterns)..where((t) => t.id.equals(id))).go();
 }
 
 /// The local vault (drift). One instance app-wide.

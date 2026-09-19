@@ -101,11 +101,12 @@ class VyanaType {
     height: 1.1,
   );
 
-  /// Mono micro-label for technical identifiers and codes only.
+  /// Mono micro-label for technical identifiers and codes only. Kept under
+  /// its historical name; 11.5 is the readable floor for tracked mono.
   static const TextStyle mono10 = TextStyle(
     fontFamily: mono,
     fontWeight: FontWeight.w400,
-    fontSize: 10,
+    fontSize: 11.5,
     letterSpacing: 0.4,
     height: 1.2,
   );

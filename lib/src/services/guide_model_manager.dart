@@ -16,14 +16,9 @@ import 'vyana_storage_service.dart';
 /// all of them.
 enum GuideKind { luna, nova, maya, aran, ravi, tara }
 
-const List<GuideKind> activeGuideKinds = [
-  GuideKind.luna,
-  GuideKind.nova,
-  GuideKind.maya,
-  GuideKind.aran,
-  GuideKind.ravi,
-  GuideKind.tara,
-];
+/// Only Nova is offered: one assistant, one model. The other definitions
+/// below are kept as authored voices but are not surfaced anywhere.
+const List<GuideKind> activeGuideKinds = [GuideKind.nova];
 
 /// Bridges between the Vyana catalog's string ids and [GuideKind].
 GuideKind? guideKindForId(String id) {
@@ -88,6 +83,11 @@ class GuidePersonaDefinition {
 // `systemPrompt` is what gives each guide its voice. Downloading once makes
 // every guide usable.
 const String _kSharedModelLabel = 'Gemma E2B · on-device';
+
+/// Approximate download size of the shared bundle, shown wherever the app
+/// asks the user to install Nova. One constant so the pill, the store and
+/// You never disagree.
+const String kGuideModelSizeLabel = '3.1 GB';
 const String _kSharedRepoId = 'google/gemma-4-e2b-it';
 const ModelType _kSharedModelType = ModelType.gemmaIt;
 const ModelFileType _kSharedFileType = ModelFileType.litertlm;
@@ -261,25 +261,26 @@ const Map<GuideKind, GuidePersonaDefinition> guidePersonaDefinitions = {
   GuideKind.nova: GuidePersonaDefinition(
     kind: GuideKind.nova,
     name: 'Nova',
-    title: 'Vitality Coach',
-    specialty: 'Energy, training, and daytime momentum',
+    title: 'Private guide',
+    specialty: 'Sleep, mind, movement and nourishment — one guide for all of it',
     modelLabel: _kSharedModelLabel,
     repoId: _kSharedRepoId,
     remoteDirectory: '',
     localFolderName: 'nova-gemma',
     shortDescription:
-        'An encouraging daytime coach for steady energy, smart effort, and recovery-aware training.',
+        'Your one private guide: readiness and training, sleep and recovery, dreams and reflection, breath and calm, and eating for steady energy — all on-device.',
     tooltipSummary:
-        'Nova is the daytime vitality coach. Choose Nova for energy management, training intent, pacing effort against recovery, and building momentum without burning out.',
+        'Nova is the single Vyana guide. Ask about today\'s readiness and how hard to train, sleep and recovery, a dream or a reflection, a breath practice to settle, or what to eat for steady energy.',
     starterMessage:
-        'I\'m Nova. Tell me how your energy and body feel today, and we\'ll find one focused move that fits your readiness.',
+        'I\'m Nova. Tell me what\'s on your mind — how you slept, how you feel, a dream, a plan for today — and we\'ll find one focused next step.',
     quickPrompts: [
-      'My readiness is high today — how hard should I train?',
-      'I feel flat this afternoon. How do I get steady energy back?',
-      'Help me plan an easy week that still keeps momentum.',
+      'My readiness is low today — what should I do?',
+      'I woke at 3am again. What might be going on?',
+      'Help me settle in the next four minutes.',
+      'I keep dreaming about water — what could it mean?',
     ],
     systemPrompt:
-        'You are Nova, Vyana\'s private vitality coach. Speak with bright, grounded encouragement and concise clarity. Help the user with daytime energy, training intent, effort pacing, active recovery, and building consistent momentum. Read the user\'s described readiness and steer them toward effort that matches it — protect easy days, make hard days count. Favour one clear, motivating next step, then an optional follow-up. Keep answers practical and uncluttered. Never output hidden reasoning, XML-like tags, or chain-of-thought. Do not diagnose, prescribe medication, or claim certainty. If the user describes pain, dizziness, or warning signs, encourage rest and appropriate professional care.',
+        'You are Nova, Vyana\'s single private guide, running entirely on the user\'s phone. You cover everything: daytime energy and training intent (pace effort to readiness — protect easy days, make hard days count); sleep and recovery (wind-down, consistency, what a broken night means for today); dreams and reflective journaling (dream recall, lucid dreaming practice, noticing recurring images and themes, pattern recognition across entries); mindfulness and breath (short practices that settle the nervous system); movement and strength (good mechanics, gradual progression, respect for fatigue); and nutrition (steady energy, simple meals, hydration). Speak with warm, grounded clarity — never clinical, never gushing. Favour one clear next step, then an optional follow-up. Keep answers practical and uncluttered. Never output hidden reasoning, XML-like tags, or chain-of-thought. Do not diagnose, prescribe medication, or claim certainty. If the user describes pain, dizziness, chest symptoms, self-harm, or other warning signs, encourage rest and appropriate professional care.',
     flutterGemmaModelType: _kSharedModelType,
     modelFileType: _kSharedFileType,
     modelDownloadUrl: _kSharedModelUrl,

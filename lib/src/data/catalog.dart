@@ -62,11 +62,17 @@ class ActivityCategory {
   final String icon;
 }
 
+// Movement first and default: it is the largest group and the one people
+// open the Practice screen to start.
 const kActivityCategories = <ActivityCategory>[
+  ActivityCategory('sport', 'Movement', 'Move with intent', 'run'),
   ActivityCategory('mind', 'Mindfulness', 'Steady the mind', 'meditate'),
   ActivityCategory('wellness', 'Wellness', 'Restore the body', 'leaf'),
-  ActivityCategory('sport', 'Movement', 'Move with intent', 'run'),
 ];
+
+/// The one practice that does not end when the session ends: finishing it
+/// arms the next morning's wake capture in the Journal.
+const kLucidDreamingId = 'lucidDreaming';
 
 List<Activity> activitiesByCat(String cat) =>
     kActivities.where((a) => a.cat == cat).toList(growable: false);
@@ -393,6 +399,19 @@ const kActivities = <Activity>[
     ],
   ),
   Activity(
+    id: kLucidDreamingId, cat: 'mind', name: 'Lucid Dreaming', ring: 'freeMode',
+    kind: 'audio', gps: false, icon: 'dream', accent: 'luna', dur: 14, guidance: 'structured',
+    blurb: 'A pre-sleep audio that primes tonight and is recalled at dawn.',
+    track: ['Wake capture armed', 'Recall'],
+    coaching: 'Spoken intention-setting, then silence. Finishing arms tomorrow\'s wake capture.',
+    how: [
+      'Do this in bed, lights off, within the hour before sleep.',
+      'Tap Begin and follow the voice through the intention.',
+      'Repeat the intention as you drift off — nothing else to do.',
+      'When you wake, the Journal asks "Did you catch it?" — a fragment counts.',
+    ],
+  ),
+  Activity(
     id: 'bodyScan', cat: 'mind', name: 'Body Scan', ring: 'freeMode', kind: 'audio',
     gps: false, icon: 'leaf', accent: 'luna', dur: 15, guidance: 'structured',
     blurb: 'A relaxation progression from head to toe.',
@@ -582,20 +601,17 @@ class GuidePersona {
   final bool installed;
 }
 
-/// Personas already active on-device (only one is "working" at a time).
+/// The one guide. Nova covers everything the earlier personas split between
+/// them — sleep and recovery, dreams and reflective journaling, mindfulness
+/// and breath, movement, nutrition — from a single on-device model, so there
+/// is one assistant, one model and one row in You.
 const kActiveGuides = <GuidePersona>[
-  GuidePersona(id: 'luna', name: 'Luna', role: 'Sleep & Recovery', accent: 'luna', tagline: 'Your nighttime guide', model: 'Gemma E2B · on-device', icon: 'moon'),
-  GuidePersona(id: 'nova', name: 'Nova', role: 'Vitality & Energy', accent: 'nova', tagline: 'Your daytime coach', model: 'Gemma E2B · on-device', icon: 'sun'),
+  GuidePersona(id: 'nova', name: 'Nova', role: 'Your private guide', accent: 'nova', tagline: 'Sleep, mind, movement, nourishment', model: 'Gemma E2B · on-device', icon: 'brain'),
 ];
 
-/// Downloadable personas in the guide library. All guides share one on-device
-/// model bundle — downloading it once unlocks every persona below.
-const kGuideStore = <GuidePersona>[
-  GuidePersona(id: 'maya', name: 'Maya', role: 'Mindfulness & Breath', accent: 'hrv', model: 'Gemma E2B · on-device', tagline: 'Calm in the everyday', icon: 'wind'),
-  GuidePersona(id: 'aran', name: 'Aran', role: 'Movement & Strength', accent: 'hr', model: 'Gemma E2B · on-device', tagline: 'Train with intention', icon: 'dumbbell'),
-  GuidePersona(id: 'ravi', name: 'Ravi', role: 'Dreams & Reflection', accent: 'luna', model: 'Gemma E2B · on-device', tagline: 'Explore the inner world', icon: 'dream'),
-  GuidePersona(id: 'tara', name: 'Tara', role: 'Nutrition & Energy', accent: 'steps', model: 'Gemma E2B · on-device', tagline: 'Eat for steadiness', icon: 'bowl'),
-];
+/// No downloadable personas: the single-assistant decision means the store
+/// only ever installs Nova's model.
+const kGuideStore = <GuidePersona>[];
 
 GuidePersona? guideById(String id) {
   for (final g in [...kActiveGuides, ...kGuideStore]) {
@@ -671,7 +687,7 @@ class HomeSeed {
   ];
   static const quickPractices = ['breathwork', 'walk', 'sunSalutation'];
   static const insights = <HomeInsight>[
-    HomeInsight('luna', 'Sleep', 'Your deep sleep dropped 18% on nights you trained after 7pm. Try winding down by 9:30.', 'luna'),
+    HomeInsight('nova', 'Sleep', 'Your deep sleep dropped 18% on nights you trained after 7pm. Try winding down by 9:30.', 'luna'),
     HomeInsight('nova', 'Recovery', 'HRV climbed steadily this week — your recovery is trending up. A good window to push intensity.', 'nova'),
     HomeInsight('nova', 'Activity', "You're 660 steps from a 14-day streak. A short evening walk closes it.", 'steps'),
   ];

@@ -175,36 +175,17 @@ The local database is stored at `VyanaStorageService.instance.wellnessPath` unde
 
 ## 5. Navigation & UI Structure
 
-The root interface is managed by `VyanaShell` with 5 primary tabs:
+The root interface is managed by `VyanaShell` with 5 tabs — **Home · Metrics · Practice · Journal · You** — and **Nova on every screen** as a right-aligned pill above the nav (`NovaPill` in `shell/vyana_chrome.dart`; opens the pushed `GuideChatScreen`, or the guide store when the model is not installed). The Vyana 2.0 handover (Claude Design project "SeekNirvana Vyana redesign") is the source of truth for these screens; every element there is a change from the previously shipped app.
 
-1. **Home (`tabIndex: 0`)**:
-   - Live Ring Status (Connected, Syncing, Offline with reconnect status)
-   - Readiness Score ($0-100$) and drivers (HRV, Sleep, Resting HR)
-   - Contextual greeting (Morning intentions vs. Evening wind-down)
-   - Quick practice recommendations & personalized Guide insight cards
-   - One-tap "Check vitals" trigger
-2. **Journal (`tabIndex: 1`)**:
-   - Filterable timeline of Reflections, Dreams, Ideas, and Meals
-   - Integrated meal photo logging
-   - Deep-dive entry reader with AI guide reflection actions
-3. **Practice (`tabIndex: 2`)**:
-   - Center elevated lotus action
-   - Segmented filter: Mindfulness, Wellness, Movement
-   - 25+ activities with duration, guidance mode, and equipment requirements
-   - Direct launch into active practice HUD (`SessionScreen`)
-4. **Guides (`tabIndex: 3`)**:
-   - Direct conversational chat with active AI guide
-   - Voice mode toggle with speech animation
-   - Persona switcher and Guide Store for downloading models
-   - Persona customization (system prompt & response style editor)
-5. **You (`tabIndex: 4`)**:
-   - Biometric detail screens: Heart Rate, Sleep Hypnogram, $SpO_2$, Stress, Temperature
-   - Weekly correlation insights and strain vs. recovery trends
-   - Ring Hardware settings: Continuous monitoring rates, battery status, firmware info, unpairing
-   - Web3 Wallet connection, address display, and balance check
-   - In-app PRANA Ring order screen
+1. **Home (`tabIndex: 0`, `screens/home_screen.dart`)** — "how am I today": ring-status eyebrow + battery pill, readiness arc + state word, one read sentence, three **fixed** metric cards (HRV · Sleep · Resting HR — never rotating), the **intent row** (Recover / Perform / Settle, pre-set from weekday history in `state/day_intent.dart`), one suggested practice, and a capture row into the Journal composers. Everything above the intent row is measured; everything below is chosen — intent colour never touches the score.
+2. **Metrics (`tabIndex: 1`, `screens/metrics_screen.dart`)** — owns the time axis: 62px score, 7D/30D/90D range driving the readiness chart, peak badges and Movement averages; the Nova pattern card; Movement · TODAY; all vitals in KEY METRICS / OTHER VITALS with delta-vs-baseline and a reference-range caption (`vitals_quality.dart` `referenceRangeFor`); ECG section; "Export reports → IN YOU".
+3. **Practice (`tabIndex: 2`)** — intent status chip (editable), the same suggested practice, the pinned-practice rail (`state/pinned_practices.dart`, colour per pin slot), then the catalogue (Movement default).
+4. **Journal (`tabIndex: 3`)** — wake capture (armed by Lucid Dreaming via `state/lucid_arm.dart`), New entry / Log a meal, the Nova pattern card, filter chips or a tag filter, and one day-grouped timeline of entries and meals; search sheet (text + tags + date scope). Reflections come from Nova and are stored on `JournalEntries.reflection`.
+5. **You (`tabIndex: 4`)** — profile, ring management only (routine vs destructive groups), commerce, Nova footprint, Notifications (`state/notification_prefs.dart`), training frequency → resting-HR band, Your data exports (`screens/you_subscreens.dart`), theme, cloud sync, voice cues, About, Privacy.
 
----
+**Colour rules** (`theme/app_colors.dart`): three channels, never mixed — quality (`qGood/qLevel/qPoor`: score, arc, verdicts, deltas only), identity (`idHrv/idSleep/idRestHr/idStress`, journal kinds, pin palette: icons/eyebrows only), intent (`intentRecover/Perform/Settle`: selected chip + suggested practice tile and play only). Anything else is grey.
+
+**Patterns** (`state/pattern_engine.dart`, `Patterns` table): Nova's findings join journal tags to ring data (journal) and sessions to next-day HRV (metrics), persisted with a lifecycle — holding → weakening → broken — and shown as one card per surface, with the evidence on `PatternDetailScreen` and the full history on `WeeklyInsightsScreen`.
 
 ## 6. Build Flavors & Platform Targets
 

@@ -151,18 +151,18 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
                       step: '02',
                       title: 'Private AI',
                       body:
-                          'Guides and interpretation run on your phone. Nothing is sent '
-                          'to surveillance analytics in someone else\'s cloud.',
+                          'Nova, your one guide, runs entirely on your phone. Nothing '
+                          'is sent to analytics in someone else\'s cloud.',
                       icon: 'sparkles',
                       accent: t.vit('breath'),
                     ),
                     const SizedBox(height: 12),
                     _EthosPillar(
                       step: '03',
-                      title: 'Human guidance',
+                      title: 'Your call',
                       body:
-                          'Experts and programs you choose, connected to the daily '
-                          'context from your own signals — not an algorithm deciding for you.',
+                          'Readiness, intent and practice are suggestions grounded in '
+                          'your own signals — you decide, not an algorithm.',
                       icon: 'lotus',
                       accent: t.vit('sleep'),
                     ),
@@ -354,7 +354,8 @@ class AppPrivacyScreen extends StatelessWidget {
                 bullets: const [
                   'Practice sessions, routes, and journal notes',
                   'Ring history pulled from your PRANA device',
-                  'On-device AI guides and voice models you choose to download',
+                  'Nova\'s on-device model and the Vani voice model, if you install them',
+                  'Exports you make — written to Vyana\'s own folder, never uploaded',
                   'Theme, profile, and app preferences',
                 ],
               ),
@@ -363,9 +364,9 @@ class AppPrivacyScreen extends StatelessWidget {
                 body: 'Some features reach outward only when you turn them on:',
                 bullets: const [
                   'Wallet linking — only if you connect Solana or Reown; keys stay with your wallet app',
-                  'Weather on ring — only if you enable weather push to the device',
-                  'Android notification forwarding — local listener access; not sent to our servers',
-                  'Ring firmware updates — uses the manufacturer SDK path you initiate',
+                  'Buying a ring — a USDC payment you sign in your wallet, sent to the Solana network',
+                  'Installing Nova — a one-time model download from Hugging Face; nothing about you is sent',
+                  'Cloud sync — an opt-in switch that is not live yet; today nothing leaves the phone either way',
                 ],
               ),
               _PrivacySection(
@@ -375,7 +376,8 @@ class AppPrivacyScreen extends StatelessWidget {
                   'Uninstalling removes local Vyana data from your phone',
                   'Disconnect or unpair your ring at any time',
                   'Wallet connections can be revoked in the wallet app',
-                  'Future cloud sync, if offered, will be opt-in with clear export and delete controls',
+                  'Export your health report, journal or everything from You at any time',
+                  'If cloud sync goes live it stays opt-in, with clear export and delete controls',
                 ],
               ),
               const SizedBox(height: 6),
@@ -411,7 +413,7 @@ class AppPrivacyScreen extends StatelessWidget {
               const SizedBox(height: 14),
               Center(
                 child: Text(
-                  'Last updated June 2026',
+                  'Last updated September 2026',
                   style: VyanaType.caption.copyWith(color: t.textMuted),
                 ),
               ),
@@ -630,6 +632,9 @@ class _RingCapability {
   final IconData icon;
 }
 
+/// Only the capabilities Vyana actually surfaces. The SDK also reports uric
+/// acid, blood ketone, blood lipids, HR alarms and anti-lost; the app does
+/// not use them, so listing them would promise features it does not have.
 List<_RingCapability> _ringCapabilities(DeviceFeatureSnapshot feature) {
   final items = <_RingCapability>[];
 
@@ -745,24 +750,6 @@ List<_RingCapability> _ringCapabilities(DeviceFeatureSnapshot feature) {
     Icons.fitness_center,
   );
   addIf(
-    feature.supports('isSupportUricAcid'),
-    'Uric acid',
-    'Biomarker history',
-    Icons.science,
-  );
-  addIf(
-    feature.supports('isSupportBloodKetone'),
-    'Blood ketone',
-    'Biomarker history',
-    Icons.opacity,
-  );
-  addIf(
-    feature.supports('isSupportBloodFat'),
-    'Blood lipids',
-    'Cholesterol panel history',
-    Icons.biotech,
-  );
-  addIf(
     feature.supportsAny(const [
       'isSupportRealTimeECG',
       'isSupportHistoricalECG',
@@ -779,34 +766,10 @@ List<_RingCapability> _ringCapabilities(DeviceFeatureSnapshot feature) {
     Icons.sensors,
   );
   addIf(
-    feature.supports('isSupportHeartRateAlarm'),
-    'Health alarms',
-    'Heart-rate alerts',
-    Icons.notifications_active,
-  );
-  addIf(
     feature.supports('isSupportFindDevice'),
     'Find ring',
     'Ring locator command',
     Icons.ring_volume,
-  );
-  addIf(
-    feature.supports('isSupportAntiLostReminder'),
-    'Anti-lost',
-    'Disconnect reminder',
-    Icons.link,
-  );
-  addIf(
-    feature.supports('isSupportOta'),
-    'Firmware update',
-    'OTA capable',
-    Icons.system_update_alt,
-  );
-  addIf(
-    feature.supports('isSupportVo2max'),
-    'VO2 max',
-    'Fitness estimate',
-    Icons.show_chart,
   );
 
   return items;

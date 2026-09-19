@@ -190,3 +190,164 @@ String stressZoneLabel(StressZone zone) {
       return 'Stressed';
   }
 }
+
+// ── Reference ranges ──────────────────────────────────────────────────────
+// Each vital row on Metrics states its reference window in words (`TYPICAL
+// 21–90 MS`) beside the user's own baseline. Four windows are the documented
+// real-ring ranges above; sleep and resting HR are published norms added here
+// because they are headline metrics and cannot be judged only against the
+// user's own history. These live here, not in the view layer.
+
+/// A named reference window for one vital, plus the caption that states it.
+class VitalReferenceRange {
+  const VitalReferenceRange({
+    required this.low,
+    required this.high,
+    required this.caption,
+  });
+
+  final double low;
+  final double high;
+
+  /// Mono caption shown under the row, e.g. `TYPICAL 21–90 MS`.
+  final String caption;
+
+  bool contains(double value) => value >= low && value <= high;
+}
+
+/// Adult sleep recommendation (AASM / Sleep Foundation), in hours.
+const double kSleepHoursMin = 7;
+const double kSleepHoursMax = 9;
+
+/// HRV normal band, in ms (real-ring range documented above).
+const double kHrvTypicalMin = 21;
+const double kHrvTypicalMax = 90;
+
+/// SpO₂ typical band, in percent.
+const double kSpo2TypicalMin = 95;
+const double kSpo2TypicalMax = 98;
+
+/// Body temperature typical band, in °C.
+const double kTemperatureTypicalMin = 35.5;
+const double kTemperatureTypicalMax = 37.0;
+
+/// Stress index calm zone (0–100), from [stressZoneForLevel]'s calm cutoff.
+const double kStressCalmMax = 34;
+
+/// How often the user trains — asked as behaviour, never as identity. Maps to
+/// a personal resting-HR band; unanswered falls back to the clinical range,
+/// which errs in the harmless direction.
+enum TrainingFrequency { mostDays, fewTimesAWeek, rarely }
+
+extension TrainingFrequencyX on TrainingFrequency {
+  String get label => switch (this) {
+        TrainingFrequency.mostDays => 'Most days',
+        TrainingFrequency.fewTimesAWeek => 'A few times a week',
+        TrainingFrequency.rarely => 'Rarely, or just starting',
+      };
+
+  /// Short form for a trailing mono label.
+  String get shortLabel => switch (this) {
+        TrainingFrequency.mostDays => 'MOST DAYS',
+        TrainingFrequency.fewTimesAWeek => 'FEW TIMES',
+        TrainingFrequency.rarely => 'RARELY',
+      };
+
+  String get bandLabel => switch (this) {
+        TrainingFrequency.mostDays => '40–60',
+        TrainingFrequency.fewTimesAWeek => '50–70',
+        TrainingFrequency.rarely => '60–100',
+      };
+
+  static TrainingFrequency? fromName(String? name) {
+    if (name == null) return null;
+    for (final f in TrainingFrequency.values) {
+      if (f.name == name) return f;
+    }
+    return null;
+  }
+}
+
+/// Resting-HR band for a training frequency. `null` (unanswered) is the
+/// clinical 60–100.
+VitalReferenceRange restingHrBand(TrainingFrequency? frequency) {
+  final (low, high) = switch (frequency) {
+    TrainingFrequency.mostDays => (40.0, 60.0),
+    TrainingFrequency.fewTimesAWeek => (50.0, 70.0),
+    TrainingFrequency.rarely || null => (60.0, 100.0),
+  };
+  final caption = frequency == null
+      ? 'TYPICAL ${low.round()}–${high.round()} BPM'
+      : 'YOUR BAND ${low.round()}–${high.round()} BPM';
+  return VitalReferenceRange(low: low, high: high, caption: caption);
+}
+
+const VitalReferenceRange kHrvRange = VitalReferenceRange(
+  low: kHrvTypicalMin,
+  high: kHrvTypicalMax,
+  caption: 'TYPICAL 21–90 MS',
+);
+const VitalReferenceRange kSleepRange = VitalReferenceRange(
+  low: kSleepHoursMin,
+  high: kSleepHoursMax,
+  caption: 'RECOMMENDED 7–9 H',
+);
+const VitalReferenceRange kSpo2Range = VitalReferenceRange(
+  low: kSpo2TypicalMin,
+  high: kSpo2TypicalMax,
+  caption: 'TYPICAL 95–98%',
+);
+const VitalReferenceRange kTemperatureRange = VitalReferenceRange(
+  low: kTemperatureTypicalMin,
+  high: kTemperatureTypicalMax,
+  caption: 'TYPICAL 35.5–37 °C',
+);
+const VitalReferenceRange kStressRange = VitalReferenceRange(
+  low: 0,
+  high: kStressCalmMax,
+  caption: 'CALM ZONE 0–34',
+);
+const VitalReferenceRange kSystolicRange = VitalReferenceRange(
+  low: 90,
+  high: 120,
+  caption: 'NORMAL <120/80',
+);
+const VitalReferenceRange kGlucoseRange = VitalReferenceRange(
+  low: 4.0,
+  high: 5.6,
+  caption: 'FASTING 4–5.6',
+);
+
+/// Reference window for a metric, or null for metrics with no published
+/// window (they show a grey delta). Resting HR needs the user's band.
+VitalReferenceRange? referenceRangeFor(
+  VitalsMetricKind kind, {
+  TrainingFrequency? trainingFrequency,
+}) => switch (kind) {
+      VitalsMetricKind.hrv => kHrvRange,
+      VitalsMetricKind.sleep => kSleepRange,
+      VitalsMetricKind.heartRate => restingHrBand(trainingFrequency),
+      VitalsMetricKind.stress => kStressRange,
+      VitalsMetricKind.spo2 => kSpo2Range,
+      VitalsMetricKind.temperature => kTemperatureRange,
+      VitalsMetricKind.bloodPressure => kSystolicRange,
+      VitalsMetricKind.glucose => kGlucoseRange,
+      _ => null,
+    };
+
+/// `7-DAY HIGH` / `30-DAY LOW` when [today] tops or bottoms its own history in
+/// the selected window; computed from the series, so on most days none will.
+String? peakBadgeFor({
+  required double today,
+  required List<double> window,
+  required int windowDays,
+}) {
+  // Needs a week of prior days to mean anything; [window] excludes today.
+  if (window.length < 5) return null;
+  final max = window.reduce(math.max);
+  final min = window.reduce(math.min);
+  if (max == min) return null;
+  if (today >= max) return '$windowDays-DAY HIGH';
+  if (today <= min) return '$windowDays-DAY LOW';
+  return null;
+}

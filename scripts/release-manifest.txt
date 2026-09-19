@@ -25,13 +25,9 @@ Stress rhythm
 Activated
 Couldn't get a clean reading
 
-How you’re being
 scrubRecordFields
 
-# v1.0.4 — Calm redesign: Health metrics (Trends) screen
-Health metrics
-IN DEPTH
-TODAY'S MOVEMENT
+# v1.0.4 — Calm redesign (the Trends screen became the Metrics tab in v1.1.0)
 Check vitals
 
 # v1.0.4 — Live outdoor sessions: real map, 10-min spoken splits, km + terrain cues
@@ -60,7 +56,6 @@ Let's Go!
 completeRingOnboarding
 
 # v1.0.5 — Sync interval, health monitoring, foreground heartbeat, reconnect backoff
-Ring sync interval
 Sync interval saved.
 applyPeriodicSyncInterval
 ring_foreground_sync_tick
@@ -68,3 +63,23 @@ Vyana is running
 Keeping your ring connected
 Checking paired PRANA ring
 Ring offline
+
+# v1.1.0 — Vyana 2.0: Home · Metrics · Practice · Journal · You, Nova pill, patterns
+Today's read
+READINESS TODAY
+SUGGESTED TODAY
+See all & test
+Install private AI guide
+Ask Nova
+NOVA FOUND A PATTERN
+PATTERN WEAKENING
+Pin your practices
+Hold a card to move it
+Wake capture
+Search entries
+Export and sovereignty
+How often you train
+Erases ring data and unpairs
+metrics:hrv-after:
+journal:tag:
+3.1 GB

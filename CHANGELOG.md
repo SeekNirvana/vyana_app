@@ -1,5 +1,83 @@
 # Changelog
 
+## v1.1.0 — 2026-09-19 · Vyana 2.0 (Home · Metrics · Practice · Journal · You)
+
+### Changed
+
+- **Five tabs**: Home · Metrics · Practice · Journal · You. The Guides tab is
+  gone; **Nova is a pill above the nav on every screen** (Ask Nova / Install
+  private AI guide · 1.1 GB / Installing … %), opening her chat as a pushed
+  screen.
+- **Home** is one read: ring-status eyebrow + battery pill, a 104px readiness
+  arc with the state word, one sentence that follows the chosen intent, three
+  fixed metric cards (HRV · Sleep · Resting HR), the **intent row** (Recover /
+  Perform / Settle, pre-set from your weekday history) and one suggested
+  practice. Stale / offline rings get an inline Sync now / Reconnect banner.
+- **Metrics** (new tab, replaces "Health metrics") owns the time axis: 7D /
+  30D / 90D readiness chart with your average, Movement · TODAY with window
+  averages, every vital against its reference window *and* your own baseline
+  (`+11 vs base 54` · `TYPICAL 21–90 MS`), peak badges, an ECG section, and a
+  quiet "Export reports → IN YOU" line.
+- **Practice**: intent chip + readiness eyebrow, the same suggested practice,
+  a horizontal rail of **pinned practices** (colour per pin slot, Edit mode,
+  `SUN 32M · 129BPM` metadata), and the catalogue with Movement first.
+- **Journal** is one day-grouped timeline of entries and meals; wake capture
+  leads with a filled mic; tags are tappable filters; a search sheet combines
+  text, tags and a date scope; Nova's reflections are stored and shown inset.
+- **You**: ring group trimmed to device management (routine vs destructive),
+  Sync row folds interval + Android background service, Notifications row
+  (Ring & data / Health alerts on, Nudges off), Nova footprint row, "How often
+  do you train?" → personal resting-HR band, and a Your data export group.
+
+### Added
+
+- `Patterns` table + engine: Nova joins journal tags to sleep nights and
+  sessions to next-day HRV, persists findings with a holding → weakening →
+  ended lifecycle, shows one card per surface, the evidence on tap, and the
+  full history on Weekly Insights.
+- Reference ranges for sleep (7–9 h) and resting HR (band by training
+  frequency, clinical 60–100 when unanswered) in `vitals_quality.dart`.
+- **Lucid Dreaming** (Mindfulness, 14 min) — finishing it arms the next
+  morning's wake capture ("Did you catch it?").
+- Push alerts for ring offline / stale 24h / low battery (once at 15%) and
+  health alerts; retest control on vital reports gated on the ring's own
+  start-measurement flag.
+- Health report (CSV), journal (JSON) and full archive exports.
+
+- **Nova is the only guide** — one model, one persona covering sleep, dreams,
+  breath, movement and nutrition; the store installs Nova alone. Model size is
+  stated once (`kGuideModelSizeLabel`, 3.1 GB) everywhere.
+- **Practice pins** reorder by press-and-hold in Edit mode; suggested practices
+  are always four minutes or less and open the activity screen at that length.
+- **Exports** are grouped with sub-options: Health (summary per day, every
+  vital reading, sleep nights, ECG) and Journal (all, dreams, reflections,
+  ideas, meals), each for a 7D / 30D / 90D / ALL period; Metrics and Journal
+  deep-link to their own section.
+- **Type floors**: no caption below 12sp, mono eyebrows ≥ 11.5, list rows
+  ≥ 48dp; at large text sizes the nav, Home metric cards, intent chips and
+  Practice status wrap or stack instead of clipping.
+- Splash shows the mark on the app background (no tile); the logo tile is a
+  solid dark square. The ring store shows two square product shots.
+- Readiness middle band is amber, not grey; state words are Ready · Balanced ·
+  Depleted. The pre-set intent chip is dashed until confirmed.
+- About and Privacy screens re-checked against the code: removed claims for
+  features that do not exist (weather push, notification forwarding, OTA),
+  listed the real outbound connections, and marked cloud sync as not yet live.
+
+### Fixed
+
+- The three Home signals no longer change identity day to day (fixed slots).
+- Sleep no longer renders HRV's "Well recovered" string.
+- Home's fixed-height hero replaced with gap-based flex so long strings wrap
+  instead of overlapping.
+- ECG Record is gated on `isSupportRealTimeECG` / `isSupportECGDiagnosis`.
+- Ring onboarding no longer crashes when Home's "Pair now" panel is removed by
+  the connection it started (navigator captured before the context dies).
+- Journal tab rendered blank (unbounded `stretch` Row inside a ListView).
+- Peak badges (`30-DAY HIGH`) require five prior days, not three readings.
+- The Nova pill is opaque and clear of the nav; it no longer covers the last
+  card at the end of a scroll.
+
 ## v1.0.5 — 2026-08-20
 
 ### Added

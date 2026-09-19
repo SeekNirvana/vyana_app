@@ -6,16 +6,11 @@ Future<void> openRingOrder(BuildContext context) => Navigator.of(context)
 Future<void> openRingOrders(BuildContext context) => Navigator.of(context)
     .push<void>(MaterialPageRoute(builder: (_) => const RingOrdersScreen()));
 
-class _RingGallerySlide {
-  const _RingGallerySlide(this.asset, {required this.fit});
-  final String asset;
-  final BoxFit fit;
-}
-
-const _ringGalleryImages = [
-  _RingGallerySlide('assets/ring_images/img1.jpeg', fit: BoxFit.cover),
-  _RingGallerySlide('assets/ring_images/img2.jpeg', fit: BoxFit.contain),
-  _RingGallerySlide('assets/ring_images/img3.jpeg', fit: BoxFit.contain),
+/// Two square product shots: the ring against brand-green cloud, then in its
+/// charging case on grey (marketing text painted out of the source).
+const _ringImages = [
+  'assets/ring_images/ring_clouds.jpg',
+  'assets/ring_images/ring.jpg',
 ];
 
 const _whatsIncluded = [
@@ -447,55 +442,44 @@ class _RingOrderScreenState extends ConsumerState<RingOrderScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              height: 280,
-              child: Stack(
-                children: [
-                  PageView.builder(
-                    controller: _pageController,
-                    itemCount: _ringGalleryImages.length,
-                    onPageChanged: (i) => setState(() => _galleryIndex = i),
-                    itemBuilder: (_, i) {
-                      final slide = _ringGalleryImages[i];
-                      return ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: ColoredBox(
-                          color: t.isDark
-                              ? Colors.white.withValues(alpha: 0.03)
-                              : Colors.black.withValues(alpha: 0.02),
-                          child: Image.asset(
-                            slide.asset,
-                            fit: slide.fit,
-                            width: double.infinity,
-                            height: double.infinity,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  Positioned(
-                    bottom: 12,
-                    left: 0,
-                    right: 0,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var i = 0; i < _ringGalleryImages.length; i++)
-                          Container(
-                            width: i == _galleryIndex ? 18 : 6,
-                            height: 6,
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            decoration: BoxDecoration(
-                              color: i == _galleryIndex
-                                  ? t.text
-                                  : t.textMuted.withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(100),
-                            ),
-                          ),
-                      ],
+            // Full-width square gallery: both assets are 1:1 and shown whole.
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: Stack(
+                  children: [
+                    PageView.builder(
+                      controller: _pageController,
+                      itemCount: _ringImages.length,
+                      onPageChanged: (i) => setState(() => _galleryIndex = i),
+                      itemBuilder: (_, i) =>
+                          Image.asset(_ringImages[i], fit: BoxFit.cover),
                     ),
-                  ),
-                ],
+                    Positioned(
+                      bottom: 12,
+                      left: 0,
+                      right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          for (var i = 0; i < _ringImages.length; i++)
+                            Container(
+                              width: i == _galleryIndex ? 18 : 6,
+                              height: 6,
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              decoration: BoxDecoration(
+                                color: i == _galleryIndex
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.45),
+                                borderRadius: BorderRadius.circular(100),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 18),

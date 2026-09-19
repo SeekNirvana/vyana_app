@@ -44,9 +44,9 @@ class _GuideStoreScreenState extends ConsumerState<GuideStoreScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('GUIDE LIBRARY',
+                            Text('ON-DEVICE GUIDE',
                                 style: VyanaType.eyebrow.copyWith(color: t.gold)),
-                            Text('Your on-device guides',
+                            Text('Nova',
                                 style:
                                     VyanaType.appBarSerif.copyWith(color: t.text)),
                           ],
@@ -67,8 +67,8 @@ class _GuideStoreScreenState extends ConsumerState<GuideStoreScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'This phone has less than 6 GB of RAM. On-device '
-                              'guides need more memory to run well — downloads may '
+                              'This phone has less than 6 GB of RAM. Nova needs '
+                              'more memory to run well on-device — downloads may '
                               'finish but responses are likely to be slow, fail, '
                               'or freeze. Use a phone with more RAM for the best '
                               'experience.',
@@ -83,13 +83,12 @@ class _GuideStoreScreenState extends ConsumerState<GuideStoreScreen> {
                   const SizedBox(height: 14),
                   const _GuideModelCard(),
                   const SizedBox(height: 18),
-                  const SectionHead(
-                      eyebrow: 'Personas', title: 'Choose your guide'),
+                  const SectionHead(eyebrow: 'Guide', title: 'Nova'),
                   if (!modelReady)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 11),
                       child: Text(
-                        'Download the guide model above to unlock every persona.',
+                        'Download the model above and Nova is ready to talk.',
                         style: VyanaType.bodySm
                             .copyWith(color: t.textMuted, height: 1.5),
                       ),
@@ -112,7 +111,7 @@ class _GuideStoreScreenState extends ConsumerState<GuideStoreScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Every guide and voice model runs on-device. Your '
+                            'Nova and the voice model run on-device. Your '
                             'conversations and journal never leave your phone.',
                             style: VyanaType.bodySm
                                 .copyWith(color: t.textSec, height: 1.5),
@@ -167,12 +166,12 @@ class _GuideModelCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Guide model',
+                    Text('Nova\'s model',
                         style:
                             VyanaType.label.copyWith(color: t.text, fontSize: 15)),
-                    Text('Gemma E2B · powers every guide',
+                    Text('Gemma E2B · runs Nova on-device',
                         style: VyanaType.caption.copyWith(color: t.textSec)),
-                    Text('On-device LLM · ~3.1 GB',
+                    Text('On-device LLM · ~$kGuideModelSizeLabel',
                         style: VyanaType.mono10.copyWith(color: t.textMuted)),
                   ],
                 ),
@@ -181,8 +180,8 @@ class _GuideModelCard extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'One private model runs all your guides. Download it once — '
-            'inference happens entirely on your phone, fully offline.',
+            'One private model runs Nova. Download it once — inference '
+            'happens entirely on your phone, fully offline.',
             style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
           ),
           const SizedBox(height: 12),
@@ -216,7 +215,7 @@ class _GuideModelCard extends ConsumerWidget {
             )
           else ...[
             Cta(
-              label: failed ? 'Retry download' : 'Download guide model',
+              label: failed ? 'Retry download' : 'Download Nova',
               icon: 'download',
               onTap: () => manager.downloadModel(kind),
             ),
@@ -235,9 +234,9 @@ class _GuideModelCard extends ConsumerWidget {
       BuildContext context, WidgetRef ref, GuideKind kind) async {
     final remove = await showVyanaConfirmDialog<bool>(
       context: context,
-      title: 'Remove guide model?',
+      title: 'Remove Nova\'s model?',
       message:
-          'This frees up storage and disables all guides until you download '
+          'This frees up storage and disables Nova until you download '
           'the model again.',
       confirmLabel: 'Remove',
       destructive: true,
@@ -400,7 +399,7 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
           ),
           const SizedBox(height: 10),
           Text(
-            'Talk with any guide, fully offline — Whisper transcribes your mic '
+            'Talk with Nova, fully offline — Whisper transcribes your mic '
             'input on-device. Replies can be spoken with your phone\'s built-in '
             'text-to-speech voices.',
             style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
