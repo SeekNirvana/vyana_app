@@ -47,6 +47,31 @@ Future<void> syncRingWithFeedback(
   BuildContext context,
   RingController c,
 ) async {
+  // A sync needs a live link; when the ring dropped, reach for it first so
+  // "Sync" from the Home pill or banner is one tap, not two.
+  if (!c.isConnected) {
+    showVyanaSnackBar(
+      context,
+      message: 'Reaching your ring…',
+      icon: 'bluetooth',
+      success: true,
+      duration: const Duration(seconds: 2),
+    );
+    final connected = await c.reconnectSavedRing(force: true);
+    if (!context.mounted) return;
+    if (!connected) {
+      showVyanaSnackBar(
+        context,
+        message: 'Ring not in reach. Bring it closer and try again.',
+        success: false,
+        action: SnackBarAction(
+          label: 'Retry',
+          onPressed: () => unawaited(syncRingWithFeedback(context, c)),
+        ),
+      );
+      return;
+    }
+  }
   showVyanaSnackBar(
     context,
     message: 'Updating your health data…',
@@ -55,6 +80,8 @@ Future<void> syncRingWithFeedback(
     duration: const Duration(seconds: 2),
   );
   final feedback = await c.syncDeviceData();
+  // Null here means a sync was already running (a fresh connection starts
+  // one on its own) — the pill shows SYNCING, nothing more to say.
   if (!context.mounted || feedback == null) return;
   showVyanaSnackBar(
     context,

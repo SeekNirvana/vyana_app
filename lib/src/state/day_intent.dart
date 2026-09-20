@@ -76,15 +76,17 @@ class DayIntentController extends StateNotifier<DayIntentState> {
     await _preset();
   }
 
-  /// Re-derive the pre-set when the day rolls over or history arrives; a value
-  /// the user chose today is never overwritten.
+  /// Re-derive the pre-set when the day rolls over or ring data arrives; a
+  /// value the user chose today is never overwritten. An unconfirmed pre-set
+  /// is recomputed every time because the first one often runs before the
+  /// cache hydrates, with no readiness score at all.
   Future<void> ensureToday() async {
     if (_loadedFor != _today()) {
       state = const DayIntentState(null, confirmed: false);
       await _load();
       return;
     }
-    if (state.intent == null) await _preset();
+    if (!state.confirmed) await _preset();
   }
 
   Future<void> _preset() async {
@@ -107,7 +109,7 @@ class DayIntentController extends StateNotifier<DayIntentState> {
           (s) => s.label == 'Calm' && s.tone == WellnessTone.watch,
         ),
       );
-      if (mounted && state.intent == null) {
+      if (mounted && !state.confirmed && state.intent != intent) {
         state = DayIntentState(intent, confirmed: false);
       }
     } finally {

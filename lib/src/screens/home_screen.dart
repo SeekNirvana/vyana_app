@@ -37,13 +37,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ringUiStateOf(controller) == RingUiState.stale ||
         ringUiStateOf(controller) == RingUiState.disconnected;
 
-    // Re-derive the pre-set once ring history lands (the first build may run
-    // before the cache hydrates).
-    ref.listen<RingController>(ringControllerProvider, (prev, next) {
-      if (prev?.history.totalRecords != next.history.totalRecords) {
-        unawaited(ref.read(dayIntentProvider.notifier).ensureToday());
-      }
-    });
+    // Re-derive the pre-set once ring data lands (the first build may run
+    // before the cache hydrates). The controller is one ChangeNotifier
+    // instance, so listen to the derived score, not the object.
+    ref.listen<int?>(
+      ringControllerProvider.select(
+        (c) => HomeDashboard.from(c).readinessScore,
+      ),
+      (prev, next) {
+        if (prev != next) {
+          unawaited(ref.read(dayIntentProvider.notifier).ensureToday());
+        }
+      },
+    );
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 176),
@@ -670,30 +676,49 @@ class _MetricCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (arrow != null) ...[
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: VyanaIcon(arrow, size: 13, color: q),
-                ),
-                const SizedBox(width: 3),
-              ],
-              Flexible(
-                child: Text(
-                  stale && data.value != null ? 'Last reading' : data.verdict,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: VyanaType.caption.copyWith(
-                    color: stale ? t.mutedInk : q,
-                    fontSize: 13.5,
-                    height: 1.25,
-                    fontWeight: FontWeight.w600,
+          Builder(
+            builder: (context) {
+              final verdict =
+                  stale && data.value != null ? 'Last reading' : data.verdict;
+              final style = VyanaType.caption.copyWith(
+                color: stale ? t.mutedInk : q,
+                fontSize: 13.5,
+                height: 1.25,
+                fontWeight: FontWeight.w600,
+              );
+              // At normal text sizes a verdict is one word ("Recovered") and
+              // stays on one line, shrinking slightly on narrow phones rather
+              // than breaking. With large text on, it may wrap to two lines.
+              final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.25;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (arrow != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: VyanaIcon(arrow, size: 13, color: q),
+                    ),
+                    const SizedBox(width: 3),
+                  ],
+                  Flexible(
+                    child: largeText
+                        ? Text(
+                            verdict,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: style,
+                          )
+                        : Align(
+                            alignment: Alignment.centerLeft,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(verdict, maxLines: 1, style: style),
+                            ),
+                          ),
                   ),
-                ),
-              ),
-            ],
+                ],
+              );
+            },
           ),
         ],
       ),

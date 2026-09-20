@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.1.1 — 2026-09-20 · Ring state you can act on
+
+### Fixed
+
+- **Home ring pill on a phone the ring has never synced to** showed a cached
+  battery % with no way to sync. A paired ring with no sync on this phone is
+  now *stale*: the pill reads **SYNC** and the "Today is missing" banner
+  offers Sync now. Once a reconnect attempt has actually failed since launch
+  the ring is *disconnected*: the pill reads **CONNECT** and the banner offers
+  Reconnect — no more battery number for a ring the phone hasn't spoken to.
+- **SYNC with a dropped link** used to say "Updating your health data…" and
+  then do nothing. It now reaches for the ring first, syncs on success, and
+  says "Ring not in reach" with a Retry when it can't.
+- **Ring alerts never fired across launches.** The two-hour offline clock and
+  the low-battery episode lived in memory and reset every restart; both are
+  now persisted (`vyana.ring.alert.*`), so "Nothing is reading you right now"
+  fires after two hours out of reach regardless of relaunches and the
+  ≤15 % battery alert repeats at most every 12 h. The "not synced since …"
+  push no longer fires for a ring that has never synced here (the pill and
+  banner cover that).
+- **Intent pre-set stuck on Recover** even with a high readiness score. The
+  first pre-set ran before the ring cache hydrated (no score → Recover) and the
+  "recompute when data lands" hook compared the controller to itself. An
+  unconfirmed pre-set is now re-derived whenever the readiness score changes;
+  a confirmed choice is never overwritten.
+- **Metric card verdicts** ("Recovered", "Balanced") wrapped to two lines on
+  narrower phones; they now scale to a single line at normal text size and
+  wrap only when the system text scale is above 1.25×.
+
+### Docs
+
+- README refreshed for the 2.0 layout (five tabs, Nova, Metrics, patterns).
+
 ## v1.1.0 — 2026-09-19 · Vyana 2.0 (Home · Metrics · Practice · Journal · You)
 
 ### Changed

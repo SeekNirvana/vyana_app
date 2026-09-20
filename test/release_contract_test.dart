@@ -206,4 +206,29 @@ void main() {
     expect(manifest, contains('Search entries'));
     expect(manifest, contains('3.1 GB'));
   });
+
+  test('v1.1.1 ring state you can act on', () {
+    final prefs = readLib('src/state/notification_prefs.dart');
+    expect(prefs, contains('return c.pairedRing != null;'));
+    expect(prefs, contains('c.reconnectFailedThisLaunch || ringIsStale(c)'));
+    expect(prefs, contains('vyana.ring.alert.offlineSince'));
+    expect(prefs, contains('vyana.ring.alert.lowBatteryFiredAt'));
+
+    final ring = readLib('src/state/ring_controller.dart');
+    expect(ring, contains('bool get reconnectFailedThisLaunch'));
+
+    final you = readLib('src/screens/you_screen.dart');
+    expect(you, contains('Reaching your ring…'));
+    expect(you, contains('Ring not in reach'));
+
+    final intent = readLib('src/state/day_intent.dart');
+    expect(intent, contains('if (!state.confirmed) await _preset();'));
+
+    final home = readLib('src/screens/home_screen.dart');
+    expect(home, contains('HomeDashboard.from(c).readinessScore'));
+
+    final manifest = File('scripts/release-manifest.txt').readAsStringSync();
+    expect(manifest, contains('Reaching your ring…'));
+    expect(manifest, contains('vyana.ring.alert.lowBatteryFiredAt'));
+  });
 }

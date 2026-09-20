@@ -83,3 +83,9 @@ Erases ring data and unpairs
 metrics:hrv-after:
 journal:tag:
 3.1 GB
+
+# v1.1.1 — Ring state you can act on: stale/disconnected pill, alerts persist
+Reaching your ring…
+Ring not in reach. Bring it closer and try again.
+vyana.ring.alert.offlineSince
+vyana.ring.alert.lowBatteryFiredAt

@@ -40,6 +40,7 @@ class RingController extends ChangeNotifier {
   Timer? _ecgSnapshotTicker;
   DateTime? _lastReconnectAttempt;
   Duration _reconnectBackoff = _reconnectAttemptInterval;
+  bool _reconnectFailedThisLaunch = false;
   DateTime? _lastConnectionConfirmedAt;
   DateTime? _lastBatteryPoll;
   DateTime? _lastPeriodicSync;
@@ -197,6 +198,13 @@ class RingController extends ChangeNotifier {
   /// connection this launch. Lets the UI tell a momentary drop (reconnect in
   /// progress) from a ring that is genuinely out of reach.
   DateTime? get lastConnectionConfirmedAt => _lastConnectionConfirmedAt;
+
+  /// True once a reconnect to the paired ring has failed since launch and no
+  /// connection has been confirmed since. Distinguishes "still trying to
+  /// reach the ring" (first seconds after launch) from "the ring is genuinely
+  /// out of reach" — the UI must not show a battery pill for a ring it has
+  /// not actually spoken to.
+  bool get reconnectFailedThisLaunch => _reconnectFailedThisLaunch;
 
   /// Battery percent from the newest source that reported one.
   int? get batteryPercent {
@@ -412,6 +420,7 @@ class RingController extends ChangeNotifier {
       _isConnected = true;
       _isConnecting = false;
       _lastConnectionConfirmedAt = DateTime.now();
+      _reconnectFailedThisLaunch = false;
       _resetReconnectBackoff();
       if (deviceInfo != null) {
         _selectedDevice = deviceInfo;
@@ -623,6 +632,7 @@ class RingController extends ChangeNotifier {
       final scanAccess = await _repo.ensureScanAccess();
       if (!scanAccess.granted) {
         if (_disposed) return false;
+        _reconnectFailedThisLaunch = true;
         if (force) _set(() => _status = scanAccess.message);
         return false;
       }
@@ -630,6 +640,7 @@ class RingController extends ChangeNotifier {
       final matchingDevice = pairedRing.matchingDevice(devices);
       if (matchingDevice == null) {
         if (_disposed) return false;
+        _reconnectFailedThisLaunch = true;
         _growReconnectBackoff();
         if (force) _set(() => _status = 'Paired PRANA ring not found by scan');
         return false;
@@ -638,11 +649,13 @@ class RingController extends ChangeNotifier {
       if (connected) {
         _resetReconnectBackoff();
       } else {
+        _reconnectFailedThisLaunch = true;
         _growReconnectBackoff();
       }
       return connected;
     } on Object catch (error) {
       if (_disposed) return false;
+      _reconnectFailedThisLaunch = true;
       _growReconnectBackoff();
       if (force) _set(() => _status = 'Reconnect failed: $error');
       return false;
@@ -860,6 +873,7 @@ class RingController extends ChangeNotifier {
       _isAutoReconnecting = false;
       _status = status;
       _lastConnectionConfirmedAt = null;
+      _reconnectFailedThisLaunch = false;
       _eventLog.clear();
     });
     _publishMeasurementSnapshot();

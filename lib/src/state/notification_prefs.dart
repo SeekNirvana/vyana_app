@@ -88,15 +88,19 @@ const Duration kRingStaleAfter = Duration(hours: 24);
 /// live pull or the hydrated cache.
 DateTime? ringLastSyncedAt(RingController c) => c.lastSyncedAt;
 
-/// Stale = not synced within [kRingStaleAfter], or nothing synced at all while
-/// a ring is paired.
+/// Stale = not synced within [kRingStaleAfter], or a paired ring that has
+/// never handed data over on this phone at all.
 bool ringIsStale(RingController c) {
   if (!c.hasRingContext) return false;
   final at = ringLastSyncedAt(c);
-  // Unknown is not stale: a ring that has never synced has nothing to be
-  // stale about, and an old cache with no timestamp must not raise a false
-  // alarm on first launch after an upgrade.
-  if (at == null) return false;
+  if (at == null) {
+    // The cache always stamps a sync time, so no timestamp means nothing has
+    // ever been pulled here (fresh install, new phone). A paired ring with no
+    // data is exactly the case that needs a SYNC affordance; a ring that only
+    // exists as cached history from before pairing has nothing to be stale
+    // about yet.
+    return c.pairedRing != null;
+  }
   return DateTime.now().difference(at) > kRingStaleAfter;
 }
 
@@ -109,8 +113,11 @@ bool ringIsOffline(RingController c) {
   if (c.pairedRing == null || c.isConnected) return false;
   final confirmed = c.lastConnectionConfirmedAt;
   if (confirmed == null) {
-    // Never connected this launch: offline once the app has been up a while.
-    return c.hasRingContext && !c.isConnecting && ringIsStale(c);
+    // Never connected this launch. Once a reconnect attempt has actually
+    // failed the ring is out of reach, not "still connecting" — say so
+    // rather than showing a cached battery for a ring we have not spoken to.
+    if (c.isConnecting) return false;
+    return c.reconnectFailedThisLaunch || ringIsStale(c);
   }
   return DateTime.now().difference(confirmed) > kRingOfflineAfter;
 }
@@ -121,22 +128,41 @@ class RingAlertService {
   RingAlertService(this._ref);
 
   final Ref _ref;
-  bool _lowBatteryFired = false;
   bool _staleFired = false;
-  bool _offlineFired = false;
   DateTime? _lastHealthAlert;
-  DateTime? _wentOffline;
+
+  // Offline and low-battery episodes are tracked in prefs, not memory: the
+  // app is restarted far more often than a ring stays offline for two hours,
+  // and an alert that resets on every launch never fires.
+  static const _offlineSinceKey = 'vyana.ring.alert.offlineSince';
+  static const _offlineFiredKey = 'vyana.ring.alert.offlineFired';
+  static const _lowBatteryFiredAtKey = 'vyana.ring.alert.lowBatteryFiredAt';
+
+  /// Out of reach this long before the offline alert fires.
+  static const Duration offlineAlertAfter = Duration(hours: 2);
+
+  /// Low-battery alert repeats at most this often while the ring stays low.
+  static const Duration lowBatteryRepeatAfter = Duration(hours: 12);
 
   Future<void> evaluate(RingController c) async {
     if (!c.hasRingContext) return;
     final prefs = _ref.read(notificationPrefsProvider);
     final notify = VitalsNotificationService.instance;
+    final store = await SharedPreferences.getInstance();
 
     if (prefs.ringAndData) {
       final battery = c.batteryPercent;
       if (battery != null && battery > 0 && battery <= 15) {
-        if (!_lowBatteryFired) {
-          _lowBatteryFired = true;
+        final firedAtMs = store.getInt(_lowBatteryFiredAtKey);
+        final firedAt = firedAtMs == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(firedAtMs);
+        if (firedAt == null ||
+            DateTime.now().difference(firedAt) > lowBatteryRepeatAfter) {
+          await store.setInt(
+            _lowBatteryFiredAtKey,
+            DateTime.now().millisecondsSinceEpoch,
+          );
           await notify.showAlert(
             id: 4301,
             title: 'Your ring is at $battery%',
@@ -145,17 +171,18 @@ class RingAlertService {
           );
         }
       } else if (battery != null && battery > 30) {
-        _lowBatteryFired = false;
+        await store.remove(_lowBatteryFiredAtKey);
       }
 
-      if (ringIsStale(c)) {
+      final lastSync = ringLastSyncedAt(c);
+      // A ring that has never synced here gets the SYNC pill and banner, not a
+      // push — there is no "since when" to report.
+      if (ringIsStale(c) && lastSync != null) {
         if (!_staleFired) {
           _staleFired = true;
-          final at = ringLastSyncedAt(c);
-          final when = at == null ? 'a while' : _sinceLabel(at);
           await notify.showAlert(
             id: 4302,
-            title: 'Your ring has not synced since $when',
+            title: 'Your ring has not synced since ${_sinceLabel(lastSync)}',
             body: "Today's readiness is missing. Open Vyana with the ring "
                 'nearby to catch up.',
           );
@@ -165,10 +192,18 @@ class RingAlertService {
       }
 
       if (!c.isConnected && c.pairedRing != null) {
-        _wentOffline ??= DateTime.now();
-        final offlineFor = DateTime.now().difference(_wentOffline!);
-        if (!_offlineFired && offlineFor > const Duration(hours: 2)) {
-          _offlineFired = true;
+        final sinceMs = store.getInt(_offlineSinceKey);
+        final since = sinceMs == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(sinceMs);
+        if (since == null) {
+          // Start the clock from the last confirmed connection when we know
+          // it, else from now.
+          final start = c.lastConnectionConfirmedAt ?? DateTime.now();
+          await store.setInt(_offlineSinceKey, start.millisecondsSinceEpoch);
+        } else if (!(store.getBool(_offlineFiredKey) ?? false) &&
+            DateTime.now().difference(since) > offlineAlertAfter) {
+          await store.setBool(_offlineFiredKey, true);
           await notify.showAlert(
             id: 4303,
             title: 'Nothing is reading you right now',
@@ -176,9 +211,9 @@ class RingAlertService {
                 'readings it takes now are not reaching your phone.',
           );
         }
-      } else {
-        _wentOffline = null;
-        _offlineFired = false;
+      } else if (c.isConnected) {
+        await store.remove(_offlineSinceKey);
+        await store.remove(_offlineFiredKey);
       }
     }
 

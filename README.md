@@ -13,12 +13,15 @@ Your signals stay on your phone. Built by [Seek Nirvana](https://seeknirvana.com
 
 ## Features
 
-- **PRANA ring** — BLE scan, pair, reconnect, vitals sync, sleep analytics, measurements
-- **Sadhana** — breath, movement, and rest practices with session tracking
-- **On-device AI guides** — private Gemma-based companions; nothing sent to the cloud
-- **Journal & insights** — local vault for sessions, meals, and weekly patterns
+- **Five tabs** — Home · Metrics · Practice · Journal · You (Vyana 2.0)
+- **PRANA ring** — BLE scan, pair, auto-reconnect, background sync, sleep analytics, on-demand vitals and ECG; Home shows one honest ring state (synced · syncing · SYNC · CONNECT)
+- **Home** — today's readiness read, three metric cards, a Recover / Perform / Settle intent pre-set from your own history, and one suggested practice of four minutes or less
+- **Metrics** — 7D / 30D / 90D readiness chart, every vital against a reference window *and* your own baseline
+- **Practice** — breath, movement, and rest practices with pinned favourites and session tracking
+- **Journal** — local vault for entries, wake capture, meals, and the patterns Nova finds across them
+- **Nova** — one private on-device AI guide (Gemma-based); nothing leaves the phone
 - **Solana wallet** — Mobile Wallet Adapter on Seeker/Saga; Reown on other Android/iOS
-- **Privacy-first** — no account required; ring data and practice history stay on-device
+- **Privacy-first** — no account required; ring data, journal, and practice history stay on-device, exportable from You
 
 ## Requirements
 
@@ -28,7 +31,7 @@ Your signals stay on your phone. Built by [Seek Nirvana](https://seeknirvana.com
 | iOS | 16.0 |
 | Flutter | SDK ^3.12 (see `pubspec.yaml`) |
 
-On-device AI guides download a ~3 GB model at runtime. Ring, vitals, and wallet
+Nova downloads a ~3.1 GB model at runtime. Ring, vitals, journal, and wallet
 features work without it.
 
 ## Quick start
