@@ -7,6 +7,12 @@ part of '../../main.dart';
 
 Widget liveSessionBody(SessionController controller, Color accent) {
   final kind = controller.activity?.kind ?? 'indoor';
+  // §5 (mock 12d): Gym is one practice with two modes. "Start and end" is
+  // the default — nothing to tap during the session — and "Track sets & rest"
+  // uses the set/rest timer body.
+  if (kind == 'strength' && !controller.tracksSets) {
+    return IndoorBody(controller: controller, accent: accent);
+  }
   switch (kind) {
     case 'breath':
       return BreathBody(controller: controller, accent: accent);
@@ -262,7 +268,9 @@ class _GpsBodyState extends State<GpsBody> {
                             children: [
                               VyanaIcon('mapPin', size: 26, color: t.textMuted),
                               const SizedBox(height: 8),
-                              Text('Acquiring GPS · keep the sky in view',
+                              Text(
+                                  '${c.gpsState.label ?? 'Finding GPS…'}'
+                                  ' · keep the sky in view',
                                   style: VyanaType.caption
                                       .copyWith(color: t.textMuted)),
                             ],
@@ -384,14 +392,18 @@ class _GpsBodyState extends State<GpsBody> {
                                     width: 7,
                                     height: 7,
                                     decoration: BoxDecoration(
-                                      color: t.green,
+                                      color: c.hasGpsFix ? t.green : t.gold,
                                       shape: BoxShape.circle,
                                     ),
                                   ),
                                   const SizedBox(width: 6),
-                                  Text('GPS · ${km.toStringAsFixed(2)} km',
-                                      style: VyanaType.mono10
-                                          .copyWith(color: t.text)),
+                                  Text(
+                                    c.hasGpsFix
+                                        ? 'GPS · ${km.toStringAsFixed(2)} km'
+                                        : (c.gpsState.label ?? 'GPS'),
+                                    style: VyanaType.mono10
+                                        .copyWith(color: t.text),
+                                  ),
                                 ],
                               ),
                             ),
@@ -436,9 +448,13 @@ class _GpsBodyState extends State<GpsBody> {
         const SizedBox(height: 10),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
+          // Bug 13(b): distance stays "—" until a fix we trust has arrived,
+          // so a waiting session never looks like a broken one.
           child: MetricTrio(items: [
-            (km.toStringAsFixed(2), 'km'),
-            ('${c.elevationGain.round()}', 'elev gain m'),
+            (c.hasGpsFix ? km.toStringAsFixed(2) : '—', 'km'),
+            c.sessionSteps != null
+                ? ('${c.sessionSteps}', 'steps')
+                : ('${c.elevationGain.round()}', 'elev gain m'),
             (_fmtDuration(c.elapsed), 'time'),
           ]),
         ),
@@ -855,7 +871,12 @@ class _BreathBodyState extends State<BreathBody> {
           SizedBox(
             height: 240,
             child: Center(
-              child: AnimatedContainer(
+              // A timed practice shows how much of the chosen length is left,
+              // as a ring around the orb.
+              child: _TimedRing(
+                progress: widget.controller.timedProgress,
+                color: widget.accent,
+                child: AnimatedContainer(
                 duration: reduce
                     ? const Duration(milliseconds: 200)
                     : Duration(seconds: phaseSeconds),
@@ -875,6 +896,7 @@ class _BreathBodyState extends State<BreathBody> {
                       style: VyanaType.displaySerif.copyWith(
                           color: t.text, fontSize: 44)),
                 ),
+              ),
               ),
             ),
           ),
@@ -903,8 +925,10 @@ class _BreathBodyState extends State<BreathBody> {
           const SizedBox(height: 16),
           LiveHrReadout(hr: widget.controller.heartRate),
           const SizedBox(height: 10),
-          Text('Elapsed ${_fmtDuration(widget.controller.elapsed)}',
-              style: VyanaType.mono12.copyWith(color: t.textMuted)),
+          Text(
+            _clockLineFor(widget.controller),
+            style: VyanaType.mono12.copyWith(color: t.textMuted),
+          ),
         ],
       ),
     );
@@ -1115,6 +1139,58 @@ class _SequenceBodyState extends State<SequenceBody> {
           const SizedBox(height: 10),
           Text('Elapsed ${_fmtDuration(widget.controller.elapsed)}',
               style: VyanaType.mono12.copyWith(color: t.textMuted)),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Elapsed 4:12" for an open-ended session, "2:48 left" while a timed
+/// practice counts down, "Time's up" once it is complete (bug 12).
+String _clockLineFor(SessionController c) {
+  final left = c.remaining;
+  if (left == null) return 'Elapsed ${_fmtDuration(c.elapsed)}';
+  if (left == Duration.zero) {
+    return "Time's up · ${_fmtDuration(c.elapsed)}";
+  }
+  return '${_fmtDuration(left)} left';
+}
+
+/// Thin progress ring drawn around a child, for the chosen length. Renders
+/// nothing when the session is open-ended.
+class _TimedRing extends StatelessWidget {
+  const _TimedRing({
+    required this.progress,
+    required this.color,
+    required this.child,
+  });
+
+  final double? progress;
+  final Color color;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final value = progress;
+    if (value == null) return child;
+    return SizedBox(
+      width: 236,
+      height: 236,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          SizedBox(
+            width: 236,
+            height: 236,
+            child: CircularProgressIndicator(
+              value: value,
+              strokeWidth: 3,
+              backgroundColor: t.border,
+              valueColor: AlwaysStoppedAnimation(color.withValues(alpha: 0.7)),
+            ),
+          ),
+          child,
         ],
       ),
     );

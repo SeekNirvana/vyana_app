@@ -79,6 +79,11 @@ class VyanaColors extends ThemeExtension<VyanaColors> {
   Color get idStress => const Color(0xFFC48FD8);
   Color get idOther => isDark ? const Color(0xFFC3D0CA) : const Color(0xFF65717A);
 
+  /// §14b cycle mauve — cycle marks and the Period started glyph only. Kept
+  /// clear of quality rose and Resting HR's pink so it never reads as a
+  /// verdict about the body.
+  Color get idCycle => const Color(0xFFC58BB0);
+
   /// Journal kinds — type eyebrow only. Dream shares sleep's violet on purpose.
   Color get jDream => const Color(0xFF8E8FD8);
   Color get jReflection => const Color(0xFF6789A8);

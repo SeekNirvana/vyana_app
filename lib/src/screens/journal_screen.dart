@@ -1013,6 +1013,20 @@ Future<void> _showMealSheet(BuildContext context, WidgetRef ref, MealRow meal) {
             ],
             const SizedBox(height: 18),
             Cta(
+              label: 'Edit meal',
+              icon: 'edit',
+              onTap: () async {
+                final navigator = Navigator.of(sheetContext);
+                navigator.pop();
+                await navigator.push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => MealLogScreen(existing: meal),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            Cta(
               label: 'Remove this meal',
               icon: 'x',
               solid: false,
@@ -1145,6 +1159,39 @@ Future<void> showJournalEntrySheet(
                 ),
               ],
               const SizedBox(height: 18),
+              // Bug 8: a mistranscription was permanent without this — the
+              // only remedy was deleting and re-dictating, which loses the
+              // original timestamp the pattern engine joins on.
+              Cta(
+                label: 'Edit entry',
+                icon: 'edit',
+                onTap: () async {
+                  final navigator = Navigator.of(sheetContext);
+                  navigator.pop();
+                  await navigator.push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => NewEntryScreen(existing: entry),
+                    ),
+                  );
+                },
+              ),
+              if (entry.reflection != null &&
+                  entry.reflection!.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                // Nova wrote about the old text, so re-asking is offered
+                // rather than done silently.
+                Cta(
+                  label: 'Ask Nova again',
+                  icon: 'sparkles',
+                  solid: false,
+                  onTap: () async {
+                    final navigator = Navigator.of(sheetContext);
+                    navigator.pop();
+                    await addNovaReflection(context, ref, entry);
+                  },
+                ),
+              ],
+              const SizedBox(height: 8),
               Cta(
                 label: 'Remove this entry',
                 icon: 'x',

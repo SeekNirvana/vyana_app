@@ -39,6 +39,8 @@ class PatternCandidate {
     required this.evidenceIds,
     required this.evidenceCount,
     required this.matchCount,
+    this.counterIds = const [],
+    this.baseline,
     this.weakeningClaim,
   });
 
@@ -49,6 +51,14 @@ class PatternCandidate {
   final String subject;
   final String claim;
   final List<String> evidenceIds;
+
+  /// §8 (10a): the records in the window that did not match, so the claim's
+  /// denominator is visible rather than asserted.
+  final List<String> counterIds;
+
+  /// §8 (10b): what the per-row deltas are measured against.
+  final double? baseline;
+
   final int evidenceCount;
   final int matchCount;
 
@@ -171,6 +181,10 @@ PatternCandidate? journalPatternCandidate({
     subject: tag,
     claim: claim,
     evidenceIds: [for (final d in tagged) d.id],
+    counterIds: [
+      for (final d in dreams)
+        if (!tagged.contains(d)) d.id,
+    ],
     evidenceCount: dreams.length,
     matchCount: tagged.length,
     weakeningClaim:
@@ -238,6 +252,7 @@ PatternCandidate? metricsPatternCandidate({
       subject: activityId,
       claim: 'Your HRV runs $pct% higher the day after a $name session.',
       evidenceIds: ids,
+      baseline: baseline,
       evidenceCount: ids.length,
       matchCount: pct,
       weakeningClaim: 'The HRV lift after $name is fading — $pct%.',
@@ -326,6 +341,8 @@ class PatternEngine {
             claim: c.claim,
             status: PatternStatus.holding.name,
             evidenceIds: c.evidenceIds,
+            counterIds: c.counterIds,
+            baseline: c.baseline,
             evidenceCount: c.evidenceCount,
             matchCount: c.matchCount,
             firstSeen: now,
@@ -344,6 +361,8 @@ class PatternEngine {
           status: (weakening ? PatternStatus.weakening : PatternStatus.holding)
               .name,
           evidenceIds: c.evidenceIds,
+          counterIds: c.counterIds,
+          baseline: c.baseline,
           evidenceCount: c.evidenceCount,
           matchCount: weakening ? prior.matchCount : c.matchCount,
           firstSeen: prior.firstSeen,
@@ -431,3 +450,6 @@ PatternRow? currentPatternFor(List<PatternRow> rows, String source) {
   }
   return pick;
 }
+
+/// §8 (10a): the records in the window that did not match the claim.
+List<String> patternCounterIds(PatternRow row) => _decodeIds(row.counterIdsJson);

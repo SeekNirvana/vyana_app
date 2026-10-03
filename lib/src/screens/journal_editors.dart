@@ -102,18 +102,28 @@ class _FieldBox extends StatelessWidget {
 
 // ── New entry (dream / reflection / idea) ────────────────────────────────────
 class NewEntryScreen extends ConsumerStatefulWidget {
-  const NewEntryScreen({super.key});
+  const NewEntryScreen({super.key, this.existing});
+
+  /// An entry being edited rather than created (bug 8). Its `createdAt` is
+  /// preserved, because the pattern engine joins entries to the night they
+  /// were written in.
+  final JournalEntryRow? existing;
 
   @override
   ConsumerState<NewEntryScreen> createState() => _NewEntryScreenState();
 }
 
 class _NewEntryScreenState extends ConsumerState<NewEntryScreen> {
-  String _type = 'reflection';
-  final _title = TextEditingController();
-  final _body = TextEditingController();
+  late String _type = widget.existing?.type ?? 'reflection';
+  late final _title = TextEditingController(text: widget.existing?.title ?? '');
+  late final _body = TextEditingController(text: widget.existing?.body ?? '');
   final _tagInput = TextEditingController();
-  final List<String> _tags = [];
+  late final List<String> _tags = [
+    for (final tag in (widget.existing?.tags ?? '').split(','))
+      if (tag.trim().isNotEmpty) tag.trim(),
+  ];
+
+  bool get _isEditing => widget.existing != null;
 
   @override
   void dispose() {
@@ -171,13 +181,31 @@ class _NewEntryScreenState extends ConsumerState<NewEntryScreen> {
 
   Future<void> _save() async {
     final db = ref.read(databaseProvider);
-    await db.addJournalEntry(
-      id: _newId('j'),
-      type: _type,
-      title: _title.text.trim().isEmpty ? _entryLabel(_type) : _title.text.trim(),
-      body: _body.text.trim(),
-      tags: _tags,
-    );
+    final title =
+        _title.text.trim().isEmpty ? _entryLabel(_type) : _title.text.trim();
+    final existing = widget.existing;
+    if (existing != null) {
+      await db.updateJournalEntry(
+        id: existing.id,
+        title: title,
+        body: _body.text.trim(),
+        tags: _tags,
+      );
+      // Tags may have changed, so the patterns built on them are stale.
+      unawaited(
+        ref.read(patternEngineProvider).recompute(
+              history: ref.read(ringControllerProvider).history,
+            ),
+      );
+    } else {
+      await db.addJournalEntry(
+        id: _newId('j'),
+        type: _type,
+        title: title,
+        body: _body.text.trim(),
+        tags: _tags,
+      );
+    }
     if (!mounted) return;
     Navigator.of(context).pop();
   }
@@ -188,9 +216,9 @@ class _NewEntryScreenState extends ConsumerState<NewEntryScreen> {
     final ac = journalKindInk(t, _type);
     final voice = ref.watch(guideVoiceServiceProvider);
     return _EditorScaffold(
-      title: 'New entry',
+      title: _isEditing ? 'Edit entry' : 'New entry',
       sub: 'Journal',
-      ctaLabel: 'Save entry',
+      ctaLabel: _isEditing ? 'Save changes' : 'Save entry',
       ctaIcon: 'check',
       canSave: _body.text.trim().isNotEmpty || _title.text.trim().isNotEmpty,
       onSave: _save,
@@ -601,18 +629,23 @@ String mealTypeIcon(String type) => switch (type) {
     };
 
 class MealLogScreen extends ConsumerStatefulWidget {
-  const MealLogScreen({super.key});
+  const MealLogScreen({super.key, this.existing});
+
+  /// A meal being corrected rather than logged (bug 8).
+  final MealRow? existing;
 
   @override
   ConsumerState<MealLogScreen> createState() => _MealLogScreenState();
 }
 
 class _MealLogScreenState extends ConsumerState<MealLogScreen> {
-  final _label = TextEditingController();
-  final _note = TextEditingController();
+  late final _label = TextEditingController(text: widget.existing?.label ?? '');
+  late final _note = TextEditingController(text: widget.existing?.note ?? '');
   final _mealPhotos = MealPhotoService();
-  String _mealType = 'Breakfast';
-  String? _photoPath;
+  late String _mealType = widget.existing?.mealType ?? 'Breakfast';
+  late String? _photoPath = widget.existing?.photoPath;
+
+  bool get _isEditing => widget.existing != null;
 
   @override
   void dispose() {
@@ -693,13 +726,24 @@ class _MealLogScreenState extends ConsumerState<MealLogScreen> {
 
   Future<void> _save() async {
     final db = ref.read(databaseProvider);
-    await db.addMeal(
-      id: _newId('m'),
-      label: _label.text.trim(),
-      mealType: _mealType,
-      note: _note.text.trim().isEmpty ? null : _note.text.trim(),
-      photoPath: _photoPath,
-    );
+    final existing = widget.existing;
+    if (existing != null) {
+      await db.updateMeal(
+        id: existing.id,
+        label: _label.text.trim(),
+        mealType: _mealType,
+        note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+        photoPath: _photoPath,
+      );
+    } else {
+      await db.addMeal(
+        id: _newId('m'),
+        label: _label.text.trim(),
+        mealType: _mealType,
+        note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+        photoPath: _photoPath,
+      );
+    }
     if (!mounted) return;
     Navigator.of(context).pop();
   }
@@ -708,9 +752,9 @@ class _MealLogScreenState extends ConsumerState<MealLogScreen> {
   Widget build(BuildContext context) {
     final t = context.vyana;
     return _EditorScaffold(
-      title: 'Log a meal',
+      title: _isEditing ? 'Edit meal' : 'Log a meal',
       sub: 'Journal · Nourishment',
-      ctaLabel: 'Save meal',
+      ctaLabel: _isEditing ? 'Save changes' : 'Save meal',
       ctaIcon: 'bowl',
       canSave: _label.text.trim().isNotEmpty,
       onSave: _save,
@@ -882,5 +926,47 @@ class _PhotoChip extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Fallback reflection when Nova is not installed, or has nothing to work on.
+const _novaFallbackReflection =
+    'Notice the feeling this left behind, not just the events. What in waking '
+    'life carries that same texture right now?';
+
+/// Bug 8: after an entry is refined, Nova's reflection was written about the
+/// old text. Rather than silently keeping a stale reading or discarding one
+/// the user may value, "Ask Nova again" regenerates it on request.
+Future<void> addNovaReflection(
+  BuildContext context,
+  WidgetRef ref,
+  JournalEntryRow entry,
+) async {
+  final db = ref.read(databaseProvider);
+  final text = entry.body.trim();
+  final ready = ref.read(guideModelReadyProvider);
+  if (!ready || text.isEmpty) {
+    await db.setJournalReflection(entry.id, _novaFallbackReflection);
+    return;
+  }
+  showVyanaSnackBar(
+    context,
+    message: 'Asking Nova…',
+    icon: 'sparkles',
+    success: true,
+    duration: const Duration(seconds: 2),
+  );
+  try {
+    final reply = await ref.read(guideRuntimeServiceProvider).generateResponse(
+          guide: GuideKind.nova,
+          prompt: 'The user wrote this journal entry: "$text". '
+              'Offer one short reflection (two sentences at most) that '
+              'notices a feeling or image in it and gently connects it to '
+              'waking life. No analysis, no lists, no questions about what '
+              'it means.',
+        );
+    await db.setJournalReflection(entry.id, stripGuideMarkdown(reply).trim());
+  } catch (_) {
+    await db.setJournalReflection(entry.id, _novaFallbackReflection);
   }
 }

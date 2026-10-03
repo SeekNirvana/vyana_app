@@ -108,6 +108,24 @@ class VyanaIcon extends StatelessWidget {
     'filter': Icons.tune_rounded,
     'stats': Icons.bar_chart_rounded,
     'insights': Icons.insights_rounded,
+    // §5 named sports and "add your own sport" glyphs.
+    'ski': Icons.downhill_skiing_rounded,
+    'snowboard': Icons.snowboarding_rounded,
+    'skate': Icons.ice_skating_rounded,
+    'hockey': Icons.sports_hockey_rounded,
+    'racket': Icons.sports_tennis_rounded,
+    'tableTennis': Icons.sports_tennis_rounded,
+    'volleyball': Icons.sports_volleyball_rounded,
+    'boxing': Icons.sports_mma_rounded,
+    'surf': Icons.surfing_rounded,
+    'kayak': Icons.kayaking_rounded,
+    'sports': Icons.sports_rounded,
+    'trash': Icons.delete_outline_rounded,
+    'soccer': Icons.sports_soccer_rounded,
+    'basketball': Icons.sports_basketball_rounded,
+    'golf': Icons.sports_golf_rounded,
+    'climb': Icons.landscape_rounded,
+    'dance': Icons.music_note_rounded,
   };
 
   static const Map<String, String> brandPaths = {

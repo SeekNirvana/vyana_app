@@ -47,6 +47,10 @@ LC_ALL=C strings "$LIBAPP" >"$STRINGS_FILE"
 
 # Flutter AOT stores many UI literals as UTF-16LE in libapp.so; `strings` only
 # extracts ASCII runs, so also scan the raw snapshot for UTF-8 and UTF-16LE.
+#
+# NOTE: a fingerprint containing a middot (·) will not match even when the
+# literal is in the binary — the snapshot does not store those runs
+# contiguously. Use the longest middot-free substring as the fingerprint.
 libapp_contains() {
   local pattern="$1"
   LC_ALL=C grep -Fq "$pattern" "$STRINGS_FILE" && return 0

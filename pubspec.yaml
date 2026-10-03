@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.1+8
+version: 1.1.2+9
 
 environment:
   sdk: ^3.12.0
@@ -74,6 +74,10 @@ dependencies:
   # Monitor-all-vitals: local notification when a hands-off run finishes,
   # plus home-screen widgets (action button + live "state of being").
   flutter_local_notifications: ^19.4.0
+  # Needed for zonedSchedule: an alert the OS delivers while the app is dead
+  # (practice end bell, the 24h stale-ring alert).
+  timezone: ^0.10.0
+  flutter_timezone: ^4.1.1
   home_widget: ^0.8.0
   flutter_foreground_task: ^9.2.2
 
@@ -185,4 +189,6 @@ flutter_native_splash:
   image: assets/splash_logo_large.png
   android_12:
     color: "#071211"
-    image: assets/splash_logo_large.png
+    # Android 12+ masks the splash icon to a circle two-thirds of the canvas,
+    # so this variant keeps the art inside the central ~62% (bug 5).
+    image: assets/splash_logo_android12.png

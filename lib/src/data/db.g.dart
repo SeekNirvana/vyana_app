@@ -6861,6 +6861,29 @@ class $PatternsTable extends Patterns
     requiredDuringInsert: false,
     defaultValue: const Constant('[]'),
   );
+  static const VerificationMeta _counterIdsJsonMeta = const VerificationMeta(
+    'counterIdsJson',
+  );
+  @override
+  late final GeneratedColumn<String> counterIdsJson = GeneratedColumn<String>(
+    'counter_ids_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _baselineMeta = const VerificationMeta(
+    'baseline',
+  );
+  @override
+  late final GeneratedColumn<double> baseline = GeneratedColumn<double>(
+    'baseline',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _evidenceCountMeta = const VerificationMeta(
     'evidenceCount',
   );
@@ -6927,6 +6950,8 @@ class $PatternsTable extends Patterns
     claim,
     status,
     evidenceIdsJson,
+    counterIdsJson,
+    baseline,
     evidenceCount,
     matchCount,
     firstSeen,
@@ -6989,6 +7014,21 @@ class $PatternsTable extends Patterns
           data['evidence_ids_json']!,
           _evidenceIdsJsonMeta,
         ),
+      );
+    }
+    if (data.containsKey('counter_ids_json')) {
+      context.handle(
+        _counterIdsJsonMeta,
+        counterIdsJson.isAcceptableOrUnknown(
+          data['counter_ids_json']!,
+          _counterIdsJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('baseline')) {
+      context.handle(
+        _baselineMeta,
+        baseline.isAcceptableOrUnknown(data['baseline']!, _baselineMeta),
       );
     }
     if (data.containsKey('evidence_count')) {
@@ -7064,6 +7104,14 @@ class $PatternsTable extends Patterns
         DriftSqlType.string,
         data['${effectivePrefix}evidence_ids_json'],
       )!,
+      counterIdsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}counter_ids_json'],
+      )!,
+      baseline: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}baseline'],
+      ),
       evidenceCount: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}evidence_count'],
@@ -7113,6 +7161,15 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
   /// ids, session ids, sleep-night keys) so the claim is auditable.
   final String evidenceIdsJson;
 
+  /// §8 (10a): the records in the window that did *not* match. The claim's
+  /// denominator has to be visible — a night that held with no water dream is
+  /// the contrast that makes the claim believable.
+  final String counterIdsJson;
+
+  /// §8 (10b): the baseline the per-row deltas are measured against, so the
+  /// user is not left deriving the percentage themselves.
+  final double? baseline;
+
   /// How many records the claim rests on, e.g. 3 of 5 → "FROM 5 ENTRIES".
   final int evidenceCount;
   final int matchCount;
@@ -7126,6 +7183,8 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
     required this.claim,
     required this.status,
     required this.evidenceIdsJson,
+    required this.counterIdsJson,
+    this.baseline,
     required this.evidenceCount,
     required this.matchCount,
     required this.firstSeen,
@@ -7141,6 +7200,10 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
     map['claim'] = Variable<String>(claim);
     map['status'] = Variable<String>(status);
     map['evidence_ids_json'] = Variable<String>(evidenceIdsJson);
+    map['counter_ids_json'] = Variable<String>(counterIdsJson);
+    if (!nullToAbsent || baseline != null) {
+      map['baseline'] = Variable<double>(baseline);
+    }
     map['evidence_count'] = Variable<int>(evidenceCount);
     map['match_count'] = Variable<int>(matchCount);
     map['first_seen'] = Variable<DateTime>(firstSeen);
@@ -7159,6 +7222,10 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
       claim: Value(claim),
       status: Value(status),
       evidenceIdsJson: Value(evidenceIdsJson),
+      counterIdsJson: Value(counterIdsJson),
+      baseline: baseline == null && nullToAbsent
+          ? const Value.absent()
+          : Value(baseline),
       evidenceCount: Value(evidenceCount),
       matchCount: Value(matchCount),
       firstSeen: Value(firstSeen),
@@ -7181,6 +7248,8 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
       claim: serializer.fromJson<String>(json['claim']),
       status: serializer.fromJson<String>(json['status']),
       evidenceIdsJson: serializer.fromJson<String>(json['evidenceIdsJson']),
+      counterIdsJson: serializer.fromJson<String>(json['counterIdsJson']),
+      baseline: serializer.fromJson<double?>(json['baseline']),
       evidenceCount: serializer.fromJson<int>(json['evidenceCount']),
       matchCount: serializer.fromJson<int>(json['matchCount']),
       firstSeen: serializer.fromJson<DateTime>(json['firstSeen']),
@@ -7198,6 +7267,8 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
       'claim': serializer.toJson<String>(claim),
       'status': serializer.toJson<String>(status),
       'evidenceIdsJson': serializer.toJson<String>(evidenceIdsJson),
+      'counterIdsJson': serializer.toJson<String>(counterIdsJson),
+      'baseline': serializer.toJson<double?>(baseline),
       'evidenceCount': serializer.toJson<int>(evidenceCount),
       'matchCount': serializer.toJson<int>(matchCount),
       'firstSeen': serializer.toJson<DateTime>(firstSeen),
@@ -7213,6 +7284,8 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
     String? claim,
     String? status,
     String? evidenceIdsJson,
+    String? counterIdsJson,
+    Value<double?> baseline = const Value.absent(),
     int? evidenceCount,
     int? matchCount,
     DateTime? firstSeen,
@@ -7225,6 +7298,8 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
     claim: claim ?? this.claim,
     status: status ?? this.status,
     evidenceIdsJson: evidenceIdsJson ?? this.evidenceIdsJson,
+    counterIdsJson: counterIdsJson ?? this.counterIdsJson,
+    baseline: baseline.present ? baseline.value : this.baseline,
     evidenceCount: evidenceCount ?? this.evidenceCount,
     matchCount: matchCount ?? this.matchCount,
     firstSeen: firstSeen ?? this.firstSeen,
@@ -7241,6 +7316,10 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
       evidenceIdsJson: data.evidenceIdsJson.present
           ? data.evidenceIdsJson.value
           : this.evidenceIdsJson,
+      counterIdsJson: data.counterIdsJson.present
+          ? data.counterIdsJson.value
+          : this.counterIdsJson,
+      baseline: data.baseline.present ? data.baseline.value : this.baseline,
       evidenceCount: data.evidenceCount.present
           ? data.evidenceCount.value
           : this.evidenceCount,
@@ -7264,6 +7343,8 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
           ..write('claim: $claim, ')
           ..write('status: $status, ')
           ..write('evidenceIdsJson: $evidenceIdsJson, ')
+          ..write('counterIdsJson: $counterIdsJson, ')
+          ..write('baseline: $baseline, ')
           ..write('evidenceCount: $evidenceCount, ')
           ..write('matchCount: $matchCount, ')
           ..write('firstSeen: $firstSeen, ')
@@ -7281,6 +7362,8 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
     claim,
     status,
     evidenceIdsJson,
+    counterIdsJson,
+    baseline,
     evidenceCount,
     matchCount,
     firstSeen,
@@ -7297,6 +7380,8 @@ class PatternRow extends DataClass implements Insertable<PatternRow> {
           other.claim == this.claim &&
           other.status == this.status &&
           other.evidenceIdsJson == this.evidenceIdsJson &&
+          other.counterIdsJson == this.counterIdsJson &&
+          other.baseline == this.baseline &&
           other.evidenceCount == this.evidenceCount &&
           other.matchCount == this.matchCount &&
           other.firstSeen == this.firstSeen &&
@@ -7311,6 +7396,8 @@ class PatternsCompanion extends UpdateCompanion<PatternRow> {
   final Value<String> claim;
   final Value<String> status;
   final Value<String> evidenceIdsJson;
+  final Value<String> counterIdsJson;
+  final Value<double?> baseline;
   final Value<int> evidenceCount;
   final Value<int> matchCount;
   final Value<DateTime> firstSeen;
@@ -7324,6 +7411,8 @@ class PatternsCompanion extends UpdateCompanion<PatternRow> {
     this.claim = const Value.absent(),
     this.status = const Value.absent(),
     this.evidenceIdsJson = const Value.absent(),
+    this.counterIdsJson = const Value.absent(),
+    this.baseline = const Value.absent(),
     this.evidenceCount = const Value.absent(),
     this.matchCount = const Value.absent(),
     this.firstSeen = const Value.absent(),
@@ -7338,6 +7427,8 @@ class PatternsCompanion extends UpdateCompanion<PatternRow> {
     required String claim,
     required String status,
     this.evidenceIdsJson = const Value.absent(),
+    this.counterIdsJson = const Value.absent(),
+    this.baseline = const Value.absent(),
     this.evidenceCount = const Value.absent(),
     this.matchCount = const Value.absent(),
     required DateTime firstSeen,
@@ -7358,6 +7449,8 @@ class PatternsCompanion extends UpdateCompanion<PatternRow> {
     Expression<String>? claim,
     Expression<String>? status,
     Expression<String>? evidenceIdsJson,
+    Expression<String>? counterIdsJson,
+    Expression<double>? baseline,
     Expression<int>? evidenceCount,
     Expression<int>? matchCount,
     Expression<DateTime>? firstSeen,
@@ -7372,6 +7465,8 @@ class PatternsCompanion extends UpdateCompanion<PatternRow> {
       if (claim != null) 'claim': claim,
       if (status != null) 'status': status,
       if (evidenceIdsJson != null) 'evidence_ids_json': evidenceIdsJson,
+      if (counterIdsJson != null) 'counter_ids_json': counterIdsJson,
+      if (baseline != null) 'baseline': baseline,
       if (evidenceCount != null) 'evidence_count': evidenceCount,
       if (matchCount != null) 'match_count': matchCount,
       if (firstSeen != null) 'first_seen': firstSeen,
@@ -7388,6 +7483,8 @@ class PatternsCompanion extends UpdateCompanion<PatternRow> {
     Value<String>? claim,
     Value<String>? status,
     Value<String>? evidenceIdsJson,
+    Value<String>? counterIdsJson,
+    Value<double?>? baseline,
     Value<int>? evidenceCount,
     Value<int>? matchCount,
     Value<DateTime>? firstSeen,
@@ -7402,6 +7499,8 @@ class PatternsCompanion extends UpdateCompanion<PatternRow> {
       claim: claim ?? this.claim,
       status: status ?? this.status,
       evidenceIdsJson: evidenceIdsJson ?? this.evidenceIdsJson,
+      counterIdsJson: counterIdsJson ?? this.counterIdsJson,
+      baseline: baseline ?? this.baseline,
       evidenceCount: evidenceCount ?? this.evidenceCount,
       matchCount: matchCount ?? this.matchCount,
       firstSeen: firstSeen ?? this.firstSeen,
@@ -7431,6 +7530,12 @@ class PatternsCompanion extends UpdateCompanion<PatternRow> {
     }
     if (evidenceIdsJson.present) {
       map['evidence_ids_json'] = Variable<String>(evidenceIdsJson.value);
+    }
+    if (counterIdsJson.present) {
+      map['counter_ids_json'] = Variable<String>(counterIdsJson.value);
+    }
+    if (baseline.present) {
+      map['baseline'] = Variable<double>(baseline.value);
     }
     if (evidenceCount.present) {
       map['evidence_count'] = Variable<int>(evidenceCount.value);
@@ -7462,11 +7567,637 @@ class PatternsCompanion extends UpdateCompanion<PatternRow> {
           ..write('claim: $claim, ')
           ..write('status: $status, ')
           ..write('evidenceIdsJson: $evidenceIdsJson, ')
+          ..write('counterIdsJson: $counterIdsJson, ')
+          ..write('baseline: $baseline, ')
           ..write('evidenceCount: $evidenceCount, ')
           ..write('matchCount: $matchCount, ')
           ..write('firstSeen: $firstSeen, ')
           ..write('lastConfirmed: $lastConfirmed, ')
           ..write('endedAt: $endedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $CycleDaysTable extends CycleDays
+    with TableInfo<$CycleDaysTable, CycleDayRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CycleDaysTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _dayMeta = const VerificationMeta('day');
+  @override
+  late final GeneratedColumn<DateTime> day = GeneratedColumn<DateTime>(
+    'day',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _endConfirmedMeta = const VerificationMeta(
+    'endConfirmed',
+  );
+  @override
+  late final GeneratedColumn<bool> endConfirmed = GeneratedColumn<bool>(
+    'end_confirmed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("end_confirmed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [day, endConfirmed, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'cycle_days';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<CycleDayRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('day')) {
+      context.handle(
+        _dayMeta,
+        day.isAcceptableOrUnknown(data['day']!, _dayMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dayMeta);
+    }
+    if (data.containsKey('end_confirmed')) {
+      context.handle(
+        _endConfirmedMeta,
+        endConfirmed.isAcceptableOrUnknown(
+          data['end_confirmed']!,
+          _endConfirmedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {day};
+  @override
+  CycleDayRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CycleDayRow(
+      day: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}day'],
+      )!,
+      endConfirmed: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}end_confirmed'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $CycleDaysTable createAlias(String alias) {
+    return $CycleDaysTable(attachedDatabase, alias);
+  }
+}
+
+class CycleDayRow extends DataClass implements Insertable<CycleDayRow> {
+  /// Local date at midnight, so a day is identified the way the user sees it.
+  final DateTime day;
+
+  /// Whether the user confirmed the end of the period this day belongs to.
+  /// An unconfirmed run is still predicted at their average length.
+  final bool endConfirmed;
+  final DateTime createdAt;
+  const CycleDayRow({
+    required this.day,
+    required this.endConfirmed,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['day'] = Variable<DateTime>(day);
+    map['end_confirmed'] = Variable<bool>(endConfirmed);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  CycleDaysCompanion toCompanion(bool nullToAbsent) {
+    return CycleDaysCompanion(
+      day: Value(day),
+      endConfirmed: Value(endConfirmed),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory CycleDayRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CycleDayRow(
+      day: serializer.fromJson<DateTime>(json['day']),
+      endConfirmed: serializer.fromJson<bool>(json['endConfirmed']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'day': serializer.toJson<DateTime>(day),
+      'endConfirmed': serializer.toJson<bool>(endConfirmed),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  CycleDayRow copyWith({
+    DateTime? day,
+    bool? endConfirmed,
+    DateTime? createdAt,
+  }) => CycleDayRow(
+    day: day ?? this.day,
+    endConfirmed: endConfirmed ?? this.endConfirmed,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  CycleDayRow copyWithCompanion(CycleDaysCompanion data) {
+    return CycleDayRow(
+      day: data.day.present ? data.day.value : this.day,
+      endConfirmed: data.endConfirmed.present
+          ? data.endConfirmed.value
+          : this.endConfirmed,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CycleDayRow(')
+          ..write('day: $day, ')
+          ..write('endConfirmed: $endConfirmed, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(day, endConfirmed, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CycleDayRow &&
+          other.day == this.day &&
+          other.endConfirmed == this.endConfirmed &&
+          other.createdAt == this.createdAt);
+}
+
+class CycleDaysCompanion extends UpdateCompanion<CycleDayRow> {
+  final Value<DateTime> day;
+  final Value<bool> endConfirmed;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const CycleDaysCompanion({
+    this.day = const Value.absent(),
+    this.endConfirmed = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  CycleDaysCompanion.insert({
+    required DateTime day,
+    this.endConfirmed = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : day = Value(day);
+  static Insertable<CycleDayRow> custom({
+    Expression<DateTime>? day,
+    Expression<bool>? endConfirmed,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (day != null) 'day': day,
+      if (endConfirmed != null) 'end_confirmed': endConfirmed,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  CycleDaysCompanion copyWith({
+    Value<DateTime>? day,
+    Value<bool>? endConfirmed,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return CycleDaysCompanion(
+      day: day ?? this.day,
+      endConfirmed: endConfirmed ?? this.endConfirmed,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (day.present) {
+      map['day'] = Variable<DateTime>(day.value);
+    }
+    if (endConfirmed.present) {
+      map['end_confirmed'] = Variable<bool>(endConfirmed.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CycleDaysCompanion(')
+          ..write('day: $day, ')
+          ..write('endConfirmed: $endConfirmed, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $UserActivitiesTable extends UserActivities
+    with TableInfo<$UserActivitiesTable, UserActivityRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $UserActivitiesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _iconMeta = const VerificationMeta('icon');
+  @override
+  late final GeneratedColumn<String> icon = GeneratedColumn<String>(
+    'icon',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('sports'),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, name, kind, icon, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'user_activities';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<UserActivityRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('icon')) {
+      context.handle(
+        _iconMeta,
+        icon.isAcceptableOrUnknown(data['icon']!, _iconMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  UserActivityRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return UserActivityRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      icon: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}icon'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $UserActivitiesTable createAlias(String alias) {
+    return $UserActivitiesTable(attachedDatabase, alias);
+  }
+}
+
+class UserActivityRow extends DataClass implements Insertable<UserActivityRow> {
+  final String id;
+  final String name;
+
+  /// `gps` (outdoors, moving around) or `indoor` (indoors or in one place) —
+  /// the one question the user is asked.
+  final String kind;
+  final String icon;
+  final DateTime createdAt;
+  const UserActivityRow({
+    required this.id,
+    required this.name,
+    required this.kind,
+    required this.icon,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    map['kind'] = Variable<String>(kind);
+    map['icon'] = Variable<String>(icon);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  UserActivitiesCompanion toCompanion(bool nullToAbsent) {
+    return UserActivitiesCompanion(
+      id: Value(id),
+      name: Value(name),
+      kind: Value(kind),
+      icon: Value(icon),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory UserActivityRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return UserActivityRow(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      kind: serializer.fromJson<String>(json['kind']),
+      icon: serializer.fromJson<String>(json['icon']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'kind': serializer.toJson<String>(kind),
+      'icon': serializer.toJson<String>(icon),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  UserActivityRow copyWith({
+    String? id,
+    String? name,
+    String? kind,
+    String? icon,
+    DateTime? createdAt,
+  }) => UserActivityRow(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    kind: kind ?? this.kind,
+    icon: icon ?? this.icon,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  UserActivityRow copyWithCompanion(UserActivitiesCompanion data) {
+    return UserActivityRow(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      icon: data.icon.present ? data.icon.value : this.icon,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UserActivityRow(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('kind: $kind, ')
+          ..write('icon: $icon, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, kind, icon, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is UserActivityRow &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.kind == this.kind &&
+          other.icon == this.icon &&
+          other.createdAt == this.createdAt);
+}
+
+class UserActivitiesCompanion extends UpdateCompanion<UserActivityRow> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<String> kind;
+  final Value<String> icon;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const UserActivitiesCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.icon = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  UserActivitiesCompanion.insert({
+    required String id,
+    required String name,
+    required String kind,
+    this.icon = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       name = Value(name),
+       kind = Value(kind);
+  static Insertable<UserActivityRow> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<String>? kind,
+    Expression<String>? icon,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (kind != null) 'kind': kind,
+      if (icon != null) 'icon': icon,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  UserActivitiesCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<String>? kind,
+    Value<String>? icon,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return UserActivitiesCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      kind: kind ?? this.kind,
+      icon: icon ?? this.icon,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (icon.present) {
+      map['icon'] = Variable<String>(icon.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UserActivitiesCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('kind: $kind, ')
+          ..write('icon: $icon, ')
+          ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7494,6 +8225,8 @@ abstract class _$VyanaDatabase extends GeneratedDatabase {
   late final $RingOrdersTable ringOrders = $RingOrdersTable(this);
   late final $EcgRecordingsTable ecgRecordings = $EcgRecordingsTable(this);
   late final $PatternsTable patterns = $PatternsTable(this);
+  late final $CycleDaysTable cycleDays = $CycleDaysTable(this);
+  late final $UserActivitiesTable userActivities = $UserActivitiesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -7511,6 +8244,8 @@ abstract class _$VyanaDatabase extends GeneratedDatabase {
     ringOrders,
     ecgRecordings,
     patterns,
+    cycleDays,
+    userActivities,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -11505,6 +12240,8 @@ typedef $$PatternsTableCreateCompanionBuilder =
       required String claim,
       required String status,
       Value<String> evidenceIdsJson,
+      Value<String> counterIdsJson,
+      Value<double?> baseline,
       Value<int> evidenceCount,
       Value<int> matchCount,
       required DateTime firstSeen,
@@ -11520,6 +12257,8 @@ typedef $$PatternsTableUpdateCompanionBuilder =
       Value<String> claim,
       Value<String> status,
       Value<String> evidenceIdsJson,
+      Value<String> counterIdsJson,
+      Value<double?> baseline,
       Value<int> evidenceCount,
       Value<int> matchCount,
       Value<DateTime> firstSeen,
@@ -11564,6 +12303,16 @@ class $$PatternsTableFilterComposer
 
   ColumnFilters<String> get evidenceIdsJson => $composableBuilder(
     column: $table.evidenceIdsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get counterIdsJson => $composableBuilder(
+    column: $table.counterIdsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get baseline => $composableBuilder(
+    column: $table.baseline,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -11632,6 +12381,16 @@ class $$PatternsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get counterIdsJson => $composableBuilder(
+    column: $table.counterIdsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get baseline => $composableBuilder(
+    column: $table.baseline,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get evidenceCount => $composableBuilder(
     column: $table.evidenceCount,
     builder: (column) => ColumnOrderings(column),
@@ -11686,6 +12445,14 @@ class $$PatternsTableAnnotationComposer
     column: $table.evidenceIdsJson,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get counterIdsJson => $composableBuilder(
+    column: $table.counterIdsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get baseline =>
+      $composableBuilder(column: $table.baseline, builder: (column) => column);
 
   GeneratedColumn<int> get evidenceCount => $composableBuilder(
     column: $table.evidenceCount,
@@ -11746,6 +12513,8 @@ class $$PatternsTableTableManager
                 Value<String> claim = const Value.absent(),
                 Value<String> status = const Value.absent(),
                 Value<String> evidenceIdsJson = const Value.absent(),
+                Value<String> counterIdsJson = const Value.absent(),
+                Value<double?> baseline = const Value.absent(),
                 Value<int> evidenceCount = const Value.absent(),
                 Value<int> matchCount = const Value.absent(),
                 Value<DateTime> firstSeen = const Value.absent(),
@@ -11759,6 +12528,8 @@ class $$PatternsTableTableManager
                 claim: claim,
                 status: status,
                 evidenceIdsJson: evidenceIdsJson,
+                counterIdsJson: counterIdsJson,
+                baseline: baseline,
                 evidenceCount: evidenceCount,
                 matchCount: matchCount,
                 firstSeen: firstSeen,
@@ -11774,6 +12545,8 @@ class $$PatternsTableTableManager
                 required String claim,
                 required String status,
                 Value<String> evidenceIdsJson = const Value.absent(),
+                Value<String> counterIdsJson = const Value.absent(),
+                Value<double?> baseline = const Value.absent(),
                 Value<int> evidenceCount = const Value.absent(),
                 Value<int> matchCount = const Value.absent(),
                 required DateTime firstSeen,
@@ -11787,6 +12560,8 @@ class $$PatternsTableTableManager
                 claim: claim,
                 status: status,
                 evidenceIdsJson: evidenceIdsJson,
+                counterIdsJson: counterIdsJson,
+                baseline: baseline,
                 evidenceCount: evidenceCount,
                 matchCount: matchCount,
                 firstSeen: firstSeen,
@@ -11814,6 +12589,376 @@ typedef $$PatternsTableProcessedTableManager =
       $$PatternsTableUpdateCompanionBuilder,
       (PatternRow, BaseReferences<_$VyanaDatabase, $PatternsTable, PatternRow>),
       PatternRow,
+      PrefetchHooks Function()
+    >;
+typedef $$CycleDaysTableCreateCompanionBuilder =
+    CycleDaysCompanion Function({
+      required DateTime day,
+      Value<bool> endConfirmed,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+typedef $$CycleDaysTableUpdateCompanionBuilder =
+    CycleDaysCompanion Function({
+      Value<DateTime> day,
+      Value<bool> endConfirmed,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$CycleDaysTableFilterComposer
+    extends Composer<_$VyanaDatabase, $CycleDaysTable> {
+  $$CycleDaysTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<DateTime> get day => $composableBuilder(
+    column: $table.day,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get endConfirmed => $composableBuilder(
+    column: $table.endConfirmed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$CycleDaysTableOrderingComposer
+    extends Composer<_$VyanaDatabase, $CycleDaysTable> {
+  $$CycleDaysTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<DateTime> get day => $composableBuilder(
+    column: $table.day,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get endConfirmed => $composableBuilder(
+    column: $table.endConfirmed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$CycleDaysTableAnnotationComposer
+    extends Composer<_$VyanaDatabase, $CycleDaysTable> {
+  $$CycleDaysTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<DateTime> get day =>
+      $composableBuilder(column: $table.day, builder: (column) => column);
+
+  GeneratedColumn<bool> get endConfirmed => $composableBuilder(
+    column: $table.endConfirmed,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$CycleDaysTableTableManager
+    extends
+        RootTableManager<
+          _$VyanaDatabase,
+          $CycleDaysTable,
+          CycleDayRow,
+          $$CycleDaysTableFilterComposer,
+          $$CycleDaysTableOrderingComposer,
+          $$CycleDaysTableAnnotationComposer,
+          $$CycleDaysTableCreateCompanionBuilder,
+          $$CycleDaysTableUpdateCompanionBuilder,
+          (
+            CycleDayRow,
+            BaseReferences<_$VyanaDatabase, $CycleDaysTable, CycleDayRow>,
+          ),
+          CycleDayRow,
+          PrefetchHooks Function()
+        > {
+  $$CycleDaysTableTableManager(_$VyanaDatabase db, $CycleDaysTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CycleDaysTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CycleDaysTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CycleDaysTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<DateTime> day = const Value.absent(),
+                Value<bool> endConfirmed = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => CycleDaysCompanion(
+                day: day,
+                endConfirmed: endConfirmed,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required DateTime day,
+                Value<bool> endConfirmed = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => CycleDaysCompanion.insert(
+                day: day,
+                endConfirmed: endConfirmed,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$CycleDaysTableProcessedTableManager =
+    ProcessedTableManager<
+      _$VyanaDatabase,
+      $CycleDaysTable,
+      CycleDayRow,
+      $$CycleDaysTableFilterComposer,
+      $$CycleDaysTableOrderingComposer,
+      $$CycleDaysTableAnnotationComposer,
+      $$CycleDaysTableCreateCompanionBuilder,
+      $$CycleDaysTableUpdateCompanionBuilder,
+      (
+        CycleDayRow,
+        BaseReferences<_$VyanaDatabase, $CycleDaysTable, CycleDayRow>,
+      ),
+      CycleDayRow,
+      PrefetchHooks Function()
+    >;
+typedef $$UserActivitiesTableCreateCompanionBuilder =
+    UserActivitiesCompanion Function({
+      required String id,
+      required String name,
+      required String kind,
+      Value<String> icon,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+typedef $$UserActivitiesTableUpdateCompanionBuilder =
+    UserActivitiesCompanion Function({
+      Value<String> id,
+      Value<String> name,
+      Value<String> kind,
+      Value<String> icon,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$UserActivitiesTableFilterComposer
+    extends Composer<_$VyanaDatabase, $UserActivitiesTable> {
+  $$UserActivitiesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get icon => $composableBuilder(
+    column: $table.icon,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$UserActivitiesTableOrderingComposer
+    extends Composer<_$VyanaDatabase, $UserActivitiesTable> {
+  $$UserActivitiesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get icon => $composableBuilder(
+    column: $table.icon,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$UserActivitiesTableAnnotationComposer
+    extends Composer<_$VyanaDatabase, $UserActivitiesTable> {
+  $$UserActivitiesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get icon =>
+      $composableBuilder(column: $table.icon, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$UserActivitiesTableTableManager
+    extends
+        RootTableManager<
+          _$VyanaDatabase,
+          $UserActivitiesTable,
+          UserActivityRow,
+          $$UserActivitiesTableFilterComposer,
+          $$UserActivitiesTableOrderingComposer,
+          $$UserActivitiesTableAnnotationComposer,
+          $$UserActivitiesTableCreateCompanionBuilder,
+          $$UserActivitiesTableUpdateCompanionBuilder,
+          (
+            UserActivityRow,
+            BaseReferences<
+              _$VyanaDatabase,
+              $UserActivitiesTable,
+              UserActivityRow
+            >,
+          ),
+          UserActivityRow,
+          PrefetchHooks Function()
+        > {
+  $$UserActivitiesTableTableManager(
+    _$VyanaDatabase db,
+    $UserActivitiesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$UserActivitiesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$UserActivitiesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$UserActivitiesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<String> icon = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => UserActivitiesCompanion(
+                id: id,
+                name: name,
+                kind: kind,
+                icon: icon,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String name,
+                required String kind,
+                Value<String> icon = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => UserActivitiesCompanion.insert(
+                id: id,
+                name: name,
+                kind: kind,
+                icon: icon,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$UserActivitiesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$VyanaDatabase,
+      $UserActivitiesTable,
+      UserActivityRow,
+      $$UserActivitiesTableFilterComposer,
+      $$UserActivitiesTableOrderingComposer,
+      $$UserActivitiesTableAnnotationComposer,
+      $$UserActivitiesTableCreateCompanionBuilder,
+      $$UserActivitiesTableUpdateCompanionBuilder,
+      (
+        UserActivityRow,
+        BaseReferences<_$VyanaDatabase, $UserActivitiesTable, UserActivityRow>,
+      ),
+      UserActivityRow,
       PrefetchHooks Function()
     >;
 
@@ -11844,4 +12989,8 @@ class $VyanaDatabaseManager {
       $$EcgRecordingsTableTableManager(_db, _db.ecgRecordings);
   $$PatternsTableTableManager get patterns =>
       $$PatternsTableTableManager(_db, _db.patterns);
+  $$CycleDaysTableTableManager get cycleDays =>
+      $$CycleDaysTableTableManager(_db, _db.cycleDays);
+  $$UserActivitiesTableTableManager get userActivities =>
+      $$UserActivitiesTableTableManager(_db, _db.userActivities);
 }

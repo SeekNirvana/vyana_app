@@ -136,6 +136,16 @@ class Patterns extends Table {
   /// ids, session ids, sleep-night keys) so the claim is auditable.
   TextColumn get evidenceIdsJson => text().withDefault(const Constant('[]'))();
 
+  /// §8 (10a): the records in the window that did *not* match. The claim's
+  /// denominator has to be visible — a night that held with no water dream is
+  /// the contrast that makes the claim believable.
+  TextColumn get counterIdsJson =>
+      text().withDefault(const Constant('[]'))();
+
+  /// §8 (10b): the baseline the per-row deltas are measured against, so the
+  /// user is not left deriving the percentage themselves.
+  RealColumn get baseline => real().nullable()();
+
   /// How many records the claim rests on, e.g. 3 of 5 → "FROM 5 ENTRIES".
   IntColumn get evidenceCount => integer().withDefault(const Constant(0))();
   IntColumn get matchCount => integer().withDefault(const Constant(0))();
@@ -146,6 +156,44 @@ class Patterns extends Table {
 
   @override
   Set<Column> get primaryKey => {id};
+}
+
+/// §14b — one row per logged period day. Storing days rather than cycles is
+/// what makes the calendar's one-tap correction work: tapping a day toggles a
+/// row, and starts, ends and lengths are all derived from the set. A start is
+/// simply a logged day with no logged day before it.
+/// §5 "Add your own sport": a sport the user named themselves. It behaves
+/// like any catalogue practice — pinnable, with its own history, and visible
+/// to the pattern engine — because the only thing the catalogue really
+/// decides is what gets tracked, and [kind] carries that.
+@DataClassName('UserActivityRow')
+class UserActivities extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+
+  /// `gps` (outdoors, moving around) or `indoor` (indoors or in one place) —
+  /// the one question the user is asked.
+  TextColumn get kind => text()();
+  TextColumn get icon => text().withDefault(const Constant('sports'))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClassName('CycleDayRow')
+class CycleDays extends Table {
+  /// Local date at midnight, so a day is identified the way the user sees it.
+  DateTimeColumn get day => dateTime()();
+
+  /// Whether the user confirmed the end of the period this day belongs to.
+  /// An unconfirmed run is still predicted at their average length.
+  BoolColumn get endConfirmed => boolean().withDefault(const Constant(false))();
+
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {day};
 }
 
 @DataClassName('MealRow')
@@ -311,6 +359,8 @@ class GuideVoicePrefs extends Table {
     RingOrders,
     EcgRecordings,
     Patterns,
+    CycleDays,
+    UserActivities,
   ],
 )
 class VyanaDatabase extends _$VyanaDatabase {
@@ -327,7 +377,7 @@ class VyanaDatabase extends _$VyanaDatabase {
   }
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -364,11 +414,27 @@ class VyanaDatabase extends _$VyanaDatabase {
           try {
             await m.createTable(patterns);
           } on Object catch (_) {/* already exists */}
+          if (from < 10) {
+            for (final column in [
+              patterns.counterIdsJson,
+              patterns.baseline,
+            ]) {
+              try {
+                await m.addColumn(patterns, column);
+              } on Object catch (_) {/* already exists */}
+            }
+          }
           if (from < 8) {
             try {
               await m.addColumn(journalEntries, journalEntries.reflection);
             } on Object catch (_) {/* already exists */}
           }
+          try {
+            await m.createTable(cycleDays);
+          } on Object catch (_) {/* already exists */}
+          try {
+            await m.createTable(userActivities);
+          } on Object catch (_) {/* already exists */}
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
@@ -420,6 +486,27 @@ class VyanaDatabase extends _$VyanaDatabase {
       (select(activitySessions)
             ..orderBy([(t) => OrderingTerm.desc(t.startedAt)]))
           .watch();
+
+  /// Bug 13(e): a session the OS killed mid-walk keeps `endedAt == null`
+  /// forever, and nothing looked for it — so the walk appeared never to have
+  /// happened even though its samples and route are in the vault.
+  Future<SessionRow?> unfinishedSession() =>
+      (select(activitySessions)
+            ..where((t) => t.endedAt.isNull())
+            ..orderBy([(t) => OrderingTerm.desc(t.startedAt)])
+            ..limit(1))
+          .getSingleOrNull();
+
+  /// The newest sample time for a session, used to end a recovered session at
+  /// the last moment actually captured rather than at "now".
+  Future<DateTime?> lastSampleTime(String sessionId) async {
+    final row = await (select(samples)
+          ..where((t) => t.sessionId.equals(sessionId))
+          ..orderBy([(t) => OrderingTerm.desc(t.timestamp)])
+          ..limit(1))
+        .getSingleOrNull();
+    return row?.timestamp;
+  }
 
   Future<List<SessionRow>> recentSessions({int limit = 50}) =>
       (select(activitySessions)
@@ -571,6 +658,52 @@ class VyanaDatabase extends _$VyanaDatabase {
       (select(journalEntries)
             ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
           .watch();
+
+  /// Bug 8: the composers only ever inserted, so a Whisper mistranscription
+  /// was permanent unless the entry was deleted and re-dictated — which loses
+  /// the original timestamp the pattern engine joins to that night.
+  /// [createdAt] is deliberately not updatable.
+  Future<void> updateJournalEntry({
+    required String id,
+    String? title,
+    String? body,
+    List<String>? tags,
+    String? reflection,
+    bool clearReflection = false,
+  }) {
+    return (update(journalEntries)..where((t) => t.id.equals(id))).write(
+      JournalEntriesCompanion(
+        title: title == null ? const Value.absent() : Value(title),
+        body: body == null ? const Value.absent() : Value(body),
+        tags: tags == null ? const Value.absent() : Value(tags.join(',')),
+        reflection: clearReflection
+            ? const Value(null)
+            : (reflection == null ? const Value.absent() : Value(reflection)),
+      ),
+    );
+  }
+
+  Future<void> updateMeal({
+    required String id,
+    String? label,
+    String? mealType,
+    String? note,
+    String? photoPath,
+  }) {
+    return (update(meals)..where((t) => t.id.equals(id))).write(
+      MealsCompanion(
+        label: label == null ? const Value.absent() : Value(label),
+        mealType: mealType == null ? const Value.absent() : Value(mealType),
+        note: note == null ? const Value.absent() : Value(note),
+        photoPath:
+            photoPath == null ? const Value.absent() : Value(photoPath),
+      ),
+    );
+  }
+
+  Future<JournalEntryRow?> journalEntry(String id) =>
+      (select(journalEntries)..where((t) => t.id.equals(id)))
+          .getSingleOrNull();
 
   Future<void> addMeal({
     required String id,
@@ -815,6 +948,73 @@ class VyanaDatabase extends _$VyanaDatabase {
   }
 
   // ── Patterns (Nova's findings) ────────────────────────────────────────────
+  // ── Cycle days (§14b) ─────────────────────────────────────────────────────
+
+  // ── User-added sports (§5) ────────────────────────────────────────────────
+
+  Stream<List<UserActivityRow>> watchUserActivities() =>
+      (select(userActivities)..orderBy([(t) => OrderingTerm.asc(t.name)]))
+          .watch();
+
+  Future<List<UserActivityRow>> allUserActivities() =>
+      (select(userActivities)..orderBy([(t) => OrderingTerm.asc(t.name)]))
+          .get();
+
+  Future<void> upsertUserActivity({
+    required String id,
+    required String name,
+    required String kind,
+    String icon = 'sports',
+  }) {
+    return into(userActivities).insertOnConflictUpdate(
+      UserActivityRow(
+        id: id,
+        name: name,
+        kind: kind,
+        icon: icon,
+        createdAt: DateTime.now(),
+      ),
+    );
+  }
+
+  /// Deleting a user sport keeps its past sessions, which are stored by
+  /// activity id and still carry the name in their summary.
+  Future<void> deleteUserActivity(String id) =>
+      (delete(userActivities)..where((t) => t.id.equals(id))).go();
+
+  Stream<List<CycleDayRow>> watchCycleDays() =>
+      (select(cycleDays)..orderBy([(t) => OrderingTerm.desc(t.day)])).watch();
+
+  Future<List<CycleDayRow>> allCycleDays() =>
+      (select(cycleDays)..orderBy([(t) => OrderingTerm.desc(t.day)])).get();
+
+  /// Logs [day] as a period day. Idempotent, so a double tap is harmless.
+  Future<void> addCycleDay(DateTime day, {bool endConfirmed = false}) {
+    final normalised = DateTime(day.year, day.month, day.day);
+    return into(cycleDays).insertOnConflictUpdate(
+      CycleDayRow(
+        day: normalised,
+        endConfirmed: endConfirmed,
+        createdAt: DateTime.now(),
+      ),
+    );
+  }
+
+  Future<void> removeCycleDay(DateTime day) {
+    final normalised = DateTime(day.year, day.month, day.day);
+    return (delete(cycleDays)..where((t) => t.day.equals(normalised))).go();
+  }
+
+  /// Marks the run that [day] belongs to as ended, so predictions stop
+  /// extending it at the user's average length.
+  Future<void> confirmCycleEnd(DateTime day) {
+    final normalised = DateTime(day.year, day.month, day.day);
+    return (update(cycleDays)..where((t) => t.day.equals(normalised)))
+        .write(const CycleDaysCompanion(endConfirmed: Value(true)));
+  }
+
+  Future<void> clearCycleDays() => delete(cycleDays).go();
+
   Stream<List<PatternRow>> watchPatterns() =>
       (select(patterns)..orderBy([(t) => OrderingTerm.desc(t.lastConfirmed)]))
           .watch();
@@ -838,6 +1038,8 @@ class VyanaDatabase extends _$VyanaDatabase {
     required DateTime firstSeen,
     required DateTime lastConfirmed,
     DateTime? endedAt,
+    List<String> counterIds = const [],
+    double? baseline,
   }) {
     return into(patterns).insertOnConflictUpdate(
       PatternsCompanion.insert(
@@ -847,6 +1049,8 @@ class VyanaDatabase extends _$VyanaDatabase {
         claim: claim,
         status: status,
         evidenceIdsJson: Value(jsonEncode(evidenceIds)),
+        counterIdsJson: Value(jsonEncode(counterIds)),
+        baseline: Value(baseline),
         evidenceCount: Value(evidenceCount),
         matchCount: Value(matchCount),
         firstSeen: firstSeen,

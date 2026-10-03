@@ -19,8 +19,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted)
-        unawaited(ref.read(dayIntentProvider.notifier).ensureToday());
+      if (!mounted) return;
+      unawaited(ref.read(dayIntentProvider.notifier).ensureToday());
+      // Bug 13(e): look for a session the OS killed, so a lost walk can be
+      // resumed or closed instead of staying open forever.
+      unawaited(
+        ref.read(sessionControllerProvider).findRecoverableSession(),
+      );
     });
   }
 
@@ -54,6 +59,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 176),
       children: [
+        const RecoveredSessionLine(),
+        const BatterySettingsLine(),
         _HomeHeader(controller: controller),
         if (!hasRing) ...[
           const SizedBox(height: 6),
@@ -314,9 +321,18 @@ class _ReadinessRead extends StatelessWidget {
               .round();
     final String note;
     final Color noteColor;
+    // Bug 14/17: when readiness came from HRV alone, the score line has to
+    // say so — otherwise a number built on no sleep data reads as a full one.
+    final sourceNote = dashboard.readinessSourceNote;
     if (stale) {
       note = 'LAST READING';
       noteColor = t.textMuted;
+    } else if (dashboard.syncPending) {
+      note = 'GETTING LAST NIGHT';
+      noteColor = t.gold;
+    } else if (sourceNote != null && score != null) {
+      note = sourceNote.toUpperCase();
+      noteColor = t.mutedInk;
     } else if (score != null && avg != null) {
       final d = score - avg;
       note = d == 0
@@ -324,7 +340,7 @@ class _ReadinessRead extends StatelessWidget {
           : '${d > 0 ? '+' : '−'}${d.abs()} ON YOUR AVERAGE';
       noteColor = look.soft;
     } else {
-      note = look.word == '—' ? 'SYNC TO READ' : look.word;
+      note = look.word == '—' ? 'NO READING YET' : look.word;
       noteColor = look.soft;
     }
     final sentence = hasRing
@@ -443,78 +459,117 @@ String _dirFor(double? today, double? base) {
 List<HomeMetricCardData> homeMetricCards(
   RingController c,
   HomeDashboard dashboard,
-  VyanaColors t,
-) {
+  VyanaColors t, {
+  PersonalBaselinesState baselines = const PersonalBaselinesState(),
+  TrainingFrequency? trainingFrequency,
+}) {
   final history = c.history;
+
+  /// Verdict and colour from the same comparison as the arrow and the delta
+  /// (bug 16): §14's base — typical adult while learning, the person's own
+  /// average after that. The fixed cut-offs are gone, so the word and the
+  /// arrow can no longer disagree.
+  (String, String) verdictFor({
+    required double? value,
+    required VitalBase base,
+    required (String, String, String) words,
+    bool higherIsBetter = true,
+    String noneWord = 'No reading',
+  }) {
+    if (value == null) return (noneWord, 'none');
+    final width = (base.range.high - base.range.low).abs();
+    // A tenth of the reference width is the "about the same" band: narrower
+    // and the word would flicker between days that feel identical.
+    final tolerance = width <= 0 ? 0.0 : width * 0.1;
+    final delta = value - base.value;
+    final signed = higherIsBetter ? delta : -delta;
+    if (signed > tolerance) return (words.$1, 'good');
+    if (signed < -tolerance) return (words.$3, 'poor');
+    return (words.$2, 'level');
+  }
+
+  // ── HRV: overnight, not the latest spot reading (bug 16) ────────────────
   final hrvPoints = vitalHistoryPoints(history, VitalsMetricKind.hrv);
-  final hrv =
-      c.vitals.hrv?.toDouble() ??
-      (hrvPoints.isEmpty ? null : hrvPoints.last.value);
-  final hrvBase = _baseline(hrvPoints, 30);
-  final hrvVerdict = hrv == null
-      ? 'No reading'
-      : hrv >= 55
-      ? 'Recovered'
-      : hrv >= 35
-      ? 'Balanced'
-      : 'Take it easy';
-  final hrvQ = hrv == null
-      ? 'none'
-      : hrv >= 55
-      ? 'good'
-      : hrv >= 35
-      ? 'level'
-      : 'poor';
+  final hrv = dashboard.overnightHrv?.toDouble();
+  final hrvBase = vitalBaseFor(
+    vital: BaselineVital.hrv,
+    typical: kHrvRange,
+    baselines: baselines,
+    personalAverage: _baseline(hrvPoints, kBaselineWindowDays),
+  );
+  final (hrvVerdict, hrvQ) = verdictFor(
+    value: hrv,
+    base: hrvBase,
+    words: ('Recovered', 'Balanced', 'Take it easy'),
+  );
 
+  // ── Sleep: only last night, and only when it is real (bug 14) ───────────
   final nights = sleepDaySummaries(history.sleep);
-  final night = nights.isEmpty ? null : nights.first;
-  final sleepHours = night == null
+  final night = sleepNightForToday(nights, now: DateTime.now());
+  final usable = dashboard.sleepStatus == SleepNightStatus.complete;
+  final sleepHours =
+      night == null ? null : night.breakdown.asleepSeconds / 3600;
+  final priorNights = averageableNights(nights, history: history);
+  final sleepBase = priorNights.isEmpty
       ? null
-      : night.breakdown.asleepSeconds / 3600;
-  final sleepBase = nights.length > 1
-      ? nights
-                .skip(1)
-                .take(30)
-                .map((n) => n.breakdown.asleepSeconds / 3600)
-                .reduce((a, b) => a + b) /
-            math.min(30, nights.length - 1)
-      : null;
-  // Sleep reads Good / Fair / Poor from its own score — not HRV's string.
-  final sleepScore = night?.score;
-  final sleepVerdict = sleepScore == null
-      ? 'No sleep yet'
-      : sleepScore >= 80
-      ? 'Good'
-      : sleepScore >= 65
-      ? 'Fair'
-      : 'Poor';
-  final sleepQ = sleepScore == null
-      ? 'none'
-      : sleepScore >= 80
-      ? 'good'
-      : sleepScore >= 65
-      ? 'level'
-      : 'poor';
+      : priorNights
+              .take(kBaselineWindowDays)
+              .map((n) => n.breakdown.asleepSeconds / 3600)
+              .reduce((a, b) => a + b) /
+          math.min(kBaselineWindowDays, priorNights.length);
+  final sleepScore = usable ? night?.score : null;
+  final String sleepVerdict;
+  final String sleepQ;
+  if (dashboard.syncPending) {
+    // Bug 17 (1): mid-sync with nothing for today — say it is coming rather
+    // than showing yesterday's night as today's.
+    sleepVerdict = 'Getting last night…';
+    sleepQ = 'none';
+  } else {
+    switch (dashboard.sleepStatus) {
+      case SleepNightStatus.missing:
+        // Never "no sleep", which reads as a sleepless night.
+        sleepVerdict = 'Not recorded';
+        sleepQ = 'none';
+        break;
+      case SleepNightStatus.incomplete:
+        sleepVerdict = 'Incomplete';
+        sleepQ = 'none';
+        break;
+      case SleepNightStatus.complete:
+        sleepVerdict = sleepScore == null
+            ? 'Not recorded'
+            : sleepScore >= 80
+                ? 'Good'
+                : sleepScore >= 65
+                    ? 'Fair'
+                    : 'Poor';
+        sleepQ = sleepScore == null
+            ? 'none'
+            : sleepScore >= 80
+                ? 'good'
+                : sleepScore >= 65
+                    ? 'level'
+                    : 'poor';
+        break;
+    }
+  }
 
+  // ── Resting HR: the day's value, not the newest live HR (bug 11) ────────
   final hrPoints = vitalHistoryPoints(history, VitalsMetricKind.heartRate);
-  final hr =
-      c.vitals.heartRate?.toDouble() ??
-      (hrPoints.isEmpty ? null : hrPoints.last.value);
-  final hrBase = _baseline(hrPoints, 30);
-  final hrVerdict = hr == null
-      ? 'No reading'
-      : hr < 55
-      ? 'Resting'
-      : hr <= 70
-      ? 'Typical'
-      : 'Elevated';
-  final hrQ = hr == null
-      ? 'none'
-      : hr <= 70
-      ? (hr < 55 ? 'good' : 'level')
-      : hr <= 85
-      ? 'level'
-      : 'poor';
+  final hr = dashboard.restingHr?.toDouble();
+  final hrBase = vitalBaseFor(
+    vital: BaselineVital.restingHr,
+    typical: restingHrBand(trainingFrequency),
+    baselines: baselines,
+    personalAverage: _baseline(hrPoints, kBaselineWindowDays),
+  );
+  final (hrVerdict, hrQ) = verdictFor(
+    value: hr,
+    base: hrBase,
+    words: ('Resting', 'Typical', 'Elevated'),
+    higherIsBetter: false,
+  );
 
   return [
     HomeMetricCardData(
@@ -526,18 +581,20 @@ List<HomeMetricCardData> homeMetricCards(
       unit: ' ms',
       verdict: hrvVerdict,
       quality: hrvQ,
-      direction: hrv == null ? null : _dirFor(hrv, hrvBase),
+      direction: hrv == null ? null : _dirFor(hrv, hrvBase.value),
     ),
     HomeMetricCardData(
       kind: VitalsMetricKind.sleep,
       label: 'SLEEP',
       icon: 'moon',
       ink: t.idSleep,
-      value: sleepHours == null ? null : _fmtHours(sleepHours),
+      value: usable && sleepHours != null ? _fmtHours(sleepHours) : null,
       unit: '',
       verdict: sleepVerdict,
       quality: sleepQ,
-      direction: sleepHours == null ? null : _dirFor(sleepHours, sleepBase),
+      direction: usable && sleepHours != null
+          ? _dirFor(sleepHours, sleepBase)
+          : null,
     ),
     HomeMetricCardData(
       kind: VitalsMetricKind.heartRate,
@@ -548,12 +605,12 @@ List<HomeMetricCardData> homeMetricCards(
       unit: ' bpm',
       verdict: hrVerdict,
       quality: hrQ,
-      direction: hr == null ? null : _dirFor(hr, hrBase),
+      direction: hr == null ? null : _dirFor(hr, hrBase.value),
     ),
   ];
 }
 
-class _MetricCards extends StatelessWidget {
+class _MetricCards extends ConsumerWidget {
   const _MetricCards({
     required this.controller,
     required this.dashboard,
@@ -567,9 +624,17 @@ class _MetricCards extends StatelessWidget {
   final bool hasRing;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = context.vyana;
-    final cards = homeMetricCards(controller, dashboard, t);
+    final profile = ref.watch(userProfileProvider).valueOrNull;
+    final cards = homeMetricCards(
+      controller,
+      dashboard,
+      t,
+      baselines: ref.watch(personalBaselinesProvider),
+      trainingFrequency:
+          TrainingFrequencyX.fromName(profile?.trainingFrequency),
+    );
     Widget card(int i) => _MetricCard(
       data: cards[i],
       stale: stale,
@@ -738,11 +803,16 @@ class SuggestedPracticeBlock extends StatelessWidget {
     required this.activity,
     required this.reason,
     this.compact = false,
+    this.doneToday = false,
   });
 
   final DayIntent intent;
   final Activity activity;
   final String reason;
+
+  /// §3: once the suggestion itself has been done, the play button becomes a
+  /// grey tick — the card stays tappable, to do it again.
+  final bool doneToday;
 
   /// Practice's form: no heading, and `2 MIN · reason` inside the card under
   /// the name, so the duration scans first.
@@ -828,12 +898,17 @@ class SuggestedPracticeBlock extends StatelessWidget {
           Container(
             width: 36,
             height: 36,
-            decoration: BoxDecoration(color: hue, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: doneToday ? t.hairline : hue,
+              shape: BoxShape.circle,
+            ),
             child: Center(
               child: VyanaIcon(
-                'play',
+                doneToday ? 'check' : 'play',
                 size: 18,
-                color: t.isDark ? const Color(0xFF071211) : Colors.white,
+                color: doneToday
+                    ? t.mutedInk
+                    : (t.isDark ? const Color(0xFF071211) : Colors.white),
               ),
             ),
           ),
@@ -862,7 +937,7 @@ class SuggestedPracticeBlock extends StatelessWidget {
   }
 }
 
-class _SuggestedPractice extends StatelessWidget {
+class _SuggestedPractice extends ConsumerWidget {
   const _SuggestedPractice({
     required this.intent,
     required this.state,
@@ -876,13 +951,103 @@ class _SuggestedPractice extends StatelessWidget {
   final HomeMoment moment;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final id = suggestedPracticeFor(intent, state, readiness, moment);
     final activity = activityById(id) ?? activityById('breathwork')!;
-    return SuggestedPracticeBlock(
-      intent: intent,
-      activity: activity,
-      reason: suggestedReasonFor(intent, readiness),
+    final today = todaysFinishedSessions(
+      ref.watch(recentSessionsProvider).valueOrNull ?? const [],
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SuggestedPracticeBlock(
+          intent: intent,
+          activity: activity,
+          reason: suggestedReasonFor(intent, readiness),
+          doneToday: today.any((s) => s.vyanaActivityType == activity.id),
+        ),
+        DoneTodayLine(sessions: today),
+      ],
+    );
+  }
+}
+
+/// Today's finished sessions, oldest first — the order they happened in.
+List<SessionRow> todaysFinishedSessions(
+  List<SessionRow> sessions, {
+  DateTime? now,
+}) {
+  final today = now ?? DateTime.now();
+  final day = DateTime(today.year, today.month, today.day);
+  final rows = [
+    for (final s in sessions)
+      if (s.endedAt != null &&
+          DateTime(s.startedAt.year, s.startedAt.month, s.startedAt.day) == day)
+        s,
+  ]..sort((a, b) => a.startedAt.compareTo(b.startedAt));
+  return rows;
+}
+
+/// §3 (new): one line under the suggested card listing what has actually been
+/// done today. Each name opens that session's saved summary. Not rendered
+/// when nothing has been done, and wraps rather than truncating.
+class DoneTodayLine extends StatelessWidget {
+  const DoneTodayLine({super.key, required this.sessions});
+
+  final List<SessionRow> sessions;
+
+  @override
+  Widget build(BuildContext context) {
+    if (sessions.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          MonoEyebrow('DONE TODAY', size: 11.5, spacing: 0.9),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final row in sessions)
+                _DoneChip(
+                  row: row,
+                  onTap: () => openPastSession(context, row),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DoneChip extends StatelessWidget {
+  const _DoneChip({required this.row, required this.onTap});
+
+  final SessionRow row;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final activity = activityById(row.vyanaActivityType);
+    final minutes = row.endedAt!.difference(row.startedAt).inMinutes;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(100),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(100),
+          border: Border.all(color: t.hairline),
+        ),
+        child: Text(
+          '${activity?.name ?? 'Session'} ${minutes}m',
+          style: VyanaType.caption.copyWith(color: t.textSec, fontSize: 13),
+        ),
+      ),
     );
   }
 }
@@ -960,4 +1125,180 @@ String suggestedPracticeId(
     };
   }
   return 'breathwork';
+}
+
+/// Bug 13(e): a session the system killed mid-walk is offered back rather
+/// than vanishing — its samples and route are already stored, so nothing
+/// captured is lost either way.
+class RecoveredSessionLine extends ConsumerWidget {
+  const RecoveredSessionLine({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.vyana;
+    final controller = ref.watch(sessionControllerProvider);
+    final row = controller.recoverableSession;
+    if (row == null || controller.active) return const SizedBox.shrink();
+    final activity = activityById(row.vyanaActivityType);
+    final clock =
+        '${row.startedAt.hour.toString().padLeft(2, '0')}:'
+        '${row.startedAt.minute.toString().padLeft(2, '0')}';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
+      decoration: BoxDecoration(
+        color: t.gold.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.gold.withValues(alpha: 0.38)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Your ${activity?.name.toLowerCase() ?? 'session'} from $clock is '
+            'still recording',
+            style: VyanaType.caption.copyWith(
+              color: t.text,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'Everything captured up to now is saved either way.',
+            style: VyanaType.caption.copyWith(color: t.textSec, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              BorderedPill(
+                label: 'Resume',
+                color: t.gold,
+                onTap: () async {
+                  final error = await controller.resumeRecoveredSession();
+                  if (!context.mounted || error != null) return;
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => const LiveSessionScreen(),
+                    ),
+                  );
+                },
+              ),
+              BorderedPill(
+                label: 'End it',
+                onTap: () => unawaited(controller.endRecoveredSession()),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bug 18(5): Android's battery settings can close Vyana without warning, so
+/// the app can only notice afterwards. Shown once, only when a kill actually
+/// cost data, and never during setup.
+class BatterySettingsLine extends ConsumerStatefulWidget {
+  const BatterySettingsLine({super.key});
+
+  @override
+  ConsumerState<BatterySettingsLine> createState() =>
+      _BatterySettingsLineState();
+}
+
+class _BatterySettingsLineState extends ConsumerState<BatterySettingsLine> {
+  static const _dismissedKey = 'vyana.ring.batteryPromptDismissed';
+
+  Duration? _gap;
+  bool _checked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_check()));
+  }
+
+  Future<void> _check() async {
+    if (_checked || !Platform.isAndroid) return;
+    _checked = true;
+    final prefs = await SharedPreferences.getInstance();
+    // "Not now" means never again, as the handover asks.
+    if (prefs.getBool(_dismissedKey) ?? false) return;
+    final controller = ref.read(ringControllerProvider);
+    if (controller.pairedRing == null ||
+        !controller.foregroundServiceEnabled) {
+      return;
+    }
+    if (await RingForegroundService.isExemptFromBatteryOptimisation()) return;
+    final gap = await RingForegroundService.missedWatchGap(
+      intervalMinutes: controller.periodicSyncIntervalMinutes,
+    );
+    if (!mounted || gap == null) return;
+    setState(() => _gap = gap);
+  }
+
+  Future<void> _dismissForever() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_dismissedKey, true);
+    if (mounted) setState(() => _gap = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gap = _gap;
+    if (gap == null) return const SizedBox.shrink();
+    final t = context.vyana;
+    final since = DateTime.now().subtract(gap);
+    final clock =
+        '${since.hour.toString().padLeft(2, '0')}:'
+        '${since.minute.toString().padLeft(2, '0')}';
+    final hours = gap.inHours;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
+      decoration: BoxDecoration(
+        color: t.elevated,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Your phone's battery settings closed Vyana at $clock, so "
+            '${hours < 1 ? 'some time' : '$hours ${hours == 1 ? 'hour' : 'hours'}'} '
+            'are missing. Let it keep running?',
+            style: VyanaType.caption.copyWith(
+              color: t.text,
+              fontSize: 13.5,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              BorderedPill(
+                label: 'Allow',
+                onTap: () async {
+                  await RingForegroundService.requestBatteryExemption();
+                  await _dismissForever();
+                },
+              ),
+              BorderedPill(
+                label: 'Not now',
+                onTap: () => unawaited(_dismissForever()),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }

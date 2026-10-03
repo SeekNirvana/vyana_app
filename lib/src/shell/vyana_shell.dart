@@ -18,6 +18,7 @@ class VyanaShell extends ConsumerStatefulWidget {
 class _VyanaShellState extends ConsumerState<VyanaShell>
     with WidgetsBindingObserver {
   bool _profilePromptShown = false;
+  bool _cycleSheetShown = false;
   StreamSubscription<Uri?>? _widgetClickSub;
 
   static const _tabs = <Widget>[
@@ -98,11 +99,22 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
   @override
   Widget build(BuildContext context) {
     ref.listen<AsyncValue<UserProfile>>(userProfileProvider, (previous, next) {
-      if (_profilePromptShown) return;
       next.whenData((profile) {
-        if (!profile.isWellnessReady) {
+        if (!_profilePromptShown && !profile.isWellnessReady) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _showProfileLaunchSheet();
+          });
+          return;
+        }
+        // §14b: offered once, after the profile is saved with a female
+        // gender. Never before the profile is complete, so it does not stack
+        // on the set-up prompt.
+        if (!_cycleSheetShown &&
+            profile.isWellnessReady &&
+            profile.shouldOfferCycleSheet) {
+          _cycleSheetShown = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) unawaited(offerCycleTracking(context, ref));
           });
         }
       });
@@ -112,6 +124,18 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
     // whenever the ring controller changes; each fires at most once per episode.
     ref.listen<RingController>(ringControllerProvider, (_, c) {
       unawaited(ref.read(ringAlertServiceProvider).evaluate(c));
+      // §14: the learning phase counts from the oldest day the ring actually
+      // covers, and the sleep score's duration target follows the user's own
+      // nights once they have said a shorter night leaves them rested.
+      final nights = sleepDaySummaries(c.history.sleep);
+      if (nights.isNotEmpty) {
+        final baselines = ref.read(personalBaselinesProvider.notifier);
+        unawaited(baselines.noteDataStart(nights.last.day));
+        baselines.applySleepTarget([
+          for (final n in averageableNights(nights, history: c.history).take(14))
+            n.breakdown.asleepSeconds,
+        ]);
+      }
     });
 
     final t = context.vyana;
@@ -176,6 +200,58 @@ class SessionResumeBar extends ConsumerWidget {
     if (!session.active) return const SizedBox.shrink();
     final a = session.activity;
     final ac = a == null ? t.green : t.vit(a.accent);
+    // §5: the same trigger that fires the push shows a banner here, so the
+    // question is answerable without leaving the app.
+    if (session.looksForgotten) {
+      final settled = session.hrSettledAt;
+      return Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        decoration: BoxDecoration(
+          color: t.gold.withValues(alpha: t.isDark ? 0.16 : 0.1),
+          border: Border(
+            top: BorderSide(color: t.gold.withValues(alpha: 0.4)),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Still on your ${(a?.name ?? 'session').toLowerCase()}?',
+              style: VyanaType.label.copyWith(color: t.text),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              settled == null
+                  ? 'It has been running longer than usual.'
+                  : 'Your heart rate settled '
+                      '${DateTime.now().difference(settled).inMinutes} '
+                      'minutes ago.',
+              style: VyanaType.caption.copyWith(color: t.textSec, fontSize: 13),
+            ),
+            const SizedBox(height: 9),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                BorderedPill(
+                  label: settled == null
+                      ? 'End it'
+                      : 'End at '
+                          '${settled.hour.toString().padLeft(2, '0')}:'
+                          '${settled.minute.toString().padLeft(2, '0')}',
+                  color: t.gold,
+                  onTap: () => unawaited(session.endAtSettled()),
+                ),
+                BorderedPill(
+                  label: 'Still going',
+                  onTap: session.snoozeForgotten,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
     return Material(
       color: Colors.transparent,
       child: InkWell(

@@ -332,8 +332,8 @@ class _ConnectedWalletView extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final chain = wallet.activeChain;
-    final address = wallet.address;
     final accent = chain == WalletChain.solana ? t.cyan : t.gold;
+    final address = wallet.address;
     final modal = reown.modal;
 
     return Column(
@@ -522,7 +522,6 @@ class _DisconnectedWalletView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.vyana;
     final chain = wallet.activeChain;
-    final accent = chain == WalletChain.solana ? t.cyan : t.gold;
     final reownReady = reown.isReady;
     final reownInitializing = reown.isInitializing;
     final canConnect = isSms || reownReady;
@@ -573,14 +572,6 @@ class _DisconnectedWalletView extends ConsumerWidget {
               ],
             ],
           ),
-        ),
-        const SizedBox(height: 12),
-        _WalletFutureTile(
-          icon: 'sparkles',
-          title: 'Rewards & quests',
-          subtitle: 'On-chain attestations tied to your wellness journey',
-          badge: 'Preview',
-          accent: accent,
         ),
         const SizedBox(height: 12),
         if (!isSms && reownInitializing) ...[
@@ -663,19 +654,17 @@ class _WalletFutureTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.badge,
-    this.accent,
   });
 
   final String icon;
   final String title;
   final String subtitle;
   final String badge;
-  final Color? accent;
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
-    final ac = accent ?? t.gold;
+    final ac = t.gold;
     return Panel(
       pad: 14,
       child: Row(

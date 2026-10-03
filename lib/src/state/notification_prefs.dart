@@ -225,9 +225,13 @@ class RingAlertService {
         final band = restingHrBand(
           TrainingFrequencyX.fromName(profile?.trainingFrequency),
         );
-        final hr = c.vitals.heartRate;
+        // Bug 11: this used to read `vitals.heartRate`, the newest live
+        // value, so the alert fired after any workout — "Resting heart rate
+        // is 101 bpm" about a heart rate that was not resting. It reads the
+        // day's resting HR, which is the only thing the band applies to.
+        final hr = HomeDashboard.from(c).restingHr;
         final spo2 = c.vitals.bloodOxygen;
-        if (hr != null && hr > 0 && hr > band.high + 20) {
+        if (hr != null && hr > 0 && hr > band.high + kSafetyRestingHrMargin) {
           _lastHealthAlert = DateTime.now();
           await notify.showAlert(
             id: 4304,

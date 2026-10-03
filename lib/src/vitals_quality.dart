@@ -162,7 +162,46 @@ String? latestPlausibleBloodPressure(List<dynamic> records) {
 enum StressZone { calm, activated, stressed }
 
 /// 0.0 (deeply calm) → 1.0 (highly stressed), from an HRV value in ms.
-double stressLevelForHrv(double hrv) => ((90 - hrv) / 70).clamp(0.0, 1.0);
+///
+/// Bug 7: the fixed `(90 − hrv) / 70` scale is the same for everyone, so
+/// anyone whose normal HRV sits low — common with age, or a naturally higher
+/// resting HR — read as permanently Activated however calm they felt. Pass
+/// [personalRange] (the user's own HRV spread) to score the deviation from
+/// their own normal instead; without one the population scale still applies,
+/// which is correct until a baseline exists.
+double stressLevelForHrv(double hrv, {VitalReferenceRange? personalRange}) {
+  final range = personalRange;
+  if (range != null && range.high > range.low) {
+    // Their own range maps to the same 0–1 scale, inverted: at or above the
+    // top of their normal band is calm, at or below the bottom is stressed.
+    return ((range.high - hrv) / (range.high - range.low)).clamp(0.0, 1.0);
+  }
+  return ((90 - hrv) / 70).clamp(0.0, 1.0);
+}
+
+/// The user's own HRV range from their history, as the 10th–90th percentile —
+/// the spread §14 adopts for colour once they confirm it is their normal.
+/// Null until there are enough days to be meaningful.
+VitalReferenceRange? personalHrvRange(
+  List<double> dailyValues, {
+  int minDays = kBaselineLearningDays,
+}) {
+  if (dailyValues.length < minDays) return null;
+  final sorted = [...dailyValues]..sort();
+  double percentile(double p) {
+    final idx = ((sorted.length - 1) * p).round().clamp(0, sorted.length - 1);
+    return sorted[idx];
+  }
+
+  final low = percentile(0.1);
+  final high = percentile(0.9);
+  if (high <= low) return null;
+  return VitalReferenceRange(
+    low: low,
+    high: high,
+    caption: 'YOUR RANGE ${low.round()}–${high.round()} MS',
+  );
+}
 
 StressZone stressZoneForLevel(double level) => level < 0.34
     ? StressZone.calm
@@ -170,14 +209,21 @@ StressZone stressZoneForLevel(double level) => level < 0.34
         ? StressZone.activated
         : StressZone.stressed;
 
-StressZone stressZoneForHrv(double hrv) =>
-    stressZoneForLevel(stressLevelForHrv(hrv));
+StressZone stressZoneForHrv(double hrv, {VitalReferenceRange? personalRange}) =>
+    stressZoneForLevel(
+      stressLevelForHrv(hrv, personalRange: personalRange),
+    );
 
 /// Current stress index (0–100) derived from the latest plausible HRV in
 /// [records], or null when no usable HRV exists.
-double? latestStressFromHrv(List<dynamic> records) {
+double? latestStressFromHrv(
+  List<dynamic> records, {
+  VitalReferenceRange? personalRange,
+}) {
   final hrv = latestPlausibleValue(records, const ['hrv'], validHrvValue);
-  return hrv == null ? null : stressLevelForHrv(hrv) * 100;
+  return hrv == null
+      ? null
+      : stressLevelForHrv(hrv, personalRange: personalRange) * 100;
 }
 
 String stressZoneLabel(StressZone zone) {
@@ -350,4 +396,257 @@ String? peakBadgeFor({
   if (today >= max) return '$windowDays-DAY HIGH';
   if (today <= min) return '$windowDays-DAY LOW';
   return null;
+}
+
+// ── Day-scoped vitals: one value per day, from the right window ───────────
+// Bugs 11 and 16: Home and readiness used the newest spot reading, so a run,
+// a coffee or a "Take a new reading" tap rewrote this morning's recovery
+// numbers. A daily metric must come from a fixed window, not from whatever
+// the ring reported last. Spot readings stay visible in the detail lists.
+
+/// Width of the sustained-average bucket used for resting HR. Five minutes is
+/// the wearable convention: short enough to catch a genuine trough, long
+/// enough that one stray sample cannot create one.
+const Duration kSustainedWindow = Duration(minutes: 5);
+
+/// Mean of every point inside [start]–[end] (inclusive), or null when none.
+double? _meanInWindow(
+  List<VitalHistoryPoint> points,
+  DateTime start,
+  DateTime end,
+) {
+  var sum = 0.0;
+  var count = 0;
+  for (final p in points) {
+    if (p.time.isBefore(start) || p.time.isAfter(end)) continue;
+    sum += p.value;
+    count++;
+  }
+  return count == 0 ? null : sum / count;
+}
+
+/// Lowest [kSustainedWindow] average across [points], ignoring buckets that
+/// hold a single sample when a richer bucket exists — a lone low sample is an
+/// artefact, a sustained trough is resting physiology.
+double? _lowestSustainedAverage(List<VitalHistoryPoint> points) {
+  if (points.isEmpty) return null;
+  final sorted = [...points]..sort((a, b) => a.time.compareTo(b.time));
+  final buckets = <int, List<double>>{};
+  final epoch = sorted.first.time;
+  for (final p in sorted) {
+    final slot = p.time.difference(epoch).inSeconds ~/ kSustainedWindow.inSeconds;
+    buckets.putIfAbsent(slot, () => []).add(p.value);
+  }
+  final means = <double>[];
+  final richMeans = <double>[];
+  for (final samples in buckets.values) {
+    final mean = samples.reduce((a, b) => a + b) / samples.length;
+    means.add(mean);
+    if (samples.length > 1) richMeans.add(mean);
+  }
+  final pool = richMeans.isNotEmpty ? richMeans : means;
+  return pool.reduce(math.min);
+}
+
+/// True while [time] falls inside a session window, or the 30 minutes after
+/// one — heart rate is still elevated then, so it is not resting.
+bool _inSessionShadow(DateTime time, List<DateTimeRange> sessions) {
+  for (final s in sessions) {
+    if (!time.isBefore(s.start) &&
+        !time.isAfter(s.end.add(const Duration(minutes: 30)))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Resting heart rate for [day] — one value per day, the wearable standard.
+///
+/// Preferred source is the lowest sustained HR inside that night's sleep
+/// window. With no sleep record, the lowest sustained daytime average,
+/// excluding every session window plus 30 minutes after it. Null when neither
+/// yields a usable trough.
+int? restingHrForDay({
+  required List<VitalHistoryPoint> hrPoints,
+  required DateTime day,
+  SleepDaySummary? night,
+  List<DateTimeRange> sessions = const [],
+}) {
+  if (night != null) {
+    final inWindow = hrPoints
+        .where((p) =>
+            !p.time.isBefore(night.windowStart) &&
+            !p.time.isAfter(night.windowEnd))
+        .toList();
+    final sustained = _lowestSustainedAverage(inWindow);
+    if (sustained != null) return sustained.round();
+  }
+  final target = DateTime(day.year, day.month, day.day);
+  final dayPoints = hrPoints
+      .where((p) =>
+          DateTime(p.time.year, p.time.month, p.time.day) == target &&
+          !_inSessionShadow(p.time, sessions))
+      .toList();
+  final sustained = _lowestSustainedAverage(dayPoints);
+  return sustained?.round();
+}
+
+/// Overnight HRV for [day] — the mean of the HRV samples inside that night's
+/// sleep window, which is the value recovery is actually read from. Null
+/// without a night or without samples in it; callers must not silently fall
+/// back to a spot reading.
+int? hrvForDay({
+  required List<VitalHistoryPoint> hrvPoints,
+  SleepDaySummary? night,
+  DateTime? day,
+}) {
+  if (night != null) {
+    final mean = _meanInWindow(hrvPoints, night.windowStart, night.windowEnd);
+    if (mean != null) return mean.round();
+  }
+  // No sleep record does not mean no overnight HRV: the ring still sampled
+  // through the night. Fall back to the clock window so readiness and the
+  // HRV card agree, instead of one showing a score the other cannot explain.
+  if (day == null) return null;
+  final start = DateTime(day.year, day.month, day.day);
+  final mean = _meanInWindow(
+    hrvPoints,
+    start,
+    start.add(const Duration(hours: kOvernightWindowEndHour)),
+  );
+  return mean?.round();
+}
+
+/// End of the clock-based overnight window, used only when a night was not
+/// recorded. Deliberately generous: a late riser's recovery HRV still lands
+/// inside it.
+const int kOvernightWindowEndHour = 9;
+
+// ── Sleep night completeness ──────────────────────────────────────────────
+// Bug 14: a missing night was shown as today's, and a night that stopped
+// early (flat battery, ring off) was scored as a real short night and then
+// averaged into every baseline.
+
+enum SleepNightStatus {
+  /// A real night: enough sleep recorded, or a short one the ring kept
+  /// measuring through.
+  complete,
+
+  /// The recording was cut off — too little sleep *and* nothing measured
+  /// afterwards, which is what a flat battery or a removed ring looks like.
+  incomplete,
+
+  /// Nothing recorded for today.
+  missing,
+}
+
+/// Below this, a night is too short to stand on its own and we look for
+/// corroboration before trusting it.
+const Duration kInadequateSleep = Duration(hours: 3);
+
+/// Deprecated alias kept so older call sites keep compiling.
+const Duration kImplausiblyShortNight = kInadequateSleep;
+
+/// How long after the night we look for any further reading from the ring.
+/// A ring that kept measuring was on the finger and alive, so the night ended
+/// because the wearer got up — not because the recording died.
+const Duration kPostSleepEvidenceWindow = Duration(hours: 6);
+
+/// True when the ring reported anything at all in the hours after [after].
+bool ringMeasuredAfter(RingHistory history, DateTime after) {
+  final until = after.add(kPostSleepEvidenceWindow);
+  final cutoff = after.millisecondsSinceEpoch ~/ 1000;
+  final limit = until.millisecondsSinceEpoch ~/ 1000;
+  for (final records in [history.combined, history.heartRate, history.steps]) {
+    for (final record in records) {
+      final ts = timestampOf(record);
+      if (ts != null && ts > cutoff && ts <= limit) return true;
+    }
+  }
+  return false;
+}
+
+/// Classifies [night] as last night's sleep relative to [now].
+///
+/// Only a night whose sleep day is today counts; an older night is
+/// [SleepNightStatus.missing], never silently shown as today's.
+///
+/// A night is *incomplete* only when both things are true: too little sleep
+/// was recorded, and the ring reported nothing afterwards. An earlier version
+/// of this rule also demanded that the night end on an explicit `awake`
+/// stage — but the ring emits one on barely a fifth of nights (it simply
+/// stops recording when you get up), so ample, perfectly good nights were
+/// being written off as incomplete.
+SleepNightStatus sleepNightStatus(
+  SleepDaySummary? night, {
+  DateTime? now,
+  RingHistory? history,
+}) {
+  final today = now ?? DateTime.now();
+  final todayDay = DateTime(today.year, today.month, today.day);
+  if (night == null) return SleepNightStatus.missing;
+  final nightDay = DateTime(night.day.year, night.day.month, night.day.day);
+  if (nightDay != todayDay) return SleepNightStatus.missing;
+
+  // Enough sleep on the record is enough, full stop.
+  if (night.breakdown.asleepSeconds >= kInadequateSleep.inSeconds) {
+    return SleepNightStatus.complete;
+  }
+  // Short. If the ring went on measuring afterwards it was working and worn,
+  // so this was a genuinely short night rather than a truncated recording.
+  if (history != null && ringMeasuredAfter(history, night.windowEnd)) {
+    return SleepNightStatus.complete;
+  }
+  return SleepNightStatus.incomplete;
+}
+
+/// The single readiness computation, so Home's score and the Metrics chart
+/// can never disagree about the same day.
+///
+/// 65% last night's sleep score, 35% that night's HRV. Readiness is
+/// deliberately about *today* — sleep debt is not accumulated into it — but
+/// both callers must reach it the same way, which they previously did not:
+/// the chart averaged a whole day's HRV readings (including daytime spot
+/// measurements) while Home used the overnight window.
+int? readinessScoreFrom({int? sleepScore, int? hrv}) {
+  if (sleepScore == null && hrv == null) return null;
+  final hrvComponent = hrv == null ? 50.0 : (hrv.clamp(20, 90) / 90 * 100);
+  if (sleepScore == null) {
+    // No usable night: HRV alone carries it, and the caller says so.
+    return hrvComponent.round().clamp(0, 100);
+  }
+  return (sleepScore * 0.65 + hrvComponent * 0.35).round().clamp(0, 100);
+}
+
+/// The night to show as "last night", or null when today has none.
+SleepDaySummary? sleepNightForToday(
+  List<SleepDaySummary> nights, {
+  DateTime? now,
+}) {
+  if (nights.isEmpty) return null;
+  final today = now ?? DateTime.now();
+  final todayDay = DateTime(today.year, today.month, today.day);
+  for (final n in nights) {
+    if (DateTime(n.day.year, n.day.month, n.day.day) == todayDay) return n;
+  }
+  return null;
+}
+
+/// Nights safe to average: complete, and excluding today's in-progress one.
+/// Bases, peak badges, patterns and the §14 questions all read this, so a
+/// partial night can never pull a baseline down.
+List<SleepDaySummary> averageableNights(
+  List<SleepDaySummary> nights, {
+  DateTime? now,
+  RingHistory? history,
+}) {
+  final today = now ?? DateTime.now();
+  return [
+    for (final n in nights)
+      if (sleepNightStatus(n, now: n.day, history: history) !=
+              SleepNightStatus.incomplete &&
+          DateTime(n.day.year, n.day.month, n.day.day) !=
+              DateTime(today.year, today.month, today.day))
+        n,
+  ];
 }

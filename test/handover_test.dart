@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vyana/main.dart';
 import 'package:vyana/src/data/db.dart';
 import 'package:vyana/src/wellness/wellness_state.dart';
+import 'package:vyana_sdk/vyana_sdk.dart';
 
 void main() {
   group('intent pre-set', () {
@@ -153,6 +154,7 @@ void main() {
             claim: id,
             status: status,
             evidenceIdsJson: '[]',
+            counterIdsJson: '[]',
             evidenceCount: 5,
             matchCount: 3,
             firstSeen: DateTime(2026, 8, 1),
@@ -212,10 +214,147 @@ void main() {
         insights: const [],
         practiceHint: '',
         hasRingHistory: true,
+        sleepStatus: SleepNightStatus.complete,
       );
       expect(readSentenceFor(DayIntent.recover, state, dashboard), contains('protecting'));
       expect(readSentenceFor(DayIntent.perform, state, dashboard), contains('capacity'));
       expect(readSentenceFor(DayIntent.settle, state, dashboard), contains('calm'));
+    });
+  });
+
+  group('sleep night completeness (bug 14)', () {
+    /// A night shaped like the ring's real records: staged segments that end
+    /// on light sleep, because the ring stops recording when you get up
+    /// rather than emitting a trailing "awake" stage. On a real device only
+    /// 5 of 25 nights ended on an awake segment.
+    List<dynamic> nightRecord({
+      required DateTime start,
+      required Duration asleep,
+      int lastType = SleepType.lightSleep,
+    }) {
+      final startTs = start.millisecondsSinceEpoch ~/ 1000;
+      final endTs = startTs + asleep.inSeconds;
+      return [
+        {
+          'isNewSleepProtocol': true,
+          'startTimeStamp': startTs,
+          'endTimeStamp': endTs,
+          'deepSleepSeconds': (asleep.inSeconds * 0.2).round(),
+          'lightSleepSeconds': (asleep.inSeconds * 0.6).round(),
+          'remSleepSeconds': (asleep.inSeconds * 0.2).round(),
+          'detail': [
+            {
+              'startTimeStamp': startTs,
+              'duration': (asleep.inSeconds * 0.5).round(),
+              'sleepType': SleepType.deepSleep,
+            },
+            {
+              'startTimeStamp': startTs + (asleep.inSeconds * 0.5).round(),
+              'duration': (asleep.inSeconds * 0.5).round(),
+              'sleepType': lastType,
+            },
+          ],
+        },
+      ];
+    }
+
+    RingHistory historyWith(List<dynamic> sleep, {List<dynamic> after = const []}) =>
+        RingHistory(
+          steps: const [],
+          sleep: sleep,
+          heartRate: after,
+          bloodPressure: const [],
+          combined: const [],
+          invasive: const [],
+          sport: const [],
+        );
+
+    test('a full night ending on light sleep is complete, not incomplete', () {
+      final start = DateTime(2026, 10, 2, 23);
+      final records = nightRecord(start: start, asleep: const Duration(hours: 7, minutes: 41));
+      final night = sleepDaySummaries(records).first;
+      // The regression: requiring a trailing `awake` stage wrote off a
+      // perfectly good 7h41m night.
+      expect(
+        sleepNightStatus(night, now: night.day, history: historyWith(records)),
+        SleepNightStatus.complete,
+      );
+    });
+
+    test('a short night the ring kept measuring through is still complete', () {
+      final start = DateTime(2026, 10, 2, 3);
+      final records = nightRecord(start: start, asleep: const Duration(hours: 2));
+      final night = sleepDaySummaries(records).first;
+      // Biomarkers after the night mean the ring was alive and worn, so the
+      // short night is real rather than a truncated recording.
+      final after = [
+        // Real ring records key their time as `startTimeStamp`.
+        {
+          'startTimeStamp': night.windowEnd
+                  .add(const Duration(hours: 1))
+                  .millisecondsSinceEpoch ~/
+              1000,
+          'heartRate': 62,
+        },
+      ];
+      expect(
+        sleepNightStatus(
+          night,
+          now: night.day,
+          history: historyWith(records, after: after),
+        ),
+        SleepNightStatus.complete,
+      );
+    });
+
+    test('a short night with nothing measured afterwards is incomplete', () {
+      final start = DateTime(2026, 10, 2, 3);
+      final records = nightRecord(start: start, asleep: const Duration(hours: 2));
+      final night = sleepDaySummaries(records).first;
+      expect(
+        sleepNightStatus(night, now: night.day, history: historyWith(records)),
+        SleepNightStatus.incomplete,
+      );
+    });
+
+    test('a night that is not today is missing, never shown as today', () {
+      final start = DateTime(2026, 10, 2, 23);
+      final records = nightRecord(start: start, asleep: const Duration(hours: 8));
+      final night = sleepDaySummaries(records).first;
+      expect(
+        sleepNightStatus(
+          night,
+          now: night.day.add(const Duration(days: 2)),
+          history: historyWith(records),
+        ),
+        SleepNightStatus.missing,
+      );
+    });
+  });
+
+  group('readiness composition', () {
+    test('Home and the Metrics chart share one computation', () {
+      // Same inputs must give the same number: Home used the overnight HRV
+      // while the chart averaged the whole day's readings, so the big score
+      // and today's point on the chart could disagree.
+      expect(
+        readinessScoreFrom(sleepScore: 80, hrv: 45),
+        readinessScoreFrom(sleepScore: 80, hrv: 45),
+      );
+      expect(readinessScoreFrom(sleepScore: 80, hrv: 45), 70);
+    });
+
+    test('readiness is about today: last night only, never accumulated', () {
+      // A good night after poor ones scores on its own merit. Sleep debt is
+      // deliberately not carried into the score — the read describes today.
+      final goodAfterBad = readinessScoreFrom(sleepScore: 88, hrv: 50);
+      final goodAfterGood = readinessScoreFrom(sleepScore: 88, hrv: 50);
+      expect(goodAfterBad, goodAfterGood);
+    });
+
+    test('without a usable night, HRV alone carries the score', () {
+      expect(readinessScoreFrom(sleepScore: null, hrv: 45), 50);
+      expect(readinessScoreFrom(sleepScore: null, hrv: null), isNull);
     });
   });
 }
