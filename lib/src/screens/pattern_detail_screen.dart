@@ -243,6 +243,79 @@ class _JournalEvidence extends ConsumerWidget {
           }),
           const SizedBox(height: 8),
         ],
+        // §8 (10a): the dreams in the window that did *not* carry the tag,
+        // with their nights. The denominator has to be visible, and a night
+        // that held without the dream is the contrast that makes the claim
+        // believable.
+        _CounterEvidence(pattern: pattern, ring: ring),
+      ],
+    );
+  }
+}
+
+/// The non-matching records of the window, under THE OTHER n DREAMS · NO TAG.
+class _CounterEvidence extends ConsumerWidget {
+  const _CounterEvidence({required this.pattern, required this.ring});
+
+  final PatternRow pattern;
+  final RingController ring;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.vyana;
+    final ids = patternCounterIds(pattern).toSet();
+    if (ids.isEmpty) return const SizedBox.shrink();
+    final entries = ref.watch(_journalEntriesProvider).valueOrNull ?? const [];
+    final rows = entries.where((e) => ids.contains(e.id)).toList();
+    if (rows.isEmpty) return const SizedBox.shrink();
+    final nights = {
+      for (final n in sleepDaySummaries(ring.history.sleep)) n.day: n,
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 10),
+        MonoEyebrow(
+          'THE OTHER ${rows.length} '
+          '${rows.length == 1 ? 'DREAM' : 'DREAMS'} · '
+          'NO ${pattern.subject.toUpperCase()}',
+          size: 10.5,
+          color: t.mutedInk,
+        ),
+        const SizedBox(height: 8),
+        for (final e in rows) ...[
+          Builder(builder: (context) {
+            final night = nights[nightKeyForEntry(e.createdAt)];
+            final broke = night != null && sleepBrokeAfterThree(night);
+            return HairlineCard(
+              padding: const EdgeInsets.fromLTRB(13, 10, 13, 11),
+              onTap: () => showJournalEntrySheet(context, ref, e),
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 10,
+                runSpacing: 4,
+                children: [
+                  Text(
+                    '${_dayLabel(e.createdAt)} · ${e.title}',
+                    style: VyanaType.caption.copyWith(
+                      color: t.textSec,
+                      fontSize: 13,
+                    ),
+                  ),
+                  MonoEyebrow(
+                    night == null
+                        ? 'NO SLEEP DATA'
+                        : (broke ? 'BROKE AFTER 3AM' : 'HELD THROUGH'),
+                    size: 10.5,
+                    color: broke ? t.qPoor : t.mutedInk,
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 7),
+        ],
       ],
     );
   }
@@ -282,7 +355,24 @@ class _MetricsEvidence extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        MonoEyebrow('THE ${rows.length} SESSIONS · AND THE MORNINGS AFTER', size: 10.5),
+        // §8 (10b): the baseline belongs in the header and the delta on each
+        // row — the raw HRV alone left the user deriving the percentage.
+        Row(
+          children: [
+            Expanded(
+              child: MonoEyebrow(
+                'THE ${rows.length} SESSIONS · AND THE MORNINGS AFTER',
+                size: 10.5,
+              ),
+            ),
+            if (pattern.baseline != null)
+              MonoEyebrow(
+                'BASE ${pattern.baseline!.round()} MS',
+                size: 10.5,
+                color: t.mutedInk,
+              ),
+          ],
+        ),
         const SizedBox(height: 8),
         for (final s in rows) ...[
           Builder(builder: (context) {
@@ -323,15 +413,40 @@ class _MetricsEvidence extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          hrv == null
-                              ? 'No HRV the next morning'
-                              : 'Next morning HRV ${hrv.round()} ms',
-                          style: VyanaType.caption.copyWith(
-                            color: t.textSec,
-                            fontSize: 13,
-                          ),
-                        ),
+                        Builder(builder: (context) {
+                          final base = pattern.baseline;
+                          final pct = hrv == null || base == null || base <= 0
+                              ? null
+                              : ((hrv - base) / base * 100).round();
+                          // Green at or above the engine's own 5% threshold,
+                          // grey below: the colour must mean what the claim
+                          // was computed from.
+                          final tone = pct == null
+                              ? t.textSec
+                              : (pct >= 5 ? t.qGood : t.mutedInk);
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  hrv == null
+                                      ? 'No HRV the next morning'
+                                      : 'Next morning HRV ${hrv.round()} ms',
+                                  style: VyanaType.caption.copyWith(
+                                    color: t.textSec,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              if (pct != null) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${pct > 0 ? '+' : ''}$pct%',
+                                  style: VyanaType.mono10.copyWith(color: tone),
+                                ),
+                              ],
+                            ],
+                          );
+                        }),
                       ],
                     ),
                   ),

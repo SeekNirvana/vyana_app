@@ -155,6 +155,7 @@ class YouScreen extends ConsumerWidget {
     final guideState =
         ref.watch(guideModelManagerProvider).stateFor(GuideKind.nova);
     final band = TrainingFrequencyX.fromName(profile.trainingFrequency);
+    final baselines = ref.watch(personalBaselinesProvider);
     final orders = ref.watch(ringOrdersProvider).valueOrNull ?? const [];
     final lastSync = c.lastSyncedAt;
 
@@ -404,6 +405,34 @@ class YouScreen extends ConsumerWidget {
               ),
               onTap: () => showTrainingFrequencySheet(context, ref),
             ),
+            // §14: the answers Nova asked for stay visible and editable here,
+            // beside the one question we ask up front.
+            _SettingsRow(
+              icon: 'insights',
+              iconColor: t.heading,
+              label: 'Your normal',
+              subtitle: baselineSummaryLine(baselines),
+              trailing: Text(
+                baselines.isLearning
+                    ? 'DAY ${baselines.learningDay}/$kBaselineLearningDays'
+                    : 'EDIT',
+                style: VyanaType.mono10.copyWith(color: t.textMuted),
+              ),
+              onTap: () => showBaselineAnswersSheet(context, ref),
+            ),
+            // §14b: the Cycle row exists only while the profile says female.
+            if (profile.gender == UserGender.female)
+              _SettingsRow(
+                icon: 'calendar',
+                iconColor: t.heading,
+                label: 'Cycle',
+                subtitle: cycleSubtitleFor(profile.cycleMode),
+                trailing: Text(
+                  profile.cycleMode == CycleMode.off ? 'OFF' : 'ON',
+                  style: VyanaType.mono10.copyWith(color: t.textMuted),
+                ),
+                onTap: () => showCycleModeSheet(context, ref),
+              ),
           ],
         ),
         // ── Appearance ─────────────────────────────────────────────────────

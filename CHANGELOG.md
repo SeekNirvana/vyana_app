@@ -1,5 +1,157 @@
 # Changelog
 
+## v1.1.2 — 2026-10-03 · Honest numbers, personal normals, cycle tracking
+
+The updated 2.0 handover (28 Sep) replaced its spec with a backlog of 14 open
+bugs, 5 screen changes and 2 new features. This release works through all of
+them.
+
+### Added
+
+- **Personal baselines (§14).** Every verdict used to be a fixed population
+  rule, so a 5h 40m sleeper or a naturally low-HRV body read as permanently
+  short-slept or stressed however they felt. For the first 14 days the base is
+  a typical adult (`−17 vs typical 55`) behind a "Learning your normal ·
+  DAY n OF 14" strip; after that it is the user's own 30-day average
+  (`+2 vs base 36`). When a vital sits outside its typical range on ≥10 of the
+  last 14 days *and* holds steady, Nova asks once — about the feeling, never
+  the number — and only an answer that says "this is fine" adopts the personal
+  range. "Mostly rested" also moves the sleep score's duration target to the
+  user's own 14-night median (floored at 6 h). Answers are editable in
+  You → Your normal. SpO₂ below 92%, an irregular rhythm and a heart rate more
+  than 20 bpm over band are never personalised.
+- **Cycle tracking (§14b).** Opt-in, on-device, offered once after the profile
+  is saved with a female gender; the Cycle row and section exist only while
+  that holds, and switching away keeps the logged days. One tap marks day 1;
+  period length is recorded rather than assumed ("Period ended"), with a
+  single "Did your period end on 12 Sep?" prompt two days after the expected
+  end so it never interrupts a longer period. A swipeable month calendar makes
+  correcting any day one tap, and states the count behind every average.
+  Pregnancy mode shows week, trimester and a 40-week bar, and pauses the
+  personal base. Once two cycles exist, resting HR, HRV, temperature and
+  stress compare against the same *phase*. New cycle mauve `#C58BB0`, used
+  only on cycle marks.
+- **Named sports.** Downhill Skiing, Cross-country Skiing, Snowboarding, Ice
+  Skating, Ice Hockey, Padel, Squash, Table Tennis, Volleyball, Hockey,
+  Boxing / Martial Arts, Surfing and Kayaking / SUP, plus **Sauna & Cold
+  Plunge** and **Sauna & Swim** as single sessions with no taps between
+  rounds. Mapped to the SDK's real modes where they exist (table tennis,
+  volleyball, kayak, skating) rather than defaulting everything to free mode.
+- **Add your own sport**, with one question — "Where do you do it?" — a glyph
+  picker, its own history and pinning. **Catalogue search** across all three
+  categories, falling back to "Add '{query}' as your own sport".
+- **Done today** on Home: today's finished sessions under the suggested card,
+  each opening its saved summary. The suggestion's play button becomes a grey
+  tick once it has been done.
+- **Gym, two modes** (replacing "Strength Training", same id so history
+  carries over): "Start and end" by default, or "Track sets & rest".
+- **Past sessions are openable** — from the Practice header, the new Recent
+  row, a pin's history, or any history row — rendered from stored data rather
+  than memory, with **The morning after** (next-morning HRV and that night's
+  sleep against base) and Delete session.
+
+### Fixed
+
+- **`11` Resting HR was the latest live heart rate** — 137 bpm after a run,
+  judged against the resting band and feeding both readiness and the health
+  alert. It is now one value per day: the lowest sustained five-minute average
+  inside last night's sleep window, or the lowest daytime average excluding
+  every session and the 30 minutes after it.
+- **`16` Home's HRV was the latest spot reading** on fixed cut-offs, so the
+  arrow and the verdict could disagree. Home and readiness now use overnight
+  HRV, and the verdict comes from the same base as the arrow.
+- **`7` Stress was judged on a fixed HRV scale** identical for everyone. It is
+  now deviation from the user's own HRV range, falling back to the population
+  scale until a baseline exists.
+- **`14` Missing and partial nights were treated as real sleep.** Only a night
+  whose sleep day is today counts; otherwise the Sleep card reads "Not
+  recorded" and readiness falls back to HRV with the score line saying so. A
+  night counts as incomplete only when both things are true — too little sleep
+  was recorded *and* the ring reported nothing afterwards, which is what a
+  flat battery or a removed ring looks like — and is then excluded from
+  averages, bases and the §14 questions. (A first cut of this rule also
+  demanded a trailing `awake` stage; the ring emits one on barely a fifth of
+  nights, so 21 of 25 real nights were being written off. Caught on device.)
+- **`17` Morning sync showed old values with no sign new data was coming.**
+  Mid-sync the Sleep card says "Getting last night…", a sync that returns
+  without today's night retries at 3, 10 and 30 minutes, and the event log
+  records whether the ring produced one.
+- **`12` The chosen length never reached the session**, so a suggested
+  3-minute breathwork counted up forever. Timed practices now count down with
+  a ring on the orb, end on a soft bell and haptic, and offer Finish or Keep
+  going — with a notification scheduled at start, for a locked phone. Movement
+  gets no preset length, and untimed rows stop advertising "35 min".
+- **`13` Outdoor sessions stopped in a pocket and were then lost.** GPS runs
+  under a location foreground service with background permission; fixes over
+  20 m accuracy are dropped; elevation is a moving median counting only climbs
+  over 3 m; session steps are recorded; the clock is wall-time so suspension
+  costs nothing; and a session the system killed is offered back on Home as
+  Resume / End it, closed at the last captured moment.
+- **`18` The ring didn't reconnect in the background.** The foreground service
+  is on by default whenever a ring is paired and restarts after a reboot;
+  reconnect tries a direct connect by address before paying for a scan; and
+  the backoff resets when Bluetooth returns or the app is opened. If Android's
+  battery settings killed Vyana and cost data, Home says so once, with Allow
+  or Not now.
+- **`6` Alerts only fired while the app was open.** Alerts are evaluated on
+  every background heartbeat, and the two elapsed-time alerts — 24-hour stale
+  ring, two hours out of reach — are now handed to the OS so they arrive with
+  the app dead, on both platforms.
+- **`15` "Take a new reading" looked like it did nothing.** The screen updates
+  live, and the result stays on the button: "New reading · 36.4 °C · 09:31",
+  or "Couldn't get a clean reading" — which used to look identical to success.
+- **`8` Journal entries couldn't be edited**, so a mistranscription was
+  permanent unless deleted and re-dictated, losing the timestamp the pattern
+  engine joins on. Entries and meals are now editable, patterns recompute, and
+  Nova's reflection can be re-asked rather than silently left stale.
+- **`10` Finished sessions couldn't be found again**, and "Readiness impact
+  +3 expected" was a formula over duration and category presented as a
+  finding. The invented number is gone; sessions are findable and openable.
+- **`9` Chakra points were still shown** after rewards were removed — the
+  session summary, the wallet row and the hard-coded balance.
+- **`5` The splash mark was cropped on Android 12+**, where the icon is masked
+  to a circle two-thirds of the canvas.
+- **Forgotten sessions**: a session nobody ended now says so — after heart
+  rate has been near resting for 20 minutes, or twice the expected length for
+  a still practice — offering "End at 12:40", back-dated so the forgotten
+  stretch isn't counted.
+- **Pattern evidence** now shows the non-matching dreams of the window and a
+  per-row delta against a stated baseline, instead of leaving the percentage
+  to be derived.
+- **Intent pre-set** no longer sticks on Recover when ring data arrives after
+  the first build.
+
+- **Readiness is computed in one place.** Home's score and the Metrics chart
+  reached it differently — the chart averaged every HRV reading in the day,
+  including daytime spot measurements, while Home used the overnight window —
+  so the big number and today's point on the chart could disagree. The chart
+  also counted truncated nights, which dragged down the very average Home
+  compares against. Both now share one function and skip incomplete nights.
+  Readiness remains deliberately about today: last night's sleep score at 65%
+  and that night's HRV at 35%, not accumulated sleep debt.
+
+### Changed
+
+- Practice screens drop the meta chips, the "What Vyana tracks" chips and the
+  coaching panel — they described the app, not the practice. "How it works"
+  collapses once a practice has been done, and the icon takes its pin-slot hue
+  rather than a per-activity accent, which broke the colour rule.
+- Treadmill Run → **Treadmill Walk / Run** (id unchanged).
+- Database schema 8 → 10: `CycleDays`, `UserActivities`, and pattern
+  counter-evidence plus baseline.
+
+### Known gaps
+
+- Bug 6's fourth item — a WorkManager / BGAppRefreshTask periodic task — is
+  **not** implemented. The two alerts it was meant to drive are now OS-
+  scheduled instead, which delivers them with the app dead and needs no
+  background isolate (one would have no Bluetooth connection to inspect in any
+  case). Low battery still needs a live reading, so it fires only while the
+  app or the service is running.
+- §15's open questions are unchanged: typical-adult base values still use each
+  range's midpoint for want of an age/sex norm source, and rounds inside the
+  sauna combos are not inferred from the HR trace.
+
 ## v1.1.1 — 2026-09-20 · Ring state you can act on
 
 ### Fixed

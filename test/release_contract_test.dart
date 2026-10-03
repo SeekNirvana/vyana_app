@@ -195,7 +195,7 @@ void main() {
 
     final db = readLib('src/data/db.dart');
     expect(db, contains('class Patterns extends Table'));
-    expect(db, contains('int get schemaVersion => 8;'));
+    expect(db, contains('int get schemaVersion => 10;'));
 
     final catalog = readLib('src/data/catalog.dart');
     expect(catalog, contains('kLucidDreamingId'));
@@ -230,5 +230,74 @@ void main() {
     final manifest = File('scripts/release-manifest.txt').readAsStringSync();
     expect(manifest, contains('Reaching your ring…'));
     expect(manifest, contains('vyana.ring.alert.lowBatteryFiredAt'));
+  });
+
+  test('v1.1.2 baselines, cycle tracking, honest daily vitals', () {
+    final quality = readLib('src/vitals_quality.dart');
+    expect(quality, contains('int? restingHrForDay('));
+    expect(quality, contains('int? hrvForDay('));
+    expect(quality, contains('enum SleepNightStatus'));
+    expect(quality, contains('VitalReferenceRange? personalRange'));
+
+    final baselines = readLib('src/state/personal_baselines.dart');
+    expect(baselines, contains('enum BaselineVital'));
+    expect(baselines, contains('kBaselineLearningDays = 14'));
+    expect(baselines, contains('bool breachesSafetyFloor('));
+    expect(baselines, contains('Duration sleepDurationTarget('));
+
+    final cycle = readLib('src/state/cycle_tracking.dart');
+    expect(cycle, contains('enum CyclePhase'));
+    expect(cycle, contains('CycleStatus cycleStatusFrom('));
+    expect(cycle, contains('double? phaseBaseFor('));
+    expect(cycle, contains('PregnancyStatus? pregnancyStatusFor('));
+
+    final dashboard = readLib('src/state/home_dashboard.dart');
+    expect(dashboard, contains('sleepStatus'));
+    expect(dashboard, contains('overnightHrv'));
+    expect(dashboard, isNot(contains("vitals.heartRate == null ? '—'")));
+
+    final session = readLib('src/state/session_controller.dart');
+    expect(session, contains('int? get plannedMinutes'));
+    expect(session, contains('bool get timeUp'));
+    expect(session, contains('Future<void> endAtSettled()'));
+    expect(session, contains('Future<void> findRecoverableSession()'));
+
+    final sessionScreen = readLib('src/screens/session_screen.dart');
+    expect(sessionScreen, isNot(contains('_readinessImpact')));
+    expect(sessionScreen, contains('class MorningAfterBlock'));
+    expect(sessionScreen, contains('class PastSessionScreen'));
+
+    // Chakra is gone for good (bug 9).
+    expect(readLib('src/data/catalog.dart'), isNot(contains('chakraBalance')));
+    expect(sessionScreen, isNot(contains('Chakra')));
+    expect(readLib('src/screens/wallet_screen.dart'),
+        isNot(contains('Rewards & quests')));
+
+    final catalog = readLib('src/data/catalog.dart');
+    expect(catalog, contains("name: 'Treadmill Walk / Run'"));
+    expect(catalog, contains("name: 'Gym'"));
+    expect(catalog, contains("id: 'saunaCold'"));
+    expect(catalog, contains('List<Activity> searchActivities('));
+    expect(catalog, contains('bool get isTimed'));
+
+    final db = readLib('src/data/db.dart');
+    expect(db, contains('class CycleDays extends Table'));
+    expect(db, contains('class UserActivities extends Table'));
+    expect(db, contains('Future<void> updateJournalEntry('));
+    expect(db, contains('Future<SessionRow?> unfinishedSession()'));
+
+    final notify = readLib('src/services/vitals_notification_service.dart');
+    expect(notify, contains('schedulePracticeEnd'));
+    expect(notify, contains('scheduleStaleRingAlert'));
+    expect(notify, contains('scheduleRingOfflineAlert'));
+
+    // Bug 5: the Android 12+ splash uses its own padded asset.
+    final pubspec = File('pubspec.yaml').readAsStringSync();
+    expect(pubspec, contains('assets/splash_logo_android12.png'));
+    expect(pubspec, contains('version: 1.1.2+9'));
+
+    final manifest = File('scripts/release-manifest.txt').readAsStringSync();
+    expect(manifest, contains('judged against typical ranges'));
+    expect(manifest, contains('Period started'));
   });
 }

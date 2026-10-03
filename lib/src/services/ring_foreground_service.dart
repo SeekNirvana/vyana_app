@@ -30,6 +30,10 @@ class RingForegroundTaskHandler extends TaskHandler {
 
   @override
   void onRepeatEvent(DateTime timestamp) {
+    // Record the heartbeat so the app can tell, on the next launch, whether
+    // the system killed it mid-watch (bug 18(5)): a gap much larger than the
+    // interval means the process was not running when it should have been.
+    unawaited(RingForegroundService.recordHeartbeat(timestamp));
     // Ask the main isolate (which owns the ring connection) to sync. It decides
     // whether a reconnect is needed and whether enough time has elapsed.
     FlutterForegroundTask.sendDataToMain(kRingForegroundSyncTick);
@@ -62,6 +66,58 @@ class RingForegroundTaskHandler extends TaskHandler {
 class RingForegroundService {
   static bool _initialized = false;
 
+  static const _heartbeatKey = 'vyana.ring.service.lastHeartbeat';
+
+  /// Stamps the time of a service heartbeat. Runs in the service isolate, so
+  /// it talks to SharedPreferences directly rather than through a provider.
+  static Future<void> recordHeartbeat(DateTime at) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_heartbeatKey, at.millisecondsSinceEpoch);
+    } on Object catch (_) {
+      // A missed stamp only costs us one data point of the gap detection.
+    }
+  }
+
+  static Future<DateTime?> lastHeartbeat() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ms = prefs.getInt(_heartbeatKey);
+      return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+    } on Object catch (_) {
+      return null;
+    }
+  }
+
+  /// Bug 18(5): Android gives no warning before killing an app, so the only
+  /// honest signal is a gap in heartbeats larger than twice the interval
+  /// while a ring was paired. Returns the gap when one is found.
+  static Future<Duration?> missedWatchGap({required int intervalMinutes}) async {
+    final last = await lastHeartbeat();
+    if (last == null) return null;
+    final gap = DateTime.now().difference(last);
+    final tolerance = Duration(minutes: intervalMinutes * 2);
+    return gap > tolerance ? gap : null;
+  }
+
+  static Future<bool> isExemptFromBatteryOptimisation() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await FlutterForegroundTask.isIgnoringBatteryOptimizations;
+    } on Object catch (_) {
+      return true;
+    }
+  }
+
+  /// Opens the OS screen where the user can let Vyana keep running. Never
+  /// asked up front, and never during ring setup.
+  static Future<void> requestBatteryExemption() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await FlutterForegroundTask.openIgnoreBatteryOptimizationSettings();
+    } on Object catch (_) {}
+  }
+
   /// Default background heartbeat cadence (minutes) when no interval is passed.
   static const int _defaultRepeatMinutes = kPeriodicSyncDefaultIntervalMinutes;
 
@@ -74,7 +130,10 @@ class RingForegroundService {
       eventAction: ForegroundTaskEventAction.repeat(
         Duration(minutes: intervalMinutes).inMilliseconds,
       ),
-      autoRunOnBoot: false,
+      // Bug 6 (3): without this the service never comes back after a
+      // reboot, so a paired ring silently stops being watched until the user
+      // happens to open the app.
+      autoRunOnBoot: true,
       allowWakeLock: true,
       allowWifiLock: false,
     );

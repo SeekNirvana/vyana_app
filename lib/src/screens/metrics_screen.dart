@@ -110,9 +110,16 @@ class _MetricsScreenState extends ConsumerState<MetricsScreen> {
             range: range,
             trainingFrequency: band,
             stale: stale,
+            question: dueBaselineQuestion(
+              controller: c,
+              baselines: ref.watch(personalBaselinesProvider),
+              trainingFrequency: band,
+            ),
           ),
           const SizedBox(height: 26),
           _EcgBlock(controller: c),
+          const SizedBox(height: 26),
+          const CycleBlock(),
           const SizedBox(height: 22),
           _ExportLine(
             onTap: () => openExports(context, ref, section: ExportSection.health),
@@ -163,22 +170,22 @@ List<({DateTime day, int score})> readinessSeries(
   final now = DateTime.now();
   final since = DateTime(now.year, now.month, now.day)
       .subtract(Duration(days: days - 1));
-  final hrvByDay = <DateTime, List<double>>{};
-  for (final p in vitalHistoryPoints(history, VitalsMetricKind.hrv)) {
-    final day = DateTime(p.time.year, p.time.month, p.time.day);
-    hrvByDay.putIfAbsent(day, () => []).add(p.value);
-  }
+  final hrvPoints = vitalHistoryPoints(history, VitalsMetricKind.hrv);
   final out = <({DateTime day, int score})>[];
   for (final night in sleepDaySummaries(history.sleep).reversed) {
     if (night.day.isBefore(since)) continue;
-    final hrvs = hrvByDay[night.day];
-    final hrv = hrvs == null || hrvs.isEmpty
-        ? null
-        : hrvs.reduce((a, b) => a + b) / hrvs.length;
-    final hrvComponent =
-        hrv == null ? 50.0 : (hrv.clamp(20, 90) / 90 * 100);
-    final score = (night.score * 0.65 + hrvComponent * 0.35).round().clamp(0, 100);
-    out.add((day: night.day, score: score));
+    // Bug 14(c): a truncated night is a gap, not a low score — including it
+    // dragged both the chart and the average that Home compares against.
+    if (sleepNightStatus(night, now: night.day, history: history) ==
+        SleepNightStatus.incomplete) {
+      continue;
+    }
+    // Bug 16: the same overnight HRV Home uses. This used to be the mean of
+    // every HRV reading in the day, so a daytime spot measurement moved the
+    // chart but not the score beside it.
+    final hrv = hrvForDay(hrvPoints: hrvPoints, night: night, day: night.day);
+    final score = readinessScoreFrom(sleepScore: night.score, hrv: hrv);
+    if (score != null) out.add((day: night.day, score: score));
   }
   return out;
 }
@@ -808,9 +815,21 @@ List<_VitalRowData> _buildVitalRows(
     );
   }
 
+  // Bugs 11 and 16: these rows used the newest live reading, so a daytime
+  // measurement replaced the morning's recovery numbers here too. Both now
+  // read the day's value, the same one Home and readiness use. Spot readings
+  // stay available in each vital's detail list.
+  final nights = sleepDaySummaries(history.sleep);
+  final tonight = sleepNightForToday(nights);
+  final today_ = DateTime.now();
+  final todayDay_ = DateTime(today_.year, today_.month, today_.day);
+
   final hrvPoints = vitalHistoryPoints(history, VitalsMetricKind.hrv);
-  final hrvToday = vitals.hrv?.toDouble() ??
-      (hrvPoints.isEmpty ? null : hrvPoints.last.value);
+  final hrvToday = hrvForDay(
+    hrvPoints: hrvPoints,
+    night: tonight,
+    day: todayDay_,
+  )?.toDouble();
 
   final sleepPoints = [
     for (final d in sleepDaySummaries(history.sleep).reversed)
@@ -823,8 +842,12 @@ List<_VitalRowData> _buildVitalRows(
   final sleepToday = sleepPoints.isEmpty ? null : sleepPoints.last.value;
 
   final hrPoints = vitalHistoryPoints(history, VitalsMetricKind.heartRate);
-  final hrToday = vitals.heartRate?.toDouble() ??
-      (hrPoints.isEmpty ? null : hrPoints.last.value);
+  final hrToday = restingHrForDay(
+    hrPoints: hrPoints,
+    day: todayDay_,
+    night: tonight,
+    sessions: sportWindows(history.sport, todayDay_),
+  )?.toDouble();
 
   final stressPoints = vitalHistoryPoints(history, VitalsMetricKind.stress);
   final stressToday = vitals.pressure ?? (stressPoints.isEmpty ? null : stressPoints.last.value);
@@ -967,12 +990,16 @@ class _AllVitalsBlock extends StatelessWidget {
     required this.range,
     required this.trainingFrequency,
     required this.stale,
+    this.question,
   });
 
   final RingController controller;
   final MetricsRange range;
   final TrainingFrequency? trainingFrequency;
   final bool stale;
+
+  /// Today's baseline question, when one is due (§14). At most one per day.
+  final BaselineQuestion? question;
 
   @override
   Widget build(BuildContext context) {
@@ -998,9 +1025,16 @@ class _AllVitalsBlock extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
+        const BaselineLearningStrip(),
         MonoEyebrow('KEY METRICS', size: 10.5, spacing: 0.9),
         const SizedBox(height: 6),
-        for (final r in key) _VitalRow(data: r, controller: controller, stale: stale),
+        for (final r in key) ...[
+          _VitalRow(data: r, controller: controller, stale: stale),
+          // The question sits under the row it is about, so the number and
+          // the ask are read together.
+          if (question != null && _questionBelongsTo(question!, r.kind))
+            BaselineQuestionCard(question: question!),
+        ],
         const SizedBox(height: 14),
         MonoEyebrow('OTHER VITALS', size: 10.5, spacing: 0.9),
         const SizedBox(height: 6),
@@ -1352,4 +1386,16 @@ class _ExportLine extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Which row a baseline question hangs under. Stress is asked off the HRV
+/// series but concerns resting HR, which is the row the user is looking at
+/// when they wonder why they read as stressed.
+bool _questionBelongsTo(BaselineQuestion question, VitalsMetricKind kind) {
+  return switch (question.vital) {
+    BaselineVital.sleep => kind == VitalsMetricKind.sleep,
+    BaselineVital.restingHr => kind == VitalsMetricKind.heartRate,
+    BaselineVital.stress => kind == VitalsMetricKind.stress,
+    BaselineVital.hrv => kind == VitalsMetricKind.hrv,
+  };
 }

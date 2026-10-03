@@ -13,6 +13,14 @@ class PracticeScreen extends ConsumerStatefulWidget {
 class _PracticeScreenState extends ConsumerState<PracticeScreen> {
   String _cat = 'sport';
   bool _editing = false;
+  final _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +33,11 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     final pins = ref.watch(pinnedPracticesProvider);
     final sessions = ref.watch(recentSessionsProvider).valueOrNull ?? const [];
     final category = kActivityCategories.firstWhere((c) => c.id == _cat);
-    final activities = activitiesByCat(_cat);
+    // Watched so the user's own sports appear without a restart.
+    ref.watch(userActivitiesProvider);
+    final searching = _query.trim().isNotEmpty;
+    final activities =
+        searching ? searchActivities(_query) : allActivitiesByCat(_cat);
     final moment = homeMomentAt(DateTime.now());
     final suggestedId = suggestedPracticeFor(
       intent,
@@ -46,6 +58,13 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
         VAppBar(
           title: 'Practice',
           actions: [
+            // Bug 10: history's only entry point was a calendar icon buried
+            // on Weekly Insights. It belongs where practices are.
+            IconBtn(
+              icon: 'calendar',
+              onTap: () => openSessionHistory(context),
+            ),
+            const SizedBox(width: 8),
             IconBtn(icon: 'insights', onTap: () => openWeeklyInsights(context)),
           ],
         ),
@@ -167,14 +186,35 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                 ref.read(pinnedPracticesProvider.notifier).reorder(from, to),
             onAdd: () => _openPinPicker(context),
           ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
+        // §5 / mock 12c: the last session, openable. One line, because the
+        // point is to be able to get back to it, not to re-report it.
+        _RecentLine(sessions: sessions),
+        const SizedBox(height: 20),
         // ── Catalogue ─────────────────────────────────────────────────────
-        _CategoryControl(
-          active: _cat,
-          onPick: (id) => setState(() => _cat = id),
+        // §5: Movement is past thirty rows, so there has to be a way in
+        // other than scrolling. Search matches across all three categories.
+        _CatalogueSearch(
+          controller: _search,
+          onChanged: (value) => setState(() => _query = value),
         ),
-        const SizedBox(height: 12),
-        MonoEyebrow(category.eyebrow, size: 11, spacing: 0.9),
+        const SizedBox(height: 10),
+        if (!searching) ...[
+          _CategoryControl(
+            active: _cat,
+            onPick: (id) => setState(() => _cat = id),
+          ),
+          const SizedBox(height: 12),
+          MonoEyebrow(category.eyebrow, size: 11, spacing: 0.9),
+        ] else
+          MonoEyebrow(
+            activities.isEmpty
+                ? 'NO MATCHES'
+                : '${activities.length} '
+                    '${activities.length == 1 ? 'MATCH' : 'MATCHES'}',
+            size: 11,
+            spacing: 0.9,
+          ),
         const SizedBox(height: 8),
         for (final a in activities)
           Padding(
@@ -184,6 +224,19 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
               pinned: pins.contains(a.id),
               onPin: () =>
                   ref.read(pinnedPracticesProvider.notifier).toggle(a.id),
+            ),
+          ),
+        // Last row of Movement, and the fallback when search finds nothing.
+        if (searching || _cat == 'sport')
+          Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: _AddYourOwnRow(
+              query: _query.trim(),
+              onTap: () => showAddYourOwnSportSheet(
+                context,
+                ref,
+                prefill: _query.trim(),
+              ),
             ),
           ),
       ],
@@ -675,7 +728,11 @@ class _CatalogueRow extends StatelessWidget {
                   spacing: 6,
                   runSpacing: 6,
                   children: [
-                    _MetaChip(label: '${activity.dur} min'),
+                    // §5 Length: a duration is only shown where the practice
+                    // actually has one. Start/end sessions were advertising a
+                    // "35 min" they never enforced.
+                    if (activity.isTimed)
+                      _MetaChip(label: '${activity.dur} min'),
                     _MetaChip(label: guide),
                   ],
                 ),
@@ -801,9 +858,8 @@ class _PinPickerSheet extends ConsumerWidget {
 }
 
 class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.label, this.icon});
+  const _MetaChip({required this.label});
   final String label;
-  final String? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -815,16 +871,7 @@ class _MetaChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(100),
         border: Border.all(color: t.hairline),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            VyanaIcon(icon!, size: 12, color: t.textSec),
-            const SizedBox(width: 4),
-          ],
-          MonoEyebrow(label, size: 10.5, spacing: 0.5),
-        ],
-      ),
+      child: MonoEyebrow(label, size: 10.5, spacing: 0.5),
     );
   }
 }
@@ -842,11 +889,52 @@ class ActivityDetailScreen extends ConsumerStatefulWidget {
       _ActivityDetailScreenState();
 }
 
+/// Gym's remembered mode (§5, mock 12d).
+const _gymModeKey = 'vyana.practice.gymTracksSets';
+
 class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
+  /// Null for open-ended sessions: no preset length except timed practices.
   late int _duration = widget.minutes ?? widget.activity.dur;
 
-  bool get _hasLengthChooser =>
-      widget.activity.cat == 'mind' || widget.activity.cat == 'wellness';
+  /// Gym only. Defaults to "Start and end", as the handover specifies.
+  bool _tracksSets = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.activity.kind == 'strength') {
+      unawaited(_loadGymMode());
+    }
+  }
+
+  /// A user-added sport can be removed from its own practice screen. Its
+  /// past sessions stay, since they are stored by id and still carry the
+  /// name in their summary.
+  Future<void> _deleteUserSport(BuildContext context) async {
+    final confirmed = await showVyanaConfirmDialog<bool>(
+      context: context,
+      title: 'Remove ${widget.activity.name}?',
+      message: 'It leaves your catalogue. Sessions you already recorded are '
+          'kept.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    );
+    if (confirmed != true) return;
+    await ref.read(databaseProvider).deleteUserActivity(widget.activity.id);
+    await ref.read(pinnedPracticesProvider.notifier).unpin(widget.activity.id);
+    if (context.mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _loadGymMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getBool(_gymModeKey) ?? false;
+    if (mounted) setState(() => _tracksSets = stored);
+  }
+
+  /// §5 Length: only a timed practice has a length to choose, because only a
+  /// timed practice keeps it. Movement is open-ended and counts up, so
+  /// offering it a preset would promise an end it never delivers.
+  bool get _hasLengthChooser => widget.activity.isTimed;
 
   List<int> get _lengthOptions {
     final base = widget.activity.dur;
@@ -862,7 +950,23 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final a = widget.activity;
-    final ac = t.vit(a.accent);
+    final pins = ref.watch(pinnedPracticesProvider);
+    final pinIndex = pins.indexOf(a.id);
+    final pinned = pinIndex >= 0;
+    // §5/§11: the icon takes its pin-slot hue when pinned and grey otherwise.
+    // The old per-activity `t.vit(a.accent)` broke the colour rule — identity
+    // colour belongs to the four key metrics, not to every practice.
+    final ac = pinned
+        ? t.pinPalette[pinIndex % t.pinPalette.length]
+        : t.mutedInk;
+    final sessions = <SessionRow>[
+      for (final row in ref.watch(recentSessionsProvider).valueOrNull ??
+          const <SessionRow>[])
+        if (row.vyanaActivityType == a.id && row.endedAt != null) row,
+    ];
+    final everDone = sessions.isNotEmpty;
+    final category =
+        kActivityCategories.firstWhere((c) => c.id == a.cat).eyebrow;
 
     return Scaffold(
       body: DecoratedBox(
@@ -881,114 +985,100 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                           onTap: () => Navigator.of(context).pop(),
                         ),
                         const Spacer(),
+                        // 12c: an unpinned practice gets the same pin toggle
+                        // as its catalogue row, at the header's right.
+                        IconBtn(
+                          icon: pinned ? 'pin' : 'pinOff',
+                          active: pinned,
+                          onTap: () => ref
+                              .read(pinnedPracticesProvider.notifier)
+                              .toggle(a.id),
+                        ),
+                        if (a.id.startsWith('user_')) ...[
+                          const SizedBox(width: 8),
+                          IconBtn(
+                            icon: 'trash',
+                            onTap: () => _deleteUserSport(context),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Panel(
-                      grad: true,
-                      pad: 20,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              color: ac.withValues(
-                                alpha: t.isDark ? 0.2 : 0.13,
-                              ),
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: Center(
-                              child: VyanaIcon(a.icon, size: 28, color: ac),
-                            ),
+                    // Header row: icon + name, then CATEGORY · PINNED.
+                    Row(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: ac.withValues(alpha: t.isDark ? 0.2 : 0.13),
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          const SizedBox(height: 14),
-                          Text(
-                            a.name,
-                            style: VyanaType.titleSerif.copyWith(
-                              color: t.text,
-                              fontSize: 27,
-                            ),
+                          child: Center(
+                            child: VyanaIcon(a.icon, size: 25, color: ac),
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            a.blurb,
-                            style: VyanaType.bodySm.copyWith(
-                              color: t.textSec,
-                              height: 1.5,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
+                        ),
+                        const SizedBox(width: 13),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              _MetaChip(
-                                label: a.gps ? 'GPS' : 'No GPS',
-                                icon: a.gps ? 'mapPin' : 'ring',
+                              MonoEyebrow(
+                                pinned
+                                    ? '${category.toUpperCase()} · PINNED'
+                                    : category.toUpperCase(),
+                                size: 11.5,
+                                spacing: 0.9,
                               ),
-                              _MetaChip(label: guidanceLabel(a.guidance)),
-                              _MetaChip(label: 'Ring: ${a.ring}'),
+                              const SizedBox(height: 3),
+                              Text(
+                                a.name,
+                                style: VyanaType.titleSerif.copyWith(
+                                  color: t.text,
+                                  fontSize: 24,
+                                ),
+                              ),
                             ],
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    const SectionHead(
-                      eyebrow: 'Method',
-                      title: 'How to practice',
-                    ),
-                    for (var i = 0; i < a.how.length; i++)
-                      _HowStep(index: i + 1, text: a.how[i], accent: ac),
-                    const SizedBox(height: 18),
-                    const SectionHead(
-                      eyebrow: 'Measured',
-                      title: 'What Vyana tracks',
-                    ),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final tr in a.track) _MetaChip(label: tr),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    Panel(
-                      pad: 14,
-                      accent: ac,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          VyanaIcon('speaker', size: 18, color: ac),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              a.coaching,
-                              style: VyanaType.bodySm.copyWith(
-                                color: t.textSec,
-                                height: 1.45,
-                              ),
-                            ),
-                          ),
-                        ],
+                    const SizedBox(height: 10),
+                    Text(
+                      a.blurb,
+                      style: VyanaType.bodySm.copyWith(
+                        color: t.textSec,
+                        height: 1.5,
                       ),
+                    ),
+                    // The meta chips (GPS / guidance / Ring: …), the "What
+                    // Vyana tracks" chips and the coaching panel are gone:
+                    // they described the app, not the practice.
+                    if (everDone) ...[
+                      const SizedBox(height: 20),
+                      _ActivityHistory(activity: a, sessions: sessions),
+                    ],
+                    const SizedBox(height: 18),
+                    // Open by default until the practice has been done once.
+                    _HowItWorks(
+                      activity: a,
+                      accent: ac,
+                      initiallyOpen: !everDone,
                     ),
                     if (_hasLengthChooser) ...[
                       const SizedBox(height: 18),
                       const SectionHead(eyebrow: 'Length', title: 'How long?'),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
                           for (final m in _lengthOptions)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: Pill(
-                                label: '$m min',
-                                active: _duration == m,
-                                accent: ac,
-                                onTap: () => setState(() => _duration = m),
-                              ),
+                            Pill(
+                              label: '$m min',
+                              active: _duration == m,
+                              accent: ac,
+                              onTap: () => setState(() => _duration = m),
                             ),
                         ],
                       ),
@@ -996,6 +1086,20 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                   ],
                 ),
               ),
+              // §5 (12d): Gym's mode switch sits directly above Start, with
+              // a one-line hint, and the choice is remembered.
+              if (a.kind == 'strength')
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: _GymModeSwitch(
+                    tracksSets: _tracksSets,
+                    onPick: (value) async {
+                      setState(() => _tracksSets = value);
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool(_gymModeKey, value);
+                    },
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
                 child: Cta(
@@ -1016,7 +1120,13 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
     // If a session is already running, just jump back into it rather than
     // erroring (only one runs at a time).
     if (!controller.active) {
-      final error = await controller.start(widget.activity);
+      // Bug 12: the chosen length now reaches the session, so a suggested
+      // three minutes counts down and ends instead of running forever.
+      final error = await controller.start(
+        widget.activity,
+        minutes: _hasLengthChooser ? _duration : null,
+        tracksSets: _tracksSets,
+      );
       if (!context.mounted) return;
       if (error != null) {
         ScaffoldMessenger.of(
@@ -1082,6 +1192,659 @@ class _HowStep extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// §5 "Recent": the RECENT eyebrow with See all on the right, then the last
+/// three finished sessions of any practice — each as name + mono day. Wraps
+/// to a second line rather than scrolling or truncating a name.
+class _RecentLine extends StatelessWidget {
+  const _RecentLine({required this.sessions});
+
+  final List<SessionRow> sessions;
+
+  @override
+  Widget build(BuildContext context) {
+    final finished = [
+      for (final s in sessions)
+        if (s.endedAt != null) s,
+    ].take(3).toList();
+    if (finished.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: MonoEyebrow('RECENT', size: 11.5, spacing: 0.9)),
+            BorderedPill(
+              label: 'See all',
+              onTap: () => openSessionHistory(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 7,
+          runSpacing: 7,
+          children: [
+            for (final row in finished)
+              _RecentChip(
+                row: row,
+                // A name opens that practice with its history (12a).
+                onTap: () {
+                  final activity = activityById(row.vyanaActivityType);
+                  if (activity == null) {
+                    openPastSession(context, row);
+                    return;
+                  }
+                  openActivityDetail(context, activity);
+                },
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _RecentChip extends StatelessWidget {
+  const _RecentChip({required this.row, required this.onTap});
+
+  final SessionRow row;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final activity = activityById(row.vyanaActivityType);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(100),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 36),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(100),
+          border: Border.all(color: t.hairline),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Never truncated: the whole name stays, the row wraps instead.
+            Text(
+              activity?.name ?? 'Session',
+              style: VyanaType.caption.copyWith(color: t.text, fontSize: 13),
+            ),
+            const SizedBox(width: 7),
+            MonoEyebrow(_recentDay(row.startedAt), size: 11.5, spacing: 0.9),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// TODAY for today, the weekday within the last week, a date beyond that.
+String _recentDay(DateTime at) {
+  const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+  const months = [
+    'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+    'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+  ];
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(at.year, at.month, at.day);
+  final ago = today.difference(day).inDays;
+  if (ago == 0) return 'TODAY';
+  if (ago < 7) return days[at.weekday - 1];
+  return '${at.day} ${months[at.month - 1]}';
+}
+
+/// §5 "Catalogue search": a single field above the category control.
+class _CatalogueSearch extends StatelessWidget {
+  const _CatalogueSearch({required this.controller, required this.onChanged});
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 48),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.hairline),
+      ),
+      child: Row(
+        children: [
+          VyanaIcon('search', size: 17, color: t.mutedInk),
+          const SizedBox(width: 9),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: onChanged,
+              textInputAction: TextInputAction.search,
+              style: VyanaType.bodySm.copyWith(color: t.text, fontSize: 14),
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Search practices',
+                hintStyle:
+                    VyanaType.bodySm.copyWith(color: t.mutedInk, fontSize: 14),
+              ),
+            ),
+          ),
+          if (controller.text.isNotEmpty)
+            InkWell(
+              onTap: () {
+                controller.clear();
+                onChanged('');
+              },
+              borderRadius: BorderRadius.circular(100),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: VyanaIcon('x', size: 15, color: t.mutedInk),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Add your own sport", or "Add 'Curling' as your own sport" when a search
+/// found nothing (§5).
+class _AddYourOwnRow extends StatelessWidget {
+  const _AddYourOwnRow({required this.query, required this.onTap});
+
+  final String query;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return HairlineCard(
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+      onTap: onTap,
+      child: Row(
+        children: [
+          VyanaIcon('sports', size: 18, color: t.mutedInk),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              query.isEmpty
+                  ? 'Add your own sport'
+                  : "Add '$query' as your own sport",
+              style: VyanaType.label.copyWith(color: t.text, fontSize: 14),
+            ),
+          ),
+          VyanaIcon('chevR', size: 16, color: t.mutedInk),
+        ],
+      ),
+    );
+  }
+}
+
+/// One name and one question — "Where do you do it?" — because that is all
+/// the app actually needs to know to track it (§5, mock 12e).
+Future<void> showAddYourOwnSportSheet(
+  BuildContext context,
+  WidgetRef ref, {
+  String prefill = '',
+}) {
+  final t = context.vyana;
+  final name = TextEditingController(text: prefill);
+  var icon = 'sports';
+
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.fromLTRB(
+        16, 0, 16, 16 + MediaQuery.viewInsetsOf(sheetContext).bottom +
+            MediaQuery.paddingOf(sheetContext).bottom,
+      ),
+      child: StatefulBuilder(
+        builder: (context, setState) {
+          Future<void> add(String kind) async {
+            final label = name.text.trim();
+            if (label.isEmpty) return;
+            final navigator = Navigator.of(sheetContext);
+            await ref.read(databaseProvider).upsertUserActivity(
+                  id: 'user_${DateTime.now().microsecondsSinceEpoch}',
+                  name: label,
+                  kind: kind,
+                  icon: icon,
+                );
+            if (navigator.canPop()) navigator.pop();
+          }
+
+          return Panel(
+            pad: 18,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                MonoEyebrow('YOUR OWN SPORT', size: 9),
+                const SizedBox(height: 6),
+                Text(
+                  'What do you call it?',
+                  style:
+                      VyanaType.titleSerif.copyWith(color: t.text, fontSize: 21),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: t.hairline),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: name,
+                          autofocus: prefill.isEmpty,
+                          onChanged: (_) => setState(() {}),
+                          style: VyanaType.bodySm
+                              .copyWith(color: t.text, fontSize: 14),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            border: InputBorder.none,
+                            hintText: 'Curling',
+                            hintStyle: VyanaType.bodySm
+                                .copyWith(color: t.mutedInk, fontSize: 14),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                MonoEyebrow('GLYPH', size: 9),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final glyph in const [
+                      'sports', 'run', 'bike', 'swim', 'racket', 'volleyball',
+                      'hockey', 'boxing', 'ski', 'skate', 'surf', 'kayak',
+                    ])
+                      InkWell(
+                        onTap: () => setState(() => icon = glyph),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: icon == glyph ? t.green : t.hairline,
+                              width: icon == glyph ? 1.6 : 1,
+                            ),
+                          ),
+                          child: Center(
+                            child: VyanaIcon(
+                              glyph,
+                              size: 20,
+                              color: icon == glyph ? t.green : t.mutedInk,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Where do you do it?',
+                  style: VyanaType.label.copyWith(color: t.text, fontSize: 15),
+                ),
+                const SizedBox(height: 10),
+                Panel(
+                  pad: 13,
+                  onTap: name.text.trim().isEmpty ? null : () => add('gps'),
+                  child: Row(
+                    children: [
+                      VyanaIcon('mapPin', size: 17, color: t.mutedInk),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Text(
+                          'Outdoors, moving around',
+                          style: VyanaType.label.copyWith(color: t.text),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Panel(
+                  pad: 13,
+                  onTap: name.text.trim().isEmpty ? null : () => add('indoor'),
+                  child: Row(
+                    children: [
+                      VyanaIcon('dumbbell', size: 17, color: t.mutedInk),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Text(
+                          'Indoors or in one place',
+                          style: VyanaType.label.copyWith(color: t.text),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (name.text.trim().isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    "Adds ${name.text.trim()} to Movement, where it can be "
+                    'pinned and keeps its own history.',
+                    style: VyanaType.caption
+                        .copyWith(color: t.mutedInk, fontSize: 12.5),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    ),
+  );
+}
+
+/// Gym's two modes, with the hint that says what each one asks of you.
+class _GymModeSwitch extends StatelessWidget {
+  const _GymModeSwitch({required this.tracksSets, required this.onPick});
+
+  final bool tracksSets;
+  final ValueChanged<bool> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    Widget option(String label, bool value) {
+      final active = tracksSets == value;
+      return Expanded(
+        child: InkWell(
+          onTap: () => onPick(value),
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 40),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+            decoration: BoxDecoration(
+              color: active ? t.elevated : null,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: active ? t.green : t.hairline),
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                style: VyanaType.caption.copyWith(
+                  color: active ? t.text : t.textSec,
+                  fontSize: 13,
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            option('Start and end', false),
+            const SizedBox(width: 8),
+            option('Track sets & rest', true),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          tracksSets
+              ? 'Log a set, then rest; Vyana watches your HR drop.'
+              : 'Nothing to tap until you finish.',
+          style: VyanaType.caption.copyWith(color: t.mutedInk, fontSize: 12.5),
+        ),
+      ],
+    );
+  }
+}
+
+/// §5 (12a): "Your history" — three tiles for the last 30 days, then this
+/// activity's sessions newest first. Hidden when the practice has never been
+/// done, which the caller checks.
+class _ActivityHistory extends StatelessWidget {
+  const _ActivityHistory({required this.activity, required this.sessions});
+
+  final Activity activity;
+  final List<SessionRow> sessions;
+
+  @override
+  Widget build(BuildContext context) {
+    final cutoff = DateTime.now().subtract(const Duration(days: 30));
+    final recent = [
+      for (final s in sessions)
+        if (s.startedAt.isAfter(cutoff)) s,
+    ];
+    var totalMinutes = 0;
+    final hrs = <int>[];
+    for (final s in recent) {
+      totalMinutes += s.endedAt!.difference(s.startedAt).inMinutes;
+      final hr = _avgHrOf(s);
+      if (hr != null) hrs.add(hr);
+    }
+    final avgHr = hrs.isEmpty
+        ? null
+        : (hrs.reduce((a, b) => a + b) / hrs.length).round();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionHead(eyebrow: 'Last 30 days', title: 'Your history'),
+        Row(
+          children: [
+            _HistoryTile(label: 'SESSIONS', value: '${recent.length}'),
+            const SizedBox(width: 8),
+            _HistoryTile(label: 'TOTAL', value: '${totalMinutes}m'),
+            const SizedBox(width: 8),
+            _HistoryTile(
+              label: 'AVG HR',
+              value: avgHr == null ? '—' : '$avgHr',
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        for (final s in sessions.take(10))
+          Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: _ActivitySessionRow(row: s),
+          ),
+      ],
+    );
+  }
+}
+
+int? _avgHrOf(SessionRow row) {
+  final raw = row.summaryJson;
+  if (raw == null) return null;
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is Map) {
+      final v = decoded['avgHr'];
+      if (v is num && v > 0) return v.round();
+    }
+  } catch (_) {}
+  return null;
+}
+
+int? _maxHrOf(SessionRow row) {
+  final raw = row.summaryJson;
+  if (raw == null) return null;
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is Map) {
+      final v = decoded['maxHr'];
+      if (v is num && v > 0) return v.round();
+    }
+  } catch (_) {}
+  return null;
+}
+
+class _HistoryTile extends StatelessWidget {
+  const _HistoryTile({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
+        decoration: BoxDecoration(
+          color: t.elevated,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: t.hairline),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            MonoEyebrow(label, size: 11.5, spacing: 0.9),
+            const SizedBox(height: 4),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                style: VyanaType.label.copyWith(color: t.text, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivitySessionRow extends StatelessWidget {
+  const _ActivitySessionRow({required this.row});
+
+  final SessionRow row;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final minutes = row.endedAt!.difference(row.startedAt).inMinutes;
+    final avg = _avgHrOf(row);
+    final max = _maxHrOf(row);
+    return HairlineCard(
+      padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
+      onTap: () => openPastSession(context, row),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 10,
+        runSpacing: 4,
+        children: [
+          Text(
+            '${_recentDay(row.startedAt)} · '
+            '${row.startedAt.hour.toString().padLeft(2, '0')}:'
+            '${row.startedAt.minute.toString().padLeft(2, '0')}',
+            style: VyanaType.caption.copyWith(color: t.text, fontSize: 13.5),
+          ),
+          Text(
+            '${minutes}m'
+            '${avg == null ? '' : ' · $avg'}'
+            '${max == null ? '' : ' · $max bpm'}',
+            style: VyanaType.mono10.copyWith(color: t.mutedInk),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One collapsed row, open by default until the practice has been done once.
+class _HowItWorks extends StatefulWidget {
+  const _HowItWorks({
+    required this.activity,
+    required this.accent,
+    required this.initiallyOpen,
+  });
+
+  final Activity activity;
+  final Color accent;
+  final bool initiallyOpen;
+
+  @override
+  State<_HowItWorks> createState() => _HowItWorksState();
+}
+
+class _HowItWorksState extends State<_HowItWorks> {
+  late bool _open = widget.initiallyOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final a = widget.activity;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _open = !_open),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'How it works',
+                    style: VyanaType.label
+                        .copyWith(color: t.heading, fontSize: 16.5),
+                  ),
+                ),
+                VyanaIcon(
+                  _open ? 'chevU' : 'chevD',
+                  size: 18,
+                  color: t.mutedInk,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_open) ...[
+          for (var i = 0; i < a.how.length; i++)
+            _HowStep(index: i + 1, text: a.how[i], accent: widget.accent),
+          // dur appears only as a broad first-time suggestion, never a timer.
+          if (!a.isTimed && a.dur > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Most people start with around ${a.dur} minutes, but this one '
+              'runs until you end it.',
+              style: VyanaType.caption.copyWith(
+                color: t.mutedInk,
+                fontSize: 12.5,
+                height: 1.45,
+              ),
+            ),
+          ],
+        ],
+      ],
     );
   }
 }

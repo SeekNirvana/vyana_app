@@ -15,7 +15,7 @@ Future<void> openVitalDetail(
   );
 }
 
-class VitalsDetailScreen extends StatelessWidget {
+class VitalsDetailScreen extends StatefulWidget {
   const VitalsDetailScreen({
     super.key,
     required this.controller,
@@ -26,7 +26,31 @@ class VitalsDetailScreen extends StatelessWidget {
   final VitalsMetricKind metric;
 
   @override
+  State<VitalsDetailScreen> createState() => _VitalsDetailScreenState();
+}
+
+class _VitalsDetailScreenState extends State<VitalsDetailScreen> {
+  @override
+  void dispose() {
+    // The result belongs to this visit, so it does not greet the user again
+    // the next time they open the screen.
+    widget.controller.clearLastMeasurement();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Bug 15: the screen used to read vitals and history once in build with
+    // no listener, so a reading that arrived changed nothing on screen.
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) => _body(context),
+    );
+  }
+
+  Widget _body(BuildContext context) {
+    final controller = widget.controller;
+    final metric = widget.metric;
     final t = context.vyana;
     final meta = _metricMeta(metric);
     final dashboard = HomeDashboard.from(controller);
@@ -882,17 +906,53 @@ class _RetestButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final action = _retestActionFor(metric, controller)!;
+    final unit = _metricMeta(metric).unit;
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
         final busy = controller.isMeasuring || controller.allVitalsRunning;
         final canRun = controller.isConnected && !busy;
+        // Bug 15 (2): the result stays on the button after it finishes, so a
+        // clean reading and a failed one no longer look the same.
+        final outcome = controller.lastMeasurement;
+        final showResult = !busy && outcome != null;
+        final success = outcome?.captured ?? false;
+
+        final String title;
+        final String subtitle;
+        if (busy) {
+          title = 'Measuring…';
+          subtitle = controller.testStatus.isEmpty
+              ? 'Keep the ring on and still.'
+              : controller.testStatus;
+        } else if (showResult && success) {
+          title = 'New reading';
+          final value = outcome.value;
+          subtitle = value == null
+              ? 'Saved at ${outcome.clockLabel}.'
+              : '$value${unit.isEmpty ? '' : ' $unit'} · '
+                  '${outcome.clockLabel}';
+        } else if (showResult) {
+          title = 'Take a new reading';
+          subtitle =
+              "Couldn't get a clean reading. Keep the ring snug and try again.";
+        } else {
+          title = 'Take a new reading';
+          subtitle = controller.isConnected
+              ? 'Runs a ${action.label.toLowerCase()} measurement on the ring now.'
+              : 'Connect the ring to retest.';
+        }
+
         return Panel(
           pad: 14,
+          // Still tappable after a failure, so retrying is one tap.
           onTap: canRun ? () => unawaited(controller.runMeasurement(action)) : null,
           child: Row(
             children: [
-              VyanaIconBadge(name: 'refresh', color: t.heading),
+              VyanaIconBadge(
+                name: showResult && success ? 'check' : 'refresh',
+                color: showResult && success ? t.green : t.heading,
+              ),
               const SizedBox(width: 13),
               Expanded(
                 child: Column(
@@ -900,18 +960,14 @@ class _RetestButton extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      busy ? 'Measuring…' : 'Take a new reading',
-                      style: VyanaType.label.copyWith(color: t.text),
+                      title,
+                      style: VyanaType.label.copyWith(
+                        color: showResult && success ? t.green : t.text,
+                      ),
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      busy
-                          ? (controller.testStatus.isEmpty
-                              ? 'Keep the ring on and still.'
-                              : controller.testStatus)
-                          : controller.isConnected
-                              ? 'Runs a ${action.label.toLowerCase()} measurement on the ring now.'
-                              : 'Connect the ring to retest.',
+                      subtitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: VyanaType.caption.copyWith(color: t.textSec, height: 1.4),

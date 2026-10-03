@@ -21,6 +21,29 @@ enum UserGender {
   }
 }
 
+/// Whether the user tracks a cycle (§14b). Opt-in, asked once, changeable any
+/// time. `none` means "I no longer have periods" — it behaves exactly like
+/// `off` but is stored so the sheet never asks again.
+enum CycleMode {
+  off('Not tracking'),
+  tracking('Tracking my cycle'),
+  pregnant('Pregnant'),
+  none('No longer have periods');
+
+  const CycleMode(this.label);
+  final String label;
+
+  /// Only `tracking` and `pregnant` render any cycle UI.
+  bool get showsCycleUi => this == CycleMode.tracking || this == CycleMode.pregnant;
+
+  static CycleMode fromStored(String? value) {
+    for (final m in CycleMode.values) {
+      if (m.name == value) return m;
+    }
+    return CycleMode.off;
+  }
+}
+
 /// On-device wellness profile. Age feeds HR/SpO₂ baselines; all fields stay local.
 class UserProfile {
   const UserProfile({
@@ -31,6 +54,9 @@ class UserProfile {
     this.heightCm,
     this.weightKg,
     this.trainingFrequency,
+    this.cycleMode = CycleMode.off,
+    this.cycleSheetSeen = false,
+    this.dueDate,
   });
 
   final String firstName;
@@ -45,6 +71,24 @@ class UserProfile {
   /// enum name so this library stays free of the app's `part` graph; null
   /// means unanswered and the band falls back to the clinical 60–100.
   final String? trainingFrequency;
+
+  /// §14b. Cycle UI exists only while [gender] is female; the stored mode and
+  /// logged days survive a gender change and return if it changes back.
+  final CycleMode cycleMode;
+
+  /// The opt-in sheet is offered once, then never again whatever was chosen.
+  final bool cycleSheetSeen;
+
+  /// Pregnancy due date, when [cycleMode] is [CycleMode.pregnant].
+  final DateTime? dueDate;
+
+  /// Whether any cycle surface should render at all: female, and opted in.
+  bool get showsCycle =>
+      gender == UserGender.female && cycleMode.showsCycleUi;
+
+  /// Whether the opt-in sheet should still be offered.
+  bool get shouldOfferCycleSheet =>
+      gender == UserGender.female && !cycleSheetSeen;
 
   bool get hasFirstName => firstName.trim().isNotEmpty;
 
@@ -89,6 +133,10 @@ class UserProfile {
     bool clearWeightKg = false,
     String? trainingFrequency,
     bool clearTrainingFrequency = false,
+    CycleMode? cycleMode,
+    bool? cycleSheetSeen,
+    DateTime? dueDate,
+    bool clearDueDate = false,
   }) {
     return UserProfile(
       firstName: firstName ?? this.firstName,
@@ -100,6 +148,9 @@ class UserProfile {
       trainingFrequency: clearTrainingFrequency
           ? null
           : (trainingFrequency ?? this.trainingFrequency),
+      cycleMode: cycleMode ?? this.cycleMode,
+      cycleSheetSeen: cycleSheetSeen ?? this.cycleSheetSeen,
+      dueDate: clearDueDate ? null : (dueDate ?? this.dueDate),
     );
   }
 
@@ -111,6 +162,9 @@ class UserProfile {
         if (heightCm != null) 'heightCm': heightCm,
         if (weightKg != null) 'weightKg': weightKg,
         if (trainingFrequency != null) 'trainingFrequency': trainingFrequency,
+        if (cycleMode != CycleMode.off) 'cycleMode': cycleMode.name,
+        if (cycleSheetSeen) 'cycleSheetSeen': true,
+        if (dueDate != null) 'dueDate': dueDate!.toIso8601String(),
       };
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -122,6 +176,9 @@ class UserProfile {
       heightCm: _parseDouble(json['heightCm']),
       weightKg: _parseDouble(json['weightKg']),
       trainingFrequency: json['trainingFrequency']?.toString(),
+      cycleMode: CycleMode.fromStored(json['cycleMode']?.toString()),
+      cycleSheetSeen: json['cycleSheetSeen'] == true,
+      dueDate: DateTime.tryParse(json['dueDate']?.toString() ?? ''),
     );
   }
 

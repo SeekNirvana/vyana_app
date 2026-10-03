@@ -1677,6 +1677,16 @@ DateTime sleepDayForSection(DateTime start, DateTime end) {
   return DateTime(day.year, day.month, day.day);
 }
 
+/// The duration the sleep score's 45 duration points are measured against.
+///
+/// Eight hours for everyone until the user tells Nova that a shorter night
+/// leaves them rested (§14), at which point [PersonalBaselinesController]
+/// writes their own usual night here. It lives as a library-level value
+/// because [SleepDaySummary.score] is read from dozens of call sites that
+/// have no business knowing about baselines — and a score that meant one
+/// thing on Home and another on Metrics would be worse than either.
+Duration sleepScoreDurationTarget = const Duration(hours: 8);
+
 int sleepScoreForBreakdown(SleepStageBreakdown breakdown) {
   if (breakdown.asleepSeconds <= 0) return 0;
 
@@ -1684,7 +1694,8 @@ int sleepScoreForBreakdown(SleepStageBreakdown breakdown) {
   final total = breakdown.totalSeconds <= 0
       ? asleep
       : breakdown.totalSeconds.toDouble();
-  final durationScore = (asleep / (8 * 3600) * 45).clamp(0, 45).toDouble();
+  final targetSeconds = sleepScoreDurationTarget.inSeconds.toDouble();
+  final durationScore = (asleep / targetSeconds * 45).clamp(0, 45).toDouble();
   final efficiency = (asleep / total).clamp(0, 1).toDouble();
   final efficiencyScore = ((efficiency - 0.72) / 0.25 * 20)
       .clamp(0, 20)

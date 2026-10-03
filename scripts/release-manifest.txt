@@ -32,7 +32,7 @@ Check vitals
 
 # v1.0.4 — Live outdoor sessions: real map, 10-min spoken splits, km + terrain cues
 tile.openstreetmap.org
-Acquiring GPS
+keep the sky in view
 Kilometre
 minutes in.
 Steep climb
@@ -89,3 +89,28 @@ Reaching your ring…
 Ring not in reach. Bring it closer and try again.
 vyana.ring.alert.offlineSince
 vyana.ring.alert.lowBatteryFiredAt
+
+# v1.1.2 — Personal baselines, cycle tracking, honest daily vitals
+Learning your normal
+judged against typical ranges for now
+Your readings have said stressed on
+Do you usually wake up feeling rested?
+Period started
+Period ended
+Did your period end on
+Not recorded
+Getting last night…
+sleep not recorded
+Time's up
+Keep going
+Finding GPS…
+Still on your
+Add your own sport
+Search practices
+Treadmill Walk / Run
+Sauna & Cold Plunge
+Track sets & rest
+DONE TODAY
+The morning after
+Delete session
+THE OTHER

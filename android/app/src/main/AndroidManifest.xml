@@ -14,6 +14,12 @@
          versions — do not cap at SDK 30; capping silently breaks runs on 12+. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Bug 13(a): an outdoor session must keep recording with the phone in a
+         pocket and the screen locked. On Android 10+ that needs background
+         location plus a location-typed foreground service, or the position
+         stream is cut and distance stops growing. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -77,7 +83,7 @@
         <!-- Foreground service for continuous ring vitals tracking. -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="dataSync|remoteMessaging"
+            android:foregroundServiceType="dataSync|remoteMessaging|location"
             android:exported="false" />
 
         <!-- Home-screen widgets: live "state of being" tile + one-tap

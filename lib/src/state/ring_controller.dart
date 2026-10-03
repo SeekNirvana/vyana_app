@@ -41,6 +41,9 @@ class RingController extends ChangeNotifier {
   DateTime? _lastReconnectAttempt;
   Duration _reconnectBackoff = _reconnectAttemptInterval;
   bool _reconnectFailedThisLaunch = false;
+  int _tonightSleepRetries = 0;
+  Timer? _tonightSleepRetryTimer;
+  bool _awaitingTonightSleep = false;
   DateTime? _lastConnectionConfirmedAt;
   DateTime? _lastBatteryPoll;
   DateTime? _lastPeriodicSync;
@@ -90,6 +93,7 @@ class RingController extends ChangeNotifier {
   /// retries (batch) and the "retake" hint (single test).
   DeviceAppControlMeasureHealthDataType? _activeMeasureType;
   bool _measureCaptured = false;
+  MeasurementOutcome? _lastMeasurement;
   static const _kMaxVitalRetries = 2;
 
   static const _healthMonitoringEnabledKey = 'health_monitoring_enabled_v1';
@@ -123,6 +127,13 @@ class RingController extends ChangeNotifier {
   /// session can persist raw frames.
   void Function(Map<dynamic, dynamic> event)? sessionEventSink;
 
+  /// Called on every background heartbeat and after every sync, whether or
+  /// not it succeeded. Bug 6: alerts used to be evaluated only from a
+  /// `ref.listen` in the shell, so elapsed-time alerts (the two-hour offline
+  /// check) were never evaluated while the UI was gone — which is precisely
+  /// when they matter. The provider wires this to RingAlertService.
+  Future<void> Function()? onBackgroundTick;
+
   // ── Public state getters ──────────────────────────────────────────────────
   RingRepository get repo => _repo;
   SavedPranaRing? get pairedRing => _pairedRing;
@@ -143,6 +154,16 @@ class RingController extends ChangeNotifier {
   DateTime? get cachedHistorySyncedAt => _cachedHistorySyncedAt;
   HistoryLogStatus get historyLogStatus => _historyLogStatus;
   List<String> get eventLog => List.unmodifiable(_eventLog);
+
+  /// Appends a diagnostic line to the event log. Bug 17 (4) wants it recorded
+  /// whether the ring returned a night, so a delay can be pinned on the ring
+  /// rather than guessed at.
+  void _logEvent(String text) {
+    _set(() {
+      _eventLog.insert(0, '${DateTime.now().toIso8601String()}  $text');
+      if (_eventLog.length > 30) _eventLog.removeLast();
+    });
+  }
 
   // ── Monitor-all-vitals getters ────────────────────────────────────────────
   AllVitalsPhase get allVitalsPhase => _allVitalsPhase;
@@ -206,6 +227,46 @@ class RingController extends ChangeNotifier {
   /// not actually spoken to.
   bool get reconnectFailedThisLaunch => _reconnectFailedThisLaunch;
 
+  /// The outcome of the most recent one-shot measurement, kept after it ends
+  /// so the detail screen can show success or failure instead of dropping
+  /// back to its default subtitle (bug 15). Cleared when a new one starts.
+  MeasurementOutcome? get lastMeasurement => _lastMeasurement;
+
+  /// Forgets the last result — called when the user leaves the detail screen.
+  void clearLastMeasurement() {
+    if (_lastMeasurement == null) return;
+    _set(() => _lastMeasurement = null);
+  }
+
+  /// Whether the ring has handed over a sleep record whose sleep day is today.
+  /// "Synced" means complete, so the eyebrow must not say so until this is
+  /// true (bug 17).
+  bool get hasTonightSleep {
+    final nights = sleepDaySummaries(_history.sleep);
+    return sleepNightForToday(nights) != null;
+  }
+
+  /// True while last night is still expected: a sync is running or a retry is
+  /// pending, and the ring has not produced today's night yet. Home shows
+  /// "Getting last night from your ring…" rather than yesterday's numbers.
+  bool get isAwaitingTonightSleep => _awaitingTonightSleep && !hasTonightSleep;
+
+  /// How many of the scheduled catch-up retries have run.
+  int get tonightSleepRetries => _tonightSleepRetries;
+
+  /// Retry schedule after a sync that came back without last night. The ring
+  /// often has not closed and scored the night in the first minutes after
+  /// waking, so waiting for the 20-minute periodic sync looks like a failure.
+  static const List<Duration> kTonightSleepRetryDelays = [
+    Duration(minutes: 3),
+    Duration(minutes: 10),
+    Duration(minutes: 30),
+  ];
+
+  /// Only chase last night in the morning; by the afternoon a missing night
+  /// is a missing night (bug 14a takes over).
+  static const int kTonightSleepGiveUpHour = 12;
+
   /// Battery percent from the newest source that reported one.
   int? get batteryPercent {
     final v = _vitals.battery;
@@ -255,6 +316,7 @@ class RingController extends ChangeNotifier {
     _ecgPreparationTimer?.cancel();
     _ecgContactTimeout?.cancel();
     _ecgSnapshotTicker?.cancel();
+    _tonightSleepRetryTimer?.cancel();
     measurementSnapshot.dispose();
     super.dispose();
   }
@@ -269,6 +331,10 @@ class RingController extends ChangeNotifier {
 
   Future<void> _backgroundSyncTick() async {
     if (!_isReady) return;
+    // Evaluate alerts first and unconditionally: a ring that is out of reach
+    // produces no state change and no sync, so a change-driven evaluation
+    // never fires the alert that says so.
+    unawaited(_runBackgroundTickHook());
     if (!_isConnected) {
       if (_pairedRing == null) return;
       await reconnectSavedRing();
@@ -277,8 +343,29 @@ class RingController extends ChangeNotifier {
     await _syncDeviceData();
   }
 
+  Future<void> _runBackgroundTickHook() async {
+    final hook = onBackgroundTick;
+    if (hook == null) return;
+    try {
+      await hook();
+    } on Object catch (error) {
+      debugPrint('Background alert evaluation failed: $error');
+    }
+  }
+
+  /// Bug 18 (3): a ring that comes back should be picked up promptly, so the
+  /// grown backoff is thrown away when Bluetooth returns or the user opens
+  /// the app (the closest signal we get to a screen unlock).
+  void resetReconnectPacing() {
+    _resetReconnectBackoff();
+    _lastReconnectAttempt = null;
+  }
+
   /// Call when the app returns to the foreground.
-  void onAppResumed() => unawaited(_refreshConnectionState());
+  void onAppResumed() {
+    resetReconnectPacing();
+    unawaited(_refreshConnectionState());
+  }
 
   Future<void> initialize() async {
     try {
@@ -382,6 +469,40 @@ class RingController extends ChangeNotifier {
     }
   }
 
+  /// Bug 17 (2): if a sync finishes without a record for today's night, retry
+  /// at 3, 10 and 30 minutes rather than waiting for the periodic interval.
+  /// Clears the waiting state as soon as the night lands, or once the retries
+  /// are spent, after which bug 14a's "not recorded" takes over.
+  void _evaluateTonightSleep() {
+    _tonightSleepRetryTimer?.cancel();
+    _tonightSleepRetryTimer = null;
+
+    if (hasTonightSleep) {
+      _tonightSleepRetries = 0;
+      _awaitingTonightSleep = false;
+      _logEvent('tonight_sleep_present');
+      return;
+    }
+    if (DateTime.now().hour >= kTonightSleepGiveUpHour ||
+        _tonightSleepRetries >= kTonightSleepRetryDelays.length) {
+      _awaitingTonightSleep = false;
+      _logEvent('tonight_sleep_absent_gave_up');
+      return;
+    }
+
+    final delay = kTonightSleepRetryDelays[_tonightSleepRetries];
+    _tonightSleepRetries++;
+    _awaitingTonightSleep = true;
+    _logEvent(
+      'tonight_sleep_absent_retry_${_tonightSleepRetries}_in_'
+      '${delay.inMinutes}m',
+    );
+    _tonightSleepRetryTimer = Timer(delay, () {
+      if (_disposed) return;
+      unawaited(_syncDeviceData());
+    });
+  }
+
   Future<void> _maybePeriodicSync() async {
     if (!_isReady ||
         !_isConnected ||
@@ -416,11 +537,24 @@ class RingController extends ChangeNotifier {
         DateTime.now().difference(_lastConnectionConfirmedAt!) <
             _connectionStateGracePeriod;
 
+    // Bluetooth coming back is the one moment a ring is most likely in reach
+    // again, so the grown backoff must not hold the next attempt off.
+    if (bluetoothOnEvent && !_isConnected) {
+      _resetReconnectBackoff();
+      _lastReconnectAttempt = null;
+    }
+
     if (connectedEvent) {
       _isConnected = true;
       _isConnecting = false;
       _lastConnectionConfirmedAt = DateTime.now();
       _reconnectFailedThisLaunch = false;
+      // Bug 6: re-arm the offline alert from this moment, so two hours out of
+      // reach is announced even if the app never runs again in between.
+      unawaited(
+        VitalsNotificationService.instance
+            .scheduleRingOfflineAlert(DateTime.now()),
+      );
       _resetReconnectBackoff();
       if (deviceInfo != null) {
         _selectedDevice = deviceInfo;
@@ -533,6 +667,7 @@ class RingController extends ChangeNotifier {
         _measurementTimeout?.cancel();
         _isMeasuring = false;
         _activeMeasurementLabel = null;
+        _recordMeasurementOutcome();
       }
       if (ecgIsActive) {
         _mergeEcgUpdate(ecgUpdate);
@@ -629,6 +764,19 @@ class RingController extends ChangeNotifier {
         _resetReconnectBackoff();
         return true;
       }
+      // Bug 18 (2): a direct BLE connect by address is allowed in the
+      // background, where Android throttles scanning. Try it before paying
+      // for a six-second scan.
+      try {
+        if (await connect(pairedRing.toDeviceMap())) {
+          _resetReconnectBackoff();
+          return true;
+        }
+      } on Object catch (error) {
+        debugPrint('Direct reconnect by address failed: $error');
+      }
+      if (_disposed) return false;
+      if (_isConnected) return true;
       final scanAccess = await _repo.ensureScanAccess();
       if (!scanAccess.granted) {
         if (_disposed) return false;
@@ -967,7 +1115,10 @@ class RingController extends ChangeNotifier {
   Future<RingSyncFeedback?> _syncDeviceData() async {
     if (!_isReady || !_isConnected || _isSyncing) return null;
     _lastPeriodicSync = DateTime.now();
+    final wantsTonight = !hasTonightSleep &&
+        DateTime.now().hour < kTonightSleepGiveUpHour;
     _set(() {
+      if (wantsTonight) _awaitingTonightSleep = true;
       _isSyncing = true;
       _status = _historyHydratedFromCache
           ? 'Updating ring data…'
@@ -1018,6 +1169,14 @@ class RingController extends ChangeNotifier {
               : 'Synced ${result.history.totalRecords} records; log failed: $logError';
         }
       });
+      _evaluateTonightSleep();
+      // Bug 6 (2): the 24-hour stale alert is handed to the OS, so it arrives
+      // even if the app never runs again before then. Re-armed here, which is
+      // the only place a sync is known to have succeeded.
+      unawaited(
+        VitalsNotificationService.instance
+            .scheduleStaleRingAlert(DateTime.now()),
+      );
       unawaited(_persistHistoryToCache(result));
       final deviceForStore = _selectedDevice ?? _pairedRing?.toDeviceMap();
       if (deviceForStore != null) {
@@ -1092,8 +1251,14 @@ class RingController extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final onboardingCompleted =
         prefs.getBool(_ringOnboardingCompletedKey) ?? false;
+    // Bug 18 (1): on by default whenever a ring is paired. Without the
+    // service Android suspends the app, the reconnect timer stops, and
+    // nothing tries again until the user opens Vyana — which is the failure
+    // users read as "my ring stopped working". The notification is the cost,
+    // and the switch stays in You.
+    final hasPairedRing = await PranaRingStore.load() != null;
     final foregroundEnabled =
-        prefs.getBool(_foregroundServiceEnabledKey) ?? false;
+        prefs.getBool(_foregroundServiceEnabledKey) ?? hasPairedRing;
     final foregroundAllowed =
         prefs.getBool(_foregroundServiceAllowedKey) ?? true;
     if (_disposed) return;
@@ -1308,6 +1473,7 @@ class RingController extends ChangeNotifier {
     }
     _activeMeasureType = action.type;
     _measureCaptured = false;
+    _set(() => _lastMeasurement = null);
     await _beginMeasurement(action.label, () => _repo.measure(action.type, true));
   }
 
@@ -1875,6 +2041,22 @@ class RingController extends ChangeNotifier {
     }
   }
 
+  /// Captures whether the finished measurement produced a value, and which,
+  /// so the UI can distinguish a clean reading from a failed one — the two
+  /// used to look identical (bug 15).
+  void _recordMeasurementOutcome() {
+    final type = _activeMeasureType;
+    if (type == null) return;
+    final captured =
+        _measureCaptured || _plausibleVitalForType(type) != null;
+    _lastMeasurement = MeasurementOutcome(
+      type: type,
+      captured: captured,
+      at: DateTime.now(),
+      value: captured ? _plausibleVitalForType(type)?.toString() : null,
+    );
+  }
+
   void _completeMeasurement(String message, {required bool sync}) {
     _measurementTimeout?.cancel();
     if (_disposed) return;
@@ -1882,6 +2064,7 @@ class RingController extends ChangeNotifier {
       _isMeasuring = false;
       _activeMeasurementLabel = null;
       _testStatus = message;
+      _recordMeasurementOutcome();
     });
     _publishMeasurementSnapshot();
     _maybeSignalStepFromState();
@@ -2093,7 +2276,36 @@ final ringControllerProvider = ChangeNotifierProvider<RingController>((ref) {
     historyCache: ref.watch(ringHistoryCacheServiceProvider),
     ecgRecords: ref.watch(ecgRecordServiceProvider),
   );
+  // Bug 6 (1): alerts are evaluated on every background heartbeat, so the
+  // elapsed-time ones fire without the UI being alive.
+  controller.onBackgroundTick =
+      () => ref.read(ringAlertServiceProvider).evaluate(controller);
   controller.initialize();
   ref.onDispose(controller.dispose);
   return controller;
 });
+
+/// The result of one finished measurement, held so the UI can report it.
+/// Bug 15: success and failure both used to leave the button on its default
+/// subtitle, so a reading that worked looked exactly like one that did not.
+class MeasurementOutcome {
+  const MeasurementOutcome({
+    required this.type,
+    required this.captured,
+    required this.at,
+    this.value,
+  });
+
+  final DeviceAppControlMeasureHealthDataType type;
+
+  /// Whether the ring returned a plausible value.
+  final bool captured;
+  final DateTime at;
+
+  /// The value as the ring reported it, for the "New reading · 36.4 °C" line.
+  final String? value;
+
+  String get clockLabel =>
+      '${at.hour.toString().padLeft(2, '0')}:'
+      '${at.minute.toString().padLeft(2, '0')}';
+}

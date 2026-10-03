@@ -3,7 +3,7 @@ import SwiftUI
 
 // Shared container with the Runner app. Must match `HomeWidgetService.appGroupId`
 // in Dart and the App Group added to BOTH the Runner and this extension target.
-private let appGroupId = "group.com.seeknirvana.vyana"
+private let appGroupId = "group.com.erebrus.keys"
 
 // Brand palette (mirrors lib/src/theme/app_colors.dart).
 private let vyanaBg = Color(red: 17 / 255, green: 24 / 255, blue: 21 / 255)

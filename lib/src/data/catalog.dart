@@ -51,6 +51,12 @@ class Activity {
   final List<String> track;
   final String coaching;
   final List<String> how;
+
+  /// Whether a chosen length is a promise the session must keep (§5 Length):
+  /// guided audio, breath pacers and guided sequences count down and end on a
+  /// bell. Movement is open-ended and stays counting up.
+  bool get isTimed =>
+      kind == 'breath' || kind == 'audio' || kind == 'sequence';
 }
 
 /// Category metadata for the Practice library's segmented switch.
@@ -77,11 +83,81 @@ const kLucidDreamingId = 'lucidDreaming';
 List<Activity> activitiesByCat(String cat) =>
     kActivities.where((a) => a.cat == cat).toList(growable: false);
 
+/// Sports the user added themselves (§5), merged into the catalogue so every
+/// lookup, pin, history and pattern treats them like any other practice.
+/// Registered by [registerUserActivities] when the table changes.
+List<Activity> _userActivities = const [];
+
+List<Activity> get userActivities => _userActivities;
+
+/// Builds an [Activity] from a user-added sport. It gets no guidance and no
+/// coaching, because nobody wrote any — it is start/end, like every named
+/// sport in §5.
+Activity userActivityToActivity({
+  required String id,
+  required String name,
+  required String kind,
+  required String icon,
+}) {
+  final gps = kind == 'gps';
+  return Activity(
+    id: id,
+    cat: 'sport',
+    name: name,
+    // The SDK has no mode for an arbitrary sport; GPS-driven ones ride the
+    // walk profile, the rest use free mode.
+    ring: gps ? 'walk' : 'freeMode',
+    kind: kind,
+    gps: gps,
+    icon: icon,
+    accent: 'hr',
+    dur: 40,
+    guidance: 'none',
+    blurb: gps
+        ? 'Your own sport, outdoors: time, heart rate and route.'
+        : 'Your own sport: time and heart rate.',
+    track: gps
+        ? const ['HR', 'Time', 'Route']
+        : const ['HR', 'Time'],
+    coaching: 'None.',
+    how: const [
+      'Tap Start when you begin.',
+      'Vyana records heart rate and time until you end it.',
+    ],
+  );
+}
+
+void registerUserActivities(List<Activity> activities) {
+  _userActivities = List.unmodifiable(activities);
+}
+
+/// Everything in [cat], the user's own sports included.
+List<Activity> allActivitiesByCat(String cat) => [
+      ...activitiesByCat(cat),
+      for (final a in _userActivities)
+        if (a.cat == cat) a,
+    ];
+
 Activity? activityById(String id) {
   for (final a in kActivities) {
     if (a.id == id) return a;
   }
+  for (final a in _userActivities) {
+    if (a.id == id) return a;
+  }
   return null;
+}
+
+/// Name match across all three categories, including the user's own sports
+/// (§5 "Catalogue search"). Movement grows past thirty rows, so the list
+/// needs a way in other than scrolling.
+List<Activity> searchActivities(String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return const [];
+  return [
+    for (final a in [...kActivities, ..._userActivities])
+      if (a.name.toLowerCase().contains(q)) a,
+  ];
 }
 
 String guidanceLabel(String guidance) => switch (guidance) {
@@ -137,6 +213,20 @@ int sportTypeCodeForRing(String ring) {
       return DeviceSportType.swimming;
     case 'rockClimbing':
       return DeviceSportType.rockClimbing;
+    // §5/§15: the SDK has no winter or water-sport modes, but it does have
+    // these — checked against vyana_sdk rather than defaulting to freeMode.
+    case 'pingPang':
+      return DeviceSportType.pingPang;
+    case 'volleyball':
+      return DeviceSportType.volleyball;
+    case 'kayak':
+      return DeviceSportType.kayak;
+    case 'rollerSkating':
+      return DeviceSportType.rollerSkating;
+    case 'mountaineering':
+      return DeviceSportType.mountaineering;
+    case 'otherSports':
+      return DeviceSportType.otherSports;
     case 'realTimeMonitoring':
       return DeviceSportType.realTimeMonitoring;
     case 'yoga':
@@ -219,12 +309,16 @@ const kActivities = <Activity>[
     how: ['Tap Start on the bike.', 'Follow your effort; Vyana tracks HR and load.'],
   ),
   Activity(
-    id: 'treadmill', cat: 'sport', name: 'Treadmill Run', ring: 'indoorRunning',
+    // Name only: the id and ring mode stay put so existing history carries
+    // over. Walkers were being told to run.
+    id: 'treadmill', cat: 'sport', name: 'Treadmill Walk / Run',
+    ring: 'indoorRunning',
     kind: 'indoor', gps: false, icon: 'run', accent: 'hr', dur: 35, guidance: 'none',
-    blurb: 'Indoor run with HR, cadence proxy and time — optional manual distance.',
+    blurb: 'Indoor walk or run with HR, cadence proxy and time — optional '
+        'manual distance.',
     track: ['HR zones', 'Time', 'Cadence proxy'],
     coaching: 'Quiet; optional HR-zone alerts.',
-    how: ['Set your treadmill pace.', 'Tap Start and run.', 'Add manual distance afterward if you like.'],
+    how: ['Set your treadmill speed.', 'Tap Start and walk or run.', 'Add manual distance afterward if you like.'],
   ),
   Activity(
     id: 'rowing', cat: 'sport', name: 'Rowing Machine', ring: 'rowingMachine',
@@ -243,7 +337,7 @@ const kActivities = <Activity>[
     how: ['Tap Start.', 'Hold a steady cadence; Vyana tracks zones and calories.'],
   ),
   Activity(
-    id: 'strength', cat: 'sport', name: 'Strength Training', ring: 'weightTraining',
+    id: 'strength', cat: 'sport', name: 'Gym', ring: 'weightTraining',
     kind: 'strength', gps: false, icon: 'dumbbell', accent: 'hr', dur: 50, guidance: 'structured',
     blurb: 'Set and rest timers with heart-rate recovery between efforts.',
     track: ['Set & rest timers', 'HR recovery', 'Session load'],
@@ -335,6 +429,128 @@ const kActivities = <Activity>[
     track: ['Duration', 'HR'],
     coaching: 'None.',
     how: ['Tap Start poolside.', 'Swim; Vyana logs duration and HR.'],
+  ),
+  // §5 "More named sports": every sport keeps its own name; the grouping is
+  // internal, via `kind`, which already decides what is tracked. All
+  // start/end — none has a length to choose.
+  Activity(
+    id: 'downhillSki', cat: 'sport', name: 'Downhill Skiing', ring: 'freeMode',
+    kind: 'gps', gps: true, icon: 'ski', accent: 'hr', dur: 120,
+    guidance: 'none',
+    blurb: 'Runs, descent and heart rate through the day on the mountain.',
+    track: ['HR', 'Time', 'Descent'],
+    coaching: 'None.',
+    how: ['Tap Start at the first lift.', 'Ski; Vyana logs HR and the route.'],
+  ),
+  Activity(
+    id: 'crossCountrySki', cat: 'sport', name: 'Cross-country Skiing',
+    ring: 'freeMode',
+    kind: 'gps', gps: true, icon: 'ski', accent: 'hr', dur: 70,
+    guidance: 'light',
+    blurb: 'Distance, pace and heart rate on the track.',
+    track: ['Distance', 'Pace', 'HR zones'],
+    coaching: 'Splits every 10 minutes.',
+    how: ['Tap Start at the trailhead.', 'Ski; Vyana tracks distance and HR.'],
+  ),
+  Activity(
+    id: 'snowboarding', cat: 'sport', name: 'Snowboarding', ring: 'freeMode',
+    kind: 'gps', gps: true, icon: 'snowboard', accent: 'hr', dur: 120,
+    guidance: 'none',
+    blurb: 'Runs, descent and heart rate through the day.',
+    track: ['HR', 'Time', 'Descent'],
+    coaching: 'None.',
+    how: ['Tap Start at the first lift.', 'Ride; Vyana logs HR and the route.'],
+  ),
+  Activity(
+    id: 'iceSkating', cat: 'sport', name: 'Ice Skating',
+    ring: 'rollerSkating',
+    kind: 'indoor', gps: false, icon: 'skate', accent: 'hr', dur: 45,
+    guidance: 'none',
+    blurb: 'Time and heart rate on the ice.',
+    track: ['HR', 'Duration'],
+    coaching: 'None.',
+    how: ['Tap Start as you step on.', 'Skate; Vyana logs HR and duration.'],
+  ),
+  Activity(
+    id: 'iceHockey', cat: 'sport', name: 'Ice Hockey', ring: 'freeMode',
+    kind: 'indoor', gps: false, icon: 'hockey', accent: 'hr', dur: 70,
+    guidance: 'none',
+    blurb: 'Shift intensity and heart-rate recovery across the game.',
+    track: ['HR zones', 'Recovery between shifts', 'Duration'],
+    coaching: 'None.',
+    how: ['Tap Start before the first shift.', 'Play; Vyana logs HR and recovery.'],
+  ),
+  Activity(
+    id: 'padel', cat: 'sport', name: 'Padel', ring: 'tennis',
+    kind: 'indoor', gps: false, icon: 'racket', accent: 'hr', dur: 60,
+    guidance: 'none',
+    blurb: 'HR zones and duration across the match.',
+    track: ['HR zones', 'Duration'],
+    coaching: 'None.',
+    how: ['Tap Start at the first serve.', 'Play; Vyana logs HR and duration.'],
+  ),
+  Activity(
+    id: 'squash', cat: 'sport', name: 'Squash', ring: 'tennis',
+    kind: 'indoor', gps: false, icon: 'racket', accent: 'hr', dur: 45,
+    guidance: 'none',
+    blurb: 'A hard interval sport, read through heart-rate zones.',
+    track: ['HR zones', 'Duration', 'Recovery'],
+    coaching: 'None.',
+    how: ['Tap Start on court.', 'Play; Vyana logs HR and recovery.'],
+  ),
+  Activity(
+    id: 'tableTennis', cat: 'sport', name: 'Table Tennis', ring: 'pingPang',
+    kind: 'indoor', gps: false, icon: 'tableTennis', accent: 'hr', dur: 45,
+    guidance: 'none',
+    blurb: 'Duration and heart rate across the session.',
+    track: ['HR', 'Duration'],
+    coaching: 'None.',
+    how: ['Tap Start at the table.', 'Play; Vyana logs HR and duration.'],
+  ),
+  Activity(
+    id: 'volleyball', cat: 'sport', name: 'Volleyball', ring: 'volleyball',
+    kind: 'indoor', gps: false, icon: 'volleyball', accent: 'hr', dur: 70,
+    guidance: 'none',
+    blurb: 'HR zones and duration across the match.',
+    track: ['HR zones', 'Duration'],
+    coaching: 'None.',
+    how: ['Tap Start before the first point.', 'Play; Vyana logs HR.'],
+  ),
+  Activity(
+    id: 'hockey', cat: 'sport', name: 'Hockey', ring: 'freeMode',
+    kind: 'indoor', gps: false, icon: 'hockey', accent: 'hr', dur: 70,
+    guidance: 'none',
+    blurb: 'HR zones and duration across the match.',
+    track: ['HR zones', 'Duration'],
+    coaching: 'None.',
+    how: ['Tap Start before kick-off.', 'Play; Vyana logs HR.'],
+  ),
+  Activity(
+    id: 'boxing', cat: 'sport', name: 'Boxing / Martial Arts', ring: 'fitness',
+    kind: 'indoor', gps: false, icon: 'boxing', accent: 'hr', dur: 60,
+    guidance: 'none',
+    blurb: 'Round intensity and heart-rate recovery between them.',
+    track: ['HR zones', 'Recovery', 'Duration'],
+    coaching: 'None.',
+    how: ['Tap Start before the first round.', 'Train; Vyana logs HR and recovery.'],
+  ),
+  Activity(
+    id: 'surfing', cat: 'sport', name: 'Surfing', ring: 'freeMode',
+    kind: 'gps', gps: true, icon: 'surf', accent: 'hr', dur: 90,
+    guidance: 'none',
+    blurb: 'Time in the water with heart rate and the paddle-out effort.',
+    track: ['HR', 'Time', 'Route'],
+    coaching: 'None.',
+    how: ['Tap Start on the beach.', 'Surf; Vyana logs HR and time in the water.'],
+  ),
+  Activity(
+    id: 'kayaking', cat: 'sport', name: 'Kayaking / SUP', ring: 'kayak',
+    kind: 'gps', gps: true, icon: 'kayak', accent: 'hr', dur: 70,
+    guidance: 'light',
+    blurb: 'Distance, pace and heart rate on the water.',
+    track: ['Distance', 'Pace', 'HR'],
+    coaching: 'Splits every 10 minutes.',
+    how: ['Tap Start at the put-in.', 'Paddle; Vyana tracks distance and HR.'],
   ),
   Activity(
     id: 'climbing', cat: 'sport', name: 'Climbing', ring: 'rockClimbing',
@@ -543,6 +759,39 @@ const kActivities = <Activity>[
     ],
   ),
   Activity(
+    id: 'saunaCold', cat: 'wellness', name: 'Sauna & Cold Plunge',
+    ring: 'realTimeMonitoring',
+    kind: 'recovery', gps: false, icon: 'flame', accent: 'temp', dur: 30,
+    guidance: 'none',
+    blurb: 'Heat and cold in one session, with the HR swing through every '
+        'round.',
+    track: ['HR through each round', 'Total time', 'Before/after vitals'],
+    coaching: 'HR-too-high prompt only; no timer.',
+    how: [
+      'Take a baseline reading before you start.',
+      'Tap Start once — rounds need no taps in between.',
+      'Vyana follows your heart rate through the heat and the cold.',
+      'If your heart rate climbs too high, it prompts you to step out.',
+      'Tap End when you are finished, however many rounds that took.',
+    ],
+  ),
+  Activity(
+    id: 'saunaSwim', cat: 'wellness', name: 'Sauna & Swim',
+    ring: 'realTimeMonitoring',
+    kind: 'recovery', gps: false, icon: 'flame', accent: 'temp', dur: 30,
+    guidance: 'none',
+    blurb: 'Sauna rounds with a swim between, tracked as one session.',
+    track: ['HR through each round', 'Total time', 'Before/after vitals'],
+    coaching: 'HR-too-high prompt only; no timer.',
+    how: [
+      'Take a baseline reading before you start.',
+      'Tap Start once — rounds need no taps in between.',
+      'Vyana follows your heart rate through the heat and the water.',
+      'If your heart rate climbs too high, it prompts you to step out.',
+      'Tap End when you are finished.',
+    ],
+  ),
+  Activity(
     id: 'recovery', cat: 'wellness', name: 'Recovery Session', ring: 'realTimeMonitoring',
     kind: 'recovery', gps: false, icon: 'heart', accent: 'readiness', dur: 15, guidance: 'structured',
     blurb: 'A guided down-regulation measuring HRV and stress before and after.',
@@ -675,7 +924,6 @@ class HomeSeed {
   HomeSeed._();
   static const userName = 'Aarav';
   static const streak = 14;
-  static const chakraBalance = 2840;
   static const readinessScore = 82;
   static const readinessLabel = 'Primed';
   static const readinessDelta = 6;
@@ -692,3 +940,21 @@ class HomeSeed {
     HomeInsight('nova', 'Activity', "You're 660 steps from a 14-day streak. A short evening walk closes it.", 'steps'),
   ];
 }
+
+/// Keeps [registerUserActivities] in step with the table, so the catalogue
+/// and every `activityById` lookup see the user's own sports.
+final userActivitiesProvider = StreamProvider<List<Activity>>((ref) {
+  return ref.watch(databaseProvider).watchUserActivities().map((rows) {
+    final activities = [
+      for (final r in rows)
+        userActivityToActivity(
+          id: r.id,
+          name: r.name,
+          kind: r.kind,
+          icon: r.icon,
+        ),
+    ];
+    registerUserActivities(activities);
+    return activities;
+  });
+});
