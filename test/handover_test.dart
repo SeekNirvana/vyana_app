@@ -341,7 +341,27 @@ void main() {
         readinessScoreFrom(sleepScore: 80, hrv: 45),
         readinessScoreFrom(sleepScore: 80, hrv: 45),
       );
-      expect(readinessScoreFrom(sleepScore: 80, hrv: 45), 70);
+      // Bug 22 (3): HRV is scored against the band that applies to this
+      // person, not a fixed 20–90 scale. 45 ms sits 35% up the typical
+      // 21–90 band, so 80 × 0.65 + 35 × 0.35 = 64.
+      expect(readinessScoreFrom(sleepScore: 80, hrv: 45), 64);
+    });
+
+    test('HRV is scored against the base, not a fixed scale', () {
+      // The same reading means different things to different bodies: at the
+      // bottom of your own range it is a poor night whatever the number is.
+      const low = VitalReferenceRange(
+        low: 40,
+        high: 100,
+        caption: 'YOUR RANGE 40–100 MS',
+      );
+      const high = VitalReferenceRange(
+        low: 10,
+        high: 40,
+        caption: 'YOUR RANGE 10–40 MS',
+      );
+      expect(readinessScoreFrom(hrv: 40, hrvBase: low), 0);
+      expect(readinessScoreFrom(hrv: 40, hrvBase: high), 100);
     });
 
     test('readiness is about today: last night only, never accumulated', () {
@@ -352,8 +372,71 @@ void main() {
       expect(goodAfterBad, goodAfterGood);
     });
 
+    test('the day turns over at wake, not at midnight (bug 22)', () {
+      final lastNight = DateTime(2026, 10, 20);
+      // 00:30: the calendar day has rolled over but the user is still
+      // asleep. Last night is still the night that describes them.
+      expect(isNightForDay(lastNight, DateTime(2026, 10, 21, 0, 30)), isTrue);
+      expect(isNightForDay(lastNight, DateTime(2026, 10, 21, 8, 0)), isTrue);
+      // By noon a night that was coming has come; holding on is stale.
+      expect(isNightForDay(lastNight, DateTime(2026, 10, 21, 12, 1)), isFalse);
+      // An older night is never today's, at any hour.
+      expect(
+        isNightForDay(DateTime(2026, 10, 18), DateTime(2026, 10, 21, 2, 0)),
+        isFalse,
+      );
+    });
+
+    test('a range knows which side is a problem (bug 23)', () {
+      // Higher is fine: an HRV above the band is not a red flag.
+      expect(
+        vitalVerdict(
+          kind: VitalsMetricKind.hrv,
+          range: kHrvRange,
+          value: 95,
+        ).quality,
+        'good',
+      );
+      // An athlete's resting HR under the band is not a verdict either way.
+      final band = restingHrBand(null);
+      expect(
+        vitalVerdict(
+          kind: VitalsMetricKind.heartRate,
+          range: band,
+          value: 48,
+        ).quality,
+        'level',
+      );
+      // But a floor still applies, with an explanation rather than a colour.
+      final veryLow = vitalVerdict(
+        kind: VitalsMetricKind.heartRate,
+        range: band,
+        value: 38,
+      );
+      expect(veryLow.quality, 'watch');
+      expect(veryLow.note, contains('talk to a doctor'));
+      // Over the band is still poor, and says which way.
+      expect(
+        vitalVerdict(
+          kind: VitalsMetricKind.heartRate,
+          range: band,
+          value: 110,
+        ).captionSuffix,
+        'ABOVE',
+      );
+      // A lie-in is long, not bad.
+      final long = vitalVerdict(
+        kind: VitalsMetricKind.sleep,
+        range: kSleepRange,
+        value: 10.5,
+      );
+      expect(long.quality, 'level');
+      expect(long.captionSuffix, 'LONG');
+    });
+
     test('without a usable night, HRV alone carries the score', () {
-      expect(readinessScoreFrom(sleepScore: null, hrv: 45), 50);
+      // 45 ms, 35% up the typical band, carries the score on its own.
+      expect(readinessScoreFrom(sleepScore: null, hrv: 45), 35);
       expect(readinessScoreFrom(sleepScore: null, hrv: null), isNull);
     });
   });

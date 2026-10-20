@@ -273,6 +273,17 @@ class PersonalBaselinesController
     );
   }
 
+  /// Bug 22 (3): readiness scored HRV on a fixed 20–90 scale, so a naturally
+  /// low-HRV body could not reach a good score however well it had slept.
+  /// Pushes the range readiness should measure against — the user's own once
+  /// adopted, else the typical band.
+  void applyReadinessHrvRange(List<double> recentOvernightHrv) {
+    final personal = personalHrvRange(recentOvernightHrv);
+    readinessHrvRange = (state.adopted(BaselineVital.hrv) && personal != null)
+        ? personal
+        : kHrvRange;
+  }
+
   Future<void> markAsked() async {
     state = state.copyWith(lastAskedOn: DateTime.now());
     await _persist();

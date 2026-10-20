@@ -245,11 +245,32 @@ String stressZoneLabel(StressZone zone) {
 // user's own history. These live here, not in the view layer.
 
 /// A named reference window for one vital, plus the caption that states it.
+/// Which side of a reference range is actually a problem (bug 23).
+///
+/// Treating a range as a box — inside good, outside poor — marked 9h 30m of
+/// sleep, an HRV of 95 and an athlete's resting 48 as bad news. A range is
+/// not a box; most vitals are only wrong in one direction.
+enum RangeDirection {
+  /// Wrong either way: temperature, blood pressure, glucose.
+  both,
+
+  /// Above the top is fine or better: HRV, SpO₂.
+  higherIsFine,
+
+  /// Below the bottom is fine: stress.
+  lowerIsFine,
+
+  /// Below the bottom is not a verdict either way — resting HR, where
+  /// trained people simply sit under the band.
+  lowerIsNeutral,
+}
+
 class VitalReferenceRange {
   const VitalReferenceRange({
     required this.low,
     required this.high,
     required this.caption,
+    this.direction = RangeDirection.both,
   });
 
   final double low;
@@ -258,7 +279,80 @@ class VitalReferenceRange {
   /// Mono caption shown under the row, e.g. `TYPICAL 21–90 MS`.
   final String caption;
 
+  final RangeDirection direction;
+
   bool contains(double value) => value >= low && value <= high;
+}
+
+/// What a reading means against its range: the quality key the row colours
+/// itself with, the caption suffix, and a plain-language note where the
+/// reading needs one.
+///
+/// `good` · `poor` · `watch` (amber — a safety floor, never personalised
+/// away) · `level` (grey — no verdict, because none is warranted).
+typedef VitalVerdict = ({String quality, String? captionSuffix, String? note});
+
+/// Resting heart rate this low is normal for some trained people, so it is
+/// amber and explained rather than red — but it is never adopted as someone's
+/// personal normal (§14 safety floor).
+const double kRestingHrFloor = 40;
+
+/// Sleep beyond this is "Long" and grey: oversleeping is information, not a
+/// failing, and rose would read as a verdict on a lie-in.
+const double kLongSleepHours = 10;
+
+VitalVerdict vitalVerdict({
+  required VitalsMetricKind kind,
+  required VitalReferenceRange range,
+  required double value,
+}) {
+  // Safety floors come first: these hold whatever range is in force, so a
+  // personal base can never explain away a reading that needs attention.
+  if (kind == VitalsMetricKind.heartRate && value < kRestingHrFloor) {
+    return (
+      quality: 'watch',
+      captionSuffix: 'VERY LOW',
+      note: 'Normal for some trained athletes. If you feel dizzy, faint or '
+          'short of breath, talk to a doctor.',
+    );
+  }
+  if (kind == VitalsMetricKind.spo2 && value < 90) {
+    return (quality: 'poor', captionSuffix: 'BELOW', note: null);
+  }
+  if (kind == VitalsMetricKind.temperature && value > 38) {
+    return (quality: 'poor', captionSuffix: 'ABOVE', note: null);
+  }
+
+  // Sleep is measured against the user's own target (§14), not the range.
+  if (kind == VitalsMetricKind.sleep) {
+    final target = sleepScoreDurationTarget.inSeconds / 3600;
+    if (value < target) {
+      return (quality: 'poor', captionSuffix: 'BELOW', note: null);
+    }
+    if (value > kLongSleepHours) {
+      return (quality: 'level', captionSuffix: 'LONG', note: null);
+    }
+    return (quality: 'good', captionSuffix: null, note: null);
+  }
+
+  final below = value < range.low;
+  final above = value > range.high;
+  if (!below && !above) return (quality: 'good', captionSuffix: null, note: null);
+
+  return switch (range.direction) {
+    RangeDirection.higherIsFine => above
+        ? (quality: 'good', captionSuffix: null, note: null)
+        : (quality: 'poor', captionSuffix: 'BELOW', note: null),
+    RangeDirection.lowerIsFine => below
+        ? (quality: 'good', captionSuffix: null, note: null)
+        : (quality: 'poor', captionSuffix: 'ABOVE', note: null),
+    RangeDirection.lowerIsNeutral => below
+        ? (quality: 'level', captionSuffix: null, note: null)
+        : (quality: 'poor', captionSuffix: 'ABOVE', note: null),
+    RangeDirection.both => above
+        ? (quality: 'poor', captionSuffix: 'ABOVE', note: null)
+        : (quality: 'poor', captionSuffix: 'BELOW', note: null),
+  };
 }
 
 /// Adult sleep recommendation (AASM / Sleep Foundation), in hours.
@@ -325,23 +419,31 @@ VitalReferenceRange restingHrBand(TrainingFrequency? frequency) {
   final caption = frequency == null
       ? 'TYPICAL ${low.round()}–${high.round()} BPM'
       : 'YOUR BAND ${low.round()}–${high.round()} BPM';
-  return VitalReferenceRange(low: low, high: high, caption: caption);
+  return VitalReferenceRange(
+    low: low,
+    high: high,
+    caption: caption,
+    direction: RangeDirection.lowerIsNeutral,
+  );
 }
 
 const VitalReferenceRange kHrvRange = VitalReferenceRange(
   low: kHrvTypicalMin,
   high: kHrvTypicalMax,
   caption: 'TYPICAL 21–90 MS',
+  direction: RangeDirection.higherIsFine,
 );
 const VitalReferenceRange kSleepRange = VitalReferenceRange(
   low: kSleepHoursMin,
   high: kSleepHoursMax,
   caption: 'RECOMMENDED 7–9 H',
+  direction: RangeDirection.higherIsFine,
 );
 const VitalReferenceRange kSpo2Range = VitalReferenceRange(
   low: kSpo2TypicalMin,
   high: kSpo2TypicalMax,
   caption: 'TYPICAL 95–98%',
+  direction: RangeDirection.higherIsFine,
 );
 const VitalReferenceRange kTemperatureRange = VitalReferenceRange(
   low: kTemperatureTypicalMin,
@@ -352,6 +454,7 @@ const VitalReferenceRange kStressRange = VitalReferenceRange(
   low: 0,
   high: kStressCalmMax,
   caption: 'CALM ZONE 0–34',
+  direction: RangeDirection.lowerIsFine,
 );
 const VitalReferenceRange kSystolicRange = VitalReferenceRange(
   low: 90,
@@ -517,12 +620,45 @@ int? hrvForDay({
   // HRV card agree, instead of one showing a score the other cannot explain.
   if (day == null) return null;
   final start = DateTime(day.year, day.month, day.day);
-  final mean = _meanInWindow(
-    hrvPoints,
-    start,
-    start.add(const Duration(hours: kOvernightWindowEndHour)),
-  );
+  final end = start.add(const Duration(hours: kOvernightWindowEndHour));
+  // Bug 22 (2): just after midnight this window holds a handful of samples,
+  // and one high reading became a readiness of 100. A night's HRV has to
+  // come from something that looks like a night.
+  final inWindow = [
+    for (final p in hrvPoints)
+      if (!p.time.isBefore(start) && !p.time.isAfter(end)) p,
+  ];
+  if (inWindow.length < 2) return null;
+  inWindow.sort((a, b) => a.time.compareTo(b.time));
+  final span = inWindow.last.time.difference(inWindow.first.time);
+  if (span < kMinOvernightHrvSpan) return null;
+  final mean = _meanInWindow(hrvPoints, start, end);
   return mean?.round();
+}
+
+/// Shortest stretch of samples that can stand in for a night's HRV (bug 22).
+const Duration kMinOvernightHrvSpan = Duration(hours: 2);
+
+/// The HRV range readiness is scored against. Pushed here by the
+/// personal-baselines controller exactly as [sleepScoreDurationTarget] is, so
+/// Home's score, the Metrics chart and the HRV row cannot disagree about the
+/// same night. Falls back to the typical band until a personal one is adopted.
+VitalReferenceRange readinessHrvRange = kHrvRange;
+
+/// HRV's share of readiness, 0–100, measured against the range that applies
+/// to this person (§14's base, or the typical band until one exists).
+///
+/// Bug 22 (3): a fixed `clamp(20, 90) / 90` scale meant a naturally low-HRV
+/// body could not reach a good readiness however well it had slept, while
+/// the same reading sat comfortably mid-range for someone else. Stress was
+/// fixed this way in bug 7; readiness was left on the old scale.
+double _hrvComponent(int hrv, VitalReferenceRange? base) {
+  final range = base ?? readinessHrvRange;
+  if (range.high <= range.low) return 50;
+  // The band's own width is the scale: at the bottom of your range 0, at the
+  // top 100, with room above and below for a genuinely unusual night.
+  final position = (hrv - range.low) / (range.high - range.low);
+  return (position * 100).clamp(0.0, 100.0);
 }
 
 /// End of the clock-based overnight window, used only when a night was not
@@ -591,10 +727,10 @@ SleepNightStatus sleepNightStatus(
   RingHistory? history,
 }) {
   final today = now ?? DateTime.now();
-  final todayDay = DateTime(today.year, today.month, today.day);
   if (night == null) return SleepNightStatus.missing;
-  final nightDay = DateTime(night.day.year, night.day.month, night.day.day);
-  if (nightDay != todayDay) return SleepNightStatus.missing;
+  // Bug 22: between midnight and wake, last night's night is still the one
+  // that describes today — see [isNightForDay].
+  if (!isNightForDay(night.day, today)) return SleepNightStatus.missing;
 
   // Enough sleep on the record is enough, full stop.
   if (night.breakdown.asleepSeconds >= kInadequateSleep.inSeconds) {
@@ -616,9 +752,13 @@ SleepNightStatus sleepNightStatus(
 /// both callers must reach it the same way, which they previously did not:
 /// the chart averaged a whole day's HRV readings (including daytime spot
 /// measurements) while Home used the overnight window.
-int? readinessScoreFrom({int? sleepScore, int? hrv}) {
+int? readinessScoreFrom({
+  int? sleepScore,
+  int? hrv,
+  VitalReferenceRange? hrvBase,
+}) {
   if (sleepScore == null && hrv == null) return null;
-  final hrvComponent = hrv == null ? 50.0 : (hrv.clamp(20, 90) / 90 * 100);
+  final hrvComponent = hrv == null ? 50.0 : _hrvComponent(hrv, hrvBase);
   if (sleepScore == null) {
     // No usable night: HRV alone carries it, and the caller says so.
     return hrvComponent.round().clamp(0, 100);
@@ -626,7 +766,28 @@ int? readinessScoreFrom({int? sleepScore, int? hrv}) {
   return (sleepScore * 0.65 + hrvComponent * 0.35).round().clamp(0, 100);
 }
 
-/// The night to show as "last night", or null when today has none.
+/// When the day finally turns over for someone whose ring recorded no new
+/// night. By noon, a night that was coming has come — bug 17's retries all
+/// run well before it — so holding yesterday's any longer would be stale.
+const int kDayTurnoverHour = 12;
+
+/// Whether [night] is the one to show as "last night" at [now].
+///
+/// Bug 22: every daily value was keyed to the calendar date, so at 00:00
+/// last night's sleep became yesterday's and the new day had no night yet.
+/// Sleep read "Not recorded" and readiness fell back to HRV — while the user
+/// was still asleep. The day turns over at wake, not at midnight: until a
+/// new night is recorded (or noon passes), last night's night is still the
+/// one that describes you.
+bool isNightForDay(DateTime nightDay, DateTime now) {
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(nightDay.year, nightDay.month, nightDay.day);
+  if (day == today) return true;
+  return now.hour < kDayTurnoverHour &&
+      day == today.subtract(const Duration(days: 1));
+}
+
+/// The night to show as "last night", or null when there is none to show.
 SleepDaySummary? sleepNightForToday(
   List<SleepDaySummary> nights, {
   DateTime? now,
@@ -634,8 +795,12 @@ SleepDaySummary? sleepNightForToday(
   if (nights.isEmpty) return null;
   final today = now ?? DateTime.now();
   final todayDay = DateTime(today.year, today.month, today.day);
+  // A night recorded for today always wins over last night's held-over one.
   for (final n in nights) {
     if (DateTime(n.day.year, n.day.month, n.day.day) == todayDay) return n;
+  }
+  for (final n in nights) {
+    if (isNightForDay(n.day, today)) return n;
   }
   return null;
 }
