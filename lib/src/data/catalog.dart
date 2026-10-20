@@ -59,6 +59,136 @@ class Activity {
       kind == 'breath' || kind == 'audio' || kind == 'sequence';
 }
 
+/// Gym's id, kept from "Strength Training" so history carries over.
+const String kGymActivityId = 'strength';
+
+/// §5 "Optional target". A target is a goal, not a length: the session still
+/// counts up and only the user ends it. That is the whole difference from a
+/// timed practice, and why it never reaches [SessionController._plannedMinutes].
+enum PracticeTargetKind { time, distance }
+
+class PracticeTarget {
+  const PracticeTarget({required this.kind, required this.value});
+
+  final PracticeTargetKind kind;
+
+  /// Minutes for [PracticeTargetKind.time], kilometres for distance.
+  final double value;
+
+  static PracticeTargetKind? kindFromName(String? name) {
+    for (final k in PracticeTargetKind.values) {
+      if (k.name == name) return k;
+    }
+    return null;
+  }
+
+  /// `30 min` / `5 km`, for the row, the live screen and the summary.
+  String get label => kind == PracticeTargetKind.time
+      ? '${_trim(value)} min'
+      : '${_trim(value)} km';
+
+  static String _trim(double v) =>
+      v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(1);
+}
+
+/// Mindfulness and wellness practices that can be done without guidance
+/// (§5, mock 12f). The excluded ones are those where the guidance *is* the
+/// practice — Yoga Nidra, Lucid Dreaming, HRV Breathing and Sound Bath are
+/// nothing without the voice or the pacer.
+const Set<String> kOnMyOwnActivityIds = {
+  'meditation',
+  'mantra',
+  'breathwork',
+  'pranayama',
+  'walkingMed',
+  'bodyScan',
+  'yogaFlow',
+  'sunSalutation',
+  'stretching',
+  'mobility',
+  'pilates',
+  'warmup',
+  'cooldown',
+  'recovery',
+  'nap',
+};
+
+/// Whether this practice offers the Guided / On my own switch.
+bool offersOnMyOwn(Activity a) => kOnMyOwnActivityIds.contains(a.id);
+
+/// Whether a target can be set (§5). Count-up practices only: all movement
+/// plus Walking Meditation, the one count-up mindfulness practice. Timed
+/// practices already have a length, and the heat practices are deliberately
+/// open-ended for safety. A practice running "on my own" counts up whatever
+/// its catalogue kind says, so it qualifies too.
+bool offersTarget(Activity a, {bool onMyOwn = false}) {
+  if (kOpenEndedWellnessIds.contains(a.id)) return false;
+  if (onMyOwn) return true;
+  if (a.isTimed) return false;
+  return a.kind == 'gps' || a.kind == 'indoor' || a.kind == 'strength' ||
+      a.id == 'walkingMed';
+}
+
+/// Heat and cold practices: open-ended on purpose, since tolerance varies too
+/// much for a time goal to be anything but pressure.
+const Set<String> kOpenEndedWellnessIds = {
+  'sauna',
+  'coldPlunge',
+  'saunaCold',
+  'saunaSwim',
+};
+
+/// "How it works" steps for the session the user is actually about to run.
+///
+/// [Activity.how] describes one way of practising, but three choices change
+/// it: Gym's two modes (bug 27 — the stored steps only described the sets
+/// mode, which is not even the default), "On my own" (no cues to follow), and
+/// an optional target (§5), which adds the cue it promises. Keeping all three
+/// in one place is why the steps and the switch can never drift apart.
+List<String> howStepsFor(
+  Activity a, {
+  bool gymTracksSets = false,
+  bool onMyOwn = false,
+  bool hasTarget = false,
+}) {
+  List<String> steps;
+  if (a.id == kGymActivityId) {
+    steps = gymTracksSets
+        ? const [
+            'Tap Start, then do your first set.',
+            'After each set, tap Log set. A rest timer starts and Vyana '
+                'watches your heart rate come down.',
+            'When you hear "Rest complete", start the next set. Tap Skip rest '
+                'to go sooner.',
+            "Tap End when you're done.",
+          ]
+        : const [
+            'Tap Start when you begin your workout.',
+            'Train as usual. Nothing to tap.',
+            "Tap End when you're done.",
+          ];
+  } else if (onMyOwn) {
+    // The target cue is already step 3 here, so no extra line is appended.
+    return const [
+      'Tap Start when you begin.',
+      "Practise your own way. There's nothing to follow.",
+      'If you set a target, a soft bell rings when you reach it.',
+      "Tap End when you're done.",
+    ];
+  } else {
+    steps = a.how;
+  }
+
+  if (!hasTarget || steps.isEmpty) return steps;
+  // Movement gets a halfway cue as well; stiller practices get only the bell,
+  // so the line has to say which one this practice will actually give.
+  final cue = a.cat == 'sport'
+      ? "You'll hear a cue at halfway and when you reach your target. It "
+          'keeps going until you tap End.'
+      : 'A soft bell rings when you reach your target.';
+  return [...steps.sublist(0, steps.length - 1), cue, steps.last];
+}
+
 /// Category metadata for the Practice library's segmented switch.
 class ActivityCategory {
   const ActivityCategory(this.id, this.label, this.eyebrow, this.icon);
@@ -339,15 +469,17 @@ const kActivities = <Activity>[
   Activity(
     id: 'strength', cat: 'sport', name: 'Gym', ring: 'weightTraining',
     kind: 'strength', gps: false, icon: 'dumbbell', accent: 'hr', dur: 50, guidance: 'structured',
-    blurb: 'Set and rest timers with heart-rate recovery between efforts.',
+    // Bug 27: the blurb and steps described only the sets mode, although
+    // "Start and end" is the default. The steps now come from howStepsFor,
+    // which follows the switch; these stay as the start-and-end fallback.
+    blurb: 'Track a gym session. Just start and end, or track each set and '
+        'your rest.',
     track: ['Set & rest timers', 'HR recovery', 'Session load'],
     coaching: '"Rest complete. HR 118. Start your next set."',
     how: [
-      'Build or pick your exercise list.',
-      'Tap Start; log a set, then hit Rest.',
-      'Vyana counts your rest and watches HR drop.',
-      'When recovered, it cues your next set.',
-      'End to see HR recovery and total load.',
+      'Tap Start when you begin your workout.',
+      'Train as usual. Nothing to tap.',
+      "Tap End when you're done.",
     ],
   ),
   Activity(
@@ -437,7 +569,9 @@ const kActivities = <Activity>[
     id: 'downhillSki', cat: 'sport', name: 'Downhill Skiing', ring: 'freeMode',
     kind: 'gps', gps: true, icon: 'ski', accent: 'hr', dur: 120,
     guidance: 'none',
-    blurb: 'Runs, descent and heart rate through the day on the mountain.',
+    // Copy only (bug 33): the ring has no ski mode and the session is one
+    // start/end across the day, so nothing can split it into runs.
+    blurb: 'Time and heart rate across your day on the mountain.',
     track: ['HR', 'Time', 'Descent'],
     coaching: 'None.',
     how: ['Tap Start at the first lift.', 'Ski; Vyana logs HR and the route.'],
@@ -456,7 +590,7 @@ const kActivities = <Activity>[
     id: 'snowboarding', cat: 'sport', name: 'Snowboarding', ring: 'freeMode',
     kind: 'gps', gps: true, icon: 'snowboard', accent: 'hr', dur: 120,
     guidance: 'none',
-    blurb: 'Runs, descent and heart rate through the day.',
+    blurb: 'Time and heart rate across your day on the mountain.',
     track: ['HR', 'Time', 'Descent'],
     coaching: 'None.',
     how: ['Tap Start at the first lift.', 'Ride; Vyana logs HR and the route.'],

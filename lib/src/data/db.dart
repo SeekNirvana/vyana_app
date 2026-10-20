@@ -181,6 +181,25 @@ class UserActivities extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// §5 "Optional target": the goal last set for a count-up practice, so it is
+/// offered pre-set next time. One row per practice — a target belongs to the
+/// practice, not to a session, which is why it outlives every session and is
+/// cleared only by the row's own ×.
+@DataClassName('PracticeTargetRow')
+class PracticeTargets extends Table {
+  TextColumn get activityId => text()();
+
+  /// `time` (minutes) or `distance` (kilometres, GPS practices only).
+  TextColumn get kind => text()();
+
+  /// Minutes for `time`, kilometres for `distance`.
+  RealColumn get value => real()();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {activityId};
+}
+
 @DataClassName('CycleDayRow')
 class CycleDays extends Table {
   /// Local date at midnight, so a day is identified the way the user sees it.
@@ -361,6 +380,7 @@ class GuideVoicePrefs extends Table {
     Patterns,
     CycleDays,
     UserActivities,
+    PracticeTargets,
   ],
 )
 class VyanaDatabase extends _$VyanaDatabase {
@@ -377,7 +397,7 @@ class VyanaDatabase extends _$VyanaDatabase {
   }
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -434,6 +454,9 @@ class VyanaDatabase extends _$VyanaDatabase {
           } on Object catch (_) {/* already exists */}
           try {
             await m.createTable(userActivities);
+          } on Object catch (_) {/* already exists */}
+          try {
+            await m.createTable(practiceTargets);
           } on Object catch (_) {/* already exists */}
         },
         beforeOpen: (details) async {
@@ -981,6 +1004,30 @@ class VyanaDatabase extends _$VyanaDatabase {
   /// activity id and still carry the name in their summary.
   Future<void> deleteUserActivity(String id) =>
       (delete(userActivities)..where((t) => t.id.equals(id))).go();
+
+  // ── Practice targets (§5) ────────────────────────────────────────────────
+
+  Future<PracticeTargetRow?> practiceTarget(String activityId) =>
+      (select(practiceTargets)..where((t) => t.activityId.equals(activityId)))
+          .getSingleOrNull();
+
+  Future<void> setPracticeTarget({
+    required String activityId,
+    required String kind,
+    required double value,
+  }) =>
+      into(practiceTargets).insertOnConflictUpdate(
+        PracticeTargetRow(
+          activityId: activityId,
+          kind: kind,
+          value: value,
+          updatedAt: DateTime.now(),
+        ),
+      );
+
+  Future<void> clearPracticeTarget(String activityId) =>
+      (delete(practiceTargets)..where((t) => t.activityId.equals(activityId)))
+          .go();
 
   Stream<List<CycleDayRow>> watchCycleDays() =>
       (select(cycleDays)..orderBy([(t) => OrderingTerm.desc(t.day)])).watch();
