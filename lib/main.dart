@@ -72,6 +72,7 @@ part 'src/state/day_intent.dart';
 part 'src/state/lucid_arm.dart';
 part 'src/state/pattern_engine.dart';
 part 'src/state/pinned_practices.dart';
+part 'src/state/sleep_extension.dart';
 part 'src/state/notification_prefs.dart';
 part 'src/state/session_sync.dart';
 part 'src/state/location_service.dart';

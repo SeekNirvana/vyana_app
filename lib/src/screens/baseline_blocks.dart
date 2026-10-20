@@ -327,3 +327,70 @@ Future<void> showBaselineAnswersSheet(BuildContext context, WidgetRef ref) {
     ),
   );
 }
+
+/// Bug 14(d): "Still asleep after 07:02?" — the one correction the app
+/// offers for a night the ring ended early. Shown on Home's Sleep card, once
+/// per night, and only where the ring's own heart rate and steps support it
+/// ([sleptOnAfter]). Unanswered leaves the ring's night exactly as it was.
+class SleptOnCard extends ConsumerWidget {
+  const SleptOnCard({
+    super.key,
+    required this.night,
+    required this.sleptOnUntil,
+  });
+
+  final SleepDaySummary night;
+  final DateTime sleptOnUntil;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.vyana;
+    final controller = ref.read(sleepExtensionProvider.notifier);
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+      decoration: BoxDecoration(
+        color: t.elevated,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              VyanaIcon('sparkles', size: 15, color: t.mutedInk),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'Still asleep after ${timeOfDayLabel(night.windowEnd)}?',
+                  style: VyanaType.bodySm.copyWith(
+                    color: t.text,
+                    height: 1.45,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 11),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              BorderedPill(
+                label: 'Yes, until ${timeOfDayLabel(sleptOnUntil)}',
+                onTap: () => controller.extend(night.day, sleptOnUntil),
+              ),
+              BorderedPill(
+                label: 'No',
+                onTap: () => controller.decline(night.day),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}

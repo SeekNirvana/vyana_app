@@ -97,6 +97,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           stale: stale,
           hasRing: hasRing,
         ),
+        // Bug 14(d): the one correction the app offers for a night the ring
+        // ended at a brief waking. Sits under the Sleep card it concerns.
+        _SleptOnPrompt(controller: controller),
         // ── Chosen ─────────────────────────────────────────────────────────
         const SizedBox(height: 22),
         const IntentRow(),
@@ -670,6 +673,25 @@ class _MetricCards extends ConsumerWidget {
         );
       },
     );
+  }
+}
+
+/// Decides whether last night has a question to ask, and asks it once.
+class _SleptOnPrompt extends ConsumerWidget {
+  const _SleptOnPrompt({required this.controller});
+
+  final RingController controller;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final answered = ref.watch(sleepExtensionProvider);
+    final history = controller.history;
+    final night = sleepNightForToday(sleepDaySummaries(history.sleep));
+    if (night == null) return const SizedBox.shrink();
+    if (answered.isAnswered(night.day)) return const SizedBox.shrink();
+    final until = sleptOnAfter(night, history);
+    if (until == null) return const SizedBox.shrink();
+    return SleptOnCard(night: night, sleptOnUntil: until);
   }
 }
 

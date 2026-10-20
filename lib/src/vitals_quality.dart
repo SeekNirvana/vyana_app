@@ -742,6 +742,70 @@ bool ringMeasuredAfter(RingHistory history, DateTime after) {
   return false;
 }
 
+/// Shortest stretch after the ring's end that is worth asking about: under
+/// this it is just a lie-in, not a lost hour of sleep.
+const Duration kSleptOnMinimum = Duration(minutes: 45);
+
+/// How far above the night's own sleeping average still counts as asleep.
+const int kSleptOnHrMargin = 10;
+
+/// Bug 14(d): when the ring ended the night at a brief waking and recorded
+/// nothing afterwards, the stretch the user actually slept on for.
+///
+/// Returns the end of that stretch, or null when there is nothing to ask
+/// about. The evidence is the ring's own: heart rate still inside the
+/// night's sleeping range, with no steps, for at least [kSleptOnMinimum].
+/// The app merges records up to 90 minutes apart already, so this only fires
+/// where the ring genuinely stopped recording.
+DateTime? sleptOnAfter(
+  SleepDaySummary night,
+  RingHistory history, {
+  DateTime? now,
+}) {
+  final hrPoints = vitalHistoryPoints(history, VitalsMetricKind.heartRate);
+  final sleepingHr = _meanInWindow(
+    hrPoints,
+    night.windowStart,
+    night.windowEnd,
+  );
+  if (sleepingHr == null) return null;
+  final ceiling = sleepingHr + kSleptOnHrMargin;
+
+  final after = [
+    for (final p in hrPoints)
+      if (p.time.isAfter(night.windowEnd) &&
+          p.time.isBefore(night.windowEnd.add(kPostSleepEvidenceWindow)))
+        p,
+  ]..sort((a, b) => a.time.compareTo(b.time));
+  if (after.isEmpty) return null;
+
+  // The first reading above the ceiling is the real waking.
+  var end = night.windowEnd;
+  for (final p in after) {
+    if (p.value > ceiling) break;
+    end = p.time;
+  }
+  if (end.difference(night.windowEnd) < kSleptOnMinimum) return null;
+
+  // Steps in that stretch mean they were up and about, whatever the HR says.
+  if (_stepsBetween(history, night.windowEnd, end) > 0) return null;
+  // Never propose a stretch that runs past now.
+  final limit = now ?? DateTime.now();
+  return end.isAfter(limit) ? null : end;
+}
+
+int _stepsBetween(RingHistory history, DateTime from, DateTime to) {
+  var total = 0;
+  for (final record in history.steps) {
+    final ts = timestampOf(record);
+    if (ts == null) continue;
+    final time = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+    if (time.isBefore(from) || time.isAfter(to)) continue;
+    total += readInt(record, const ['steps', 'stepValue', 'value']) ?? 0;
+  }
+  return total;
+}
+
 /// Classifies [night] as last night's sleep relative to [now].
 ///
 /// Only a night whose sleep day is today counts; an older night is

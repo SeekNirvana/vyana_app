@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyana/main.dart';
 import 'package:vyana/src/data/db.dart';
@@ -531,6 +534,46 @@ void main() {
       expect(summary.minutes, 0);
       expect(summary.activeDays, 0);
       expect(summary.byPractice, isEmpty);
+    });
+  });
+
+  group('sleep corrections (bugs 14d, 20)', () {
+    test('unstaged sleep lengthens the night but not its stages', () {
+      const staged = SleepStageBreakdown(
+        deepSeconds: 3600,
+        lightSeconds: 7200,
+        remSeconds: 1800,
+        awakeSeconds: 600,
+        segmentCount: 10,
+      );
+      expect(staged.asleepSeconds, 12600);
+      // "Yes, until 10:05" adds an hour of unstaged sleep.
+      final extended = staged.withUnstaged(3600);
+      expect(extended.asleepSeconds, 16200);
+      // Deep and REM are untouched: nothing is known about that stretch.
+      expect(extended.deepSeconds, staged.deepSeconds);
+      expect(extended.remSeconds, staged.remSeconds);
+      expect(extended.stagedAsleepSeconds, staged.asleepSeconds);
+    });
+
+    test('this ring labels time in bed as light sleep, never awake', () {
+      // Bug 20 case (2), checked against the real cached history rather
+      // than assumed: if a night ever opened awake, the sleep start would
+      // move to the first real stage and the detail would say "In bed …".
+      final raw = File('test/fixtures_real_history.json').readAsStringSync();
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      final nights = sleepDaySummaries(
+        (map['sleep'] as List<dynamic>? ?? const []).toList(),
+      );
+      expect(nights, isNotEmpty);
+      for (final n in nights) {
+        expect(
+          n.inBedBeforeSleep,
+          isFalse,
+          reason: 'no recorded night opens with an awake stage',
+        );
+        expect(n.sleepOnset, n.windowStart);
+      }
     });
   });
 }

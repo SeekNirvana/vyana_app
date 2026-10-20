@@ -1312,6 +1312,7 @@ class SleepStageBreakdown {
     required this.remSeconds,
     required this.awakeSeconds,
     required this.segmentCount,
+    this.unstagedSeconds = 0,
   });
 
   final int deepSeconds;
@@ -1320,7 +1321,18 @@ class SleepStageBreakdown {
   final int awakeSeconds;
   final int segmentCount;
 
-  int get asleepSeconds => deepSeconds + lightSeconds + remSeconds;
+  /// Bug 14(d): sleep the ring did not stage, added when the user confirms
+  /// they slept on past the end of the record. It is ring data — heart rate
+  /// in the night's own sleeping range with no steps — not a guess, so it
+  /// counts in duration and in the base. Stage shares deliberately exclude
+  /// it: nothing is known about how deep that stretch was.
+  final int unstagedSeconds;
+
+  int get asleepSeconds =>
+      deepSeconds + lightSeconds + remSeconds + unstagedSeconds;
+
+  /// Staged sleep only, for deep/REM averages.
+  int get stagedAsleepSeconds => deepSeconds + lightSeconds + remSeconds;
 
   int get totalSeconds => asleepSeconds + awakeSeconds;
 
@@ -1343,8 +1355,18 @@ class SleepStageBreakdown {
       remSeconds: remSeconds + other.remSeconds,
       awakeSeconds: awakeSeconds + other.awakeSeconds,
       segmentCount: segmentCount + other.segmentCount,
+      unstagedSeconds: unstagedSeconds + other.unstagedSeconds,
     );
   }
+
+  SleepStageBreakdown withUnstaged(int seconds) => SleepStageBreakdown(
+        deepSeconds: deepSeconds,
+        lightSeconds: lightSeconds,
+        remSeconds: remSeconds,
+        awakeSeconds: awakeSeconds,
+        segmentCount: segmentCount,
+        unstagedSeconds: seconds,
+      );
 }
 
 class SleepStageSegment {
@@ -1454,6 +1476,38 @@ class SleepDaySummary {
   String get windowLabel {
     return '${timeOfDayLabel(windowStart)} - ${timeOfDayLabel(windowEnd)}';
   }
+
+  /// When sleep actually began, as far as the ring can say (bug 20).
+  ///
+  /// A ring cannot measure sleep directly; it estimates it from movement and
+  /// heart rate. Where the record opens with awake stages, those are time in
+  /// bed, not time asleep, and the night starts at the first real stage.
+  ///
+  /// This ring does not label them: checked against 25 real nights, every one
+  /// opens with a *light sleep* stage and none opens awake — so lying awake
+  /// in bed is already counted as light sleep and nothing here can separate
+  /// it. Guessing an onset from heart rate would be inventing a number, so
+  /// the recorded time stands. See [inBedBeforeSleep].
+  DateTime get sleepOnset {
+    for (final session in sessions) {
+      for (final segment in session.segments) {
+        if (segment.sleepType != SleepType.awake) {
+          return DateTime.fromMillisecondsSinceEpoch(
+            segment.startTimeStamp * 1000,
+          );
+        }
+      }
+    }
+    return windowStart;
+  }
+
+  /// True when the ring recorded time in bed before sleep, so the detail can
+  /// show "In bed 23:05 · asleep 23:40" rather than one start time.
+  bool get inBedBeforeSleep => sleepOnset.isAfter(windowStart);
+
+  String get inBedLabel =>
+      'In bed ${timeOfDayLabel(windowStart)} · asleep '
+      '${timeOfDayLabel(sleepOnset)}';
 }
 
 class SleepContinuousSection {
@@ -1584,6 +1638,11 @@ SleepStageBreakdown _breakdownFromSegments(List<SleepStageSegment> segments) {
   );
 }
 
+/// Nights the user has confirmed ran on past the ring's end (bug 14(d)),
+/// keyed by sleep day. Pushed here by [SleepExtensionController] in the same
+/// way [sleepScoreDurationTarget] is, so every screen reads one night.
+Map<DateTime, DateTime> sleepNightExtensions = {};
+
 List<SleepDaySummary> sleepDaySummaries(List<dynamic> sleepRecords) {
   final grouped = <DateTime, List<SleepContinuousSection>>{};
   for (final section in sleepContinuousSections(sleepRecords)) {
@@ -1608,13 +1667,22 @@ List<SleepDaySummary> sleepDaySummaries(List<dynamic> sleepRecords) {
     final windowStart = starts.reduce((a, b) => a.isBefore(b) ? a : b);
     final windowEnd = ends.reduce((a, b) => a.isAfter(b) ? a : b);
 
+    // Bug 14(d): the user confirmed they slept on past the ring's end, so
+    // the night runs to the end of that stretch. Stored as unstaged sleep —
+    // it lengthens the night without inventing stages for it.
+    final extendedTo = sleepNightExtensions[entry.key];
+    final extraSeconds = extendedTo != null && extendedTo.isAfter(windowEnd)
+        ? extendedTo.difference(windowEnd).inSeconds
+        : 0;
+
     return SleepDaySummary(
       day: entry.key,
       windowStart: windowStart,
-      windowEnd: windowEnd,
+      windowEnd: extraSeconds > 0 ? extendedTo! : windowEnd,
       sections: List.unmodifiable(sections),
       sessions: List.unmodifiable(sessions),
-      breakdown: breakdown,
+      breakdown:
+          extraSeconds > 0 ? breakdown.withUnstaged(extraSeconds) : breakdown,
       waveform: List.unmodifiable(waveform),
     );
   }).toList()..sort((a, b) => b.day.compareTo(a.day));
