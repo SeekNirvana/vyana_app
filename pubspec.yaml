@@ -179,16 +179,22 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
+  # The new mark (9 Oct 2026): a drop inside an open gold ring, on a dark
+  # tile. iOS wants the opaque tile; Android's adaptive icon wants the mark
+  # alone on transparency, inside the central 62% — the full tile as a
+  # foreground would be clipped by the launcher's mask the same way bug 5
+  # clipped the splash.
   image_path: assets/logo.png
-  adaptive_icon_background: "#0A0F0A"
-  adaptive_icon_foreground: assets/logo.png
+  adaptive_icon_background: "#071211"
+  adaptive_icon_foreground: assets/logo_adaptive_foreground.png
   remove_alpha_ios: true
 
 flutter_native_splash:
   color: "#071211"
-  image: assets/splash_logo_large.png
+  image: assets/splash_logo.png
   android_12:
     color: "#071211"
     # Android 12+ masks the splash icon to a circle two-thirds of the canvas,
-    # so this variant keeps the art inside the central ~62% (bug 5).
+    # so this variant keeps the art inside the central ~62% (bug 5). Built
+    # from splash_logo.png by scripts/build-brand-assets.py.
     image: assets/splash_logo_android12.png
