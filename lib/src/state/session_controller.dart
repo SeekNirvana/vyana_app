@@ -32,6 +32,17 @@ class SessionController extends ChangeNotifier {
   /// is the default; true uses the set/rest timer. Remembered per user.
   bool _tracksSets = false;
 
+  /// §5 (mock 12f): the practice is being done without guidance — no voice,
+  /// no pacer, no orb, no audio. The ring is unchanged, so the session still
+  /// measures what the practice did.
+  bool _onMyOwn = false;
+
+  /// §5 "Optional target": a goal to count up toward. It never ends the
+  /// session; it only cues, once at halfway (movement) and once on arrival.
+  PracticeTarget? _target;
+  bool _targetHalfwayCued = false;
+  bool _targetReachedCued = false;
+
   /// §5 "Forgotten session". A session nobody ended is the common failure of
   /// start/end tracking: the app cannot tell you later that it is still
   /// recording, so it has to notice while it still can.
@@ -82,6 +93,42 @@ class SessionController extends ChangeNotifier {
 
   /// How far above the resting band still counts as "settled".
   static const int kSettledHrMargin = 10;
+
+  /// §5 "Optional target": cue at halfway and on arrival, each once. Nothing
+  /// here stops the session — the target is a goal, not a limit.
+  ///
+  /// Movement gets both cues spoken; mindfulness and wellness get only a soft
+  /// bell at the target, because a voice halfway through a practice done "on
+  /// my own" is exactly what that mode exists to avoid.
+  void _checkTargetCues() {
+    final t = _target;
+    if (t == null) return;
+    final done = _targetAchieved(t);
+    if (done == null) return;
+    final isMovement = _activity?.cat == 'sport';
+
+    if (isMovement && !_targetHalfwayCued && done >= t.value / 2) {
+      _targetHalfwayCued = true;
+      unawaited(HapticFeedback.mediumImpact());
+      emitCue(t.kind == PracticeTargetKind.time
+          ? 'Halfway. ${PracticeTarget._trim(t.value / 2)} minutes.'
+          : 'Halfway. ${PracticeTarget._trim(t.value / 2)} kilometres.');
+    }
+
+    if (!_targetReachedCued && done >= t.value) {
+      _targetReachedCued = true;
+      unawaited(HapticFeedback.mediumImpact());
+      if (isMovement) {
+        emitCue(t.kind == PracticeTargetKind.time
+            ? '${PracticeTarget._trim(t.value)} minutes. Target reached.'
+            : '${PracticeTarget._trim(t.value)} kilometres. Target reached.');
+      } else {
+        // A soft bell only, and no voice: these practices asked for quiet.
+        unawaited(SystemSound.play(SystemSoundType.alert));
+      }
+      _notify();
+    }
+  }
 
   void _checkForgottenSession() {
     if (_forgottenFired || !_active || _paused) return;
@@ -151,6 +198,39 @@ class SessionController extends ChangeNotifier {
 
   /// Whether this session logs individual sets and rests.
   bool get tracksSets => _tracksSets;
+
+  /// Running without guidance (§5, mock 12f).
+  bool get onMyOwn => _onMyOwn;
+
+  /// The goal this session counts up toward, or null.
+  PracticeTarget? get target => _target;
+
+  /// How far along the target the session is, 0.0 → 1.0, for the progress
+  /// ring. Null when no target is set, or when a distance target has no
+  /// distance yet.
+  double? get targetProgress {
+    final t = _target;
+    if (t == null || t.value <= 0) return null;
+    final done = _targetAchieved(t);
+    if (done == null) return null;
+    return (done / t.value).clamp(0.0, 1.0);
+  }
+
+  /// What has been achieved against [t]'s own unit: minutes, or kilometres.
+  double? _targetAchieved(PracticeTarget t) => switch (t.kind) {
+        PracticeTargetKind.time => _elapsed.inSeconds / 60,
+        PracticeTargetKind.distance =>
+          _gpsState == GpsState.notUsed ? null : _distanceMeters / 1000,
+      };
+
+  /// True once the target has been reached. The session carries on — only the
+  /// user ends it — so this drives copy, never the clock.
+  bool get targetReached {
+    final t = _target;
+    if (t == null) return false;
+    final done = _targetAchieved(t);
+    return done != null && done >= t.value;
+  }
 
   /// When heart rate settled back near resting, for the "End at 12:40" action
   /// that back-dates the session instead of inflating it with forgotten time.
@@ -253,6 +333,8 @@ class SessionController extends ChangeNotifier {
     Activity activity, {
     int? minutes,
     bool tracksSets = false,
+    bool onMyOwn = false,
+    PracticeTarget? target,
   }) async {
     if (_active) return 'A session is already running.';
     final ring = _ring;
@@ -276,7 +358,13 @@ class SessionController extends ChangeNotifier {
 
     _activity = activity;
     _tracksSets = tracksSets;
-    _plannedMinutes = activity.isTimed ? minutes : null;
+    _onMyOwn = onMyOwn;
+    _target = target;
+    _targetHalfwayCued = false;
+    _targetReachedCued = false;
+    // On my own is count-up by definition: a chosen length would be the
+    // guidance the user just turned off.
+    _plannedMinutes = (activity.isTimed && !onMyOwn) ? minutes : null;
     _bellRung = false;
     _overrun = false;
     _sessionId = id;
@@ -442,6 +530,7 @@ class SessionController extends ChangeNotifier {
       _emitSplitCue();
     }
 
+    _checkTargetCues();
     _checkForgottenSession();
 
     final id = _sessionId;
@@ -758,12 +847,10 @@ class SessionController extends ChangeNotifier {
     _notify();
   }
 
-  /// Stops the ring sport, releases the scheduler and finalises the session
-  /// with a computed summary. The summary is returned for the post-session UI.
-  Future<Map<String, dynamic>> end() async {
-    // A session that ends early must not leave its bell scheduled.
-    unawaited(VitalsNotificationService.instance.cancelPracticeEnd());
-    if (!_active) return _lastSummary ?? const {};
+  /// Stops the clock, the GPS stream, the cues and the ring's sport mode.
+  /// Shared by [end] and [discard], which differ only in what they then do
+  /// with the row.
+  Future<void> _stopLiveMachinery() async {
     _ticker?.cancel();
     _ticker = null;
     _posSub?.cancel();
@@ -774,13 +861,65 @@ class SessionController extends ChangeNotifier {
 
     final ring = _ring;
     final a = _activity;
-    final id = _sessionId;
     if (a != null && ring.isConnected) {
       await ring.repo.stopSport(sportTypeCodeForRing(a.ring));
       await ring.repo.setRealtimeData(false);
     }
     ring.sessionEventSink = null;
     ring.setSessionActive(false);
+  }
+
+  /// Bug 28: ends the session without saving it. Trying a practice to see how
+  /// it works used to write a session that then appeared in history, Done
+  /// today, Recent and the patterns — so the only way to undo a look was to
+  /// delete it afterwards. The row and its samples go; nothing is summarised.
+  Future<void> discard() async {
+    unawaited(VitalsNotificationService.instance.cancelPracticeEnd());
+    if (!_active) return;
+    final id = _sessionId;
+    await _stopLiveMachinery();
+    if (id != null) await _db.deleteSession(id);
+
+    _active = false;
+    _paused = false;
+    _backdateEndTo = null;
+    _forgottenFired = false;
+    _forgottenSnoozedUntil = null;
+    _hrSettledAt = null;
+    _lastSummary = null;
+    _activity = null;
+    _sessionId = null;
+    _plannedMinutes = null;
+    _bellRung = false;
+    _overrun = false;
+    _onMyOwn = false;
+    _target = null;
+    _targetHalfwayCued = false;
+    _targetReachedCued = false;
+    _elapsed = Duration.zero;
+    _pausedTotal = Duration.zero;
+    _pausedAt = null;
+    _sessionSteps = null;
+    _startSteps = null;
+    _hrSeries.clear();
+    _route.clear();
+    _notify();
+  }
+
+  /// Under a minute is almost always a try rather than a practice, so [end]
+  /// asks before saving one (bug 28).
+  static const Duration kShortSessionThreshold = Duration(seconds: 60);
+
+  bool get isShortSession => _elapsed < kShortSessionThreshold;
+
+  /// Stops the ring sport, releases the scheduler and finalises the session
+  /// with a computed summary. The summary is returned for the post-session UI.
+  Future<Map<String, dynamic>> end() async {
+    // A session that ends early must not leave its bell scheduled.
+    unawaited(VitalsNotificationService.instance.cancelPracticeEnd());
+    if (!_active) return _lastSummary ?? const {};
+    final id = _sessionId;
+    await _stopLiveMachinery();
 
     final endedAt = _backdateEndTo ?? DateTime.now();
     if (_backdateEndTo != null) {
@@ -788,6 +927,7 @@ class SessionController extends ChangeNotifier {
       final started = _startedAt;
       if (started != null) _elapsed = endedAt.difference(started);
     }
+    final a = _activity;
     final summary = _computeSummary();
     if (id != null) {
       await _db.finishSession(id, endedAt, jsonEncode(summary));
@@ -841,6 +981,14 @@ class SessionController extends ChangeNotifier {
       'distanceMeters': _distanceMeters.round(),
       'elevationGain': _elevationGain.round(),
       if (_sessionSteps != null) 'steps': _sessionSteps,
+      if (_onMyOwn) 'onMyOwn': true,
+      // §5: the summary says whether the target was met, so a session the
+      // user ended short still reads honestly ("24 of 30 min").
+      if (_target != null) ...{
+        'targetKind': _target!.kind.name,
+        'targetValue': _target!.value,
+        'targetReached': targetReached,
+      },
     };
   }
 
@@ -851,6 +999,10 @@ class SessionController extends ChangeNotifier {
     _plannedMinutes = null;
     _bellRung = false;
     _overrun = false;
+    _onMyOwn = false;
+    _target = null;
+    _targetHalfwayCued = false;
+    _targetReachedCued = false;
     _sessionId = null;
     _lastSummary = null;
     _elapsed = Duration.zero;

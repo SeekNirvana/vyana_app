@@ -8204,6 +8204,322 @@ class UserActivitiesCompanion extends UpdateCompanion<UserActivityRow> {
   }
 }
 
+class $PracticeTargetsTable extends PracticeTargets
+    with TableInfo<$PracticeTargetsTable, PracticeTargetRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PracticeTargetsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _activityIdMeta = const VerificationMeta(
+    'activityId',
+  );
+  @override
+  late final GeneratedColumn<String> activityId = GeneratedColumn<String>(
+    'activity_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _valueMeta = const VerificationMeta('value');
+  @override
+  late final GeneratedColumn<double> value = GeneratedColumn<double>(
+    'value',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [activityId, kind, value, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'practice_targets';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PracticeTargetRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('activity_id')) {
+      context.handle(
+        _activityIdMeta,
+        activityId.isAcceptableOrUnknown(data['activity_id']!, _activityIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_activityIdMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('value')) {
+      context.handle(
+        _valueMeta,
+        value.isAcceptableOrUnknown(data['value']!, _valueMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_valueMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {activityId};
+  @override
+  PracticeTargetRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PracticeTargetRow(
+      activityId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}activity_id'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      value: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}value'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $PracticeTargetsTable createAlias(String alias) {
+    return $PracticeTargetsTable(attachedDatabase, alias);
+  }
+}
+
+class PracticeTargetRow extends DataClass
+    implements Insertable<PracticeTargetRow> {
+  final String activityId;
+
+  /// `time` (minutes) or `distance` (kilometres, GPS practices only).
+  final String kind;
+
+  /// Minutes for `time`, kilometres for `distance`.
+  final double value;
+  final DateTime updatedAt;
+  const PracticeTargetRow({
+    required this.activityId,
+    required this.kind,
+    required this.value,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['activity_id'] = Variable<String>(activityId);
+    map['kind'] = Variable<String>(kind);
+    map['value'] = Variable<double>(value);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  PracticeTargetsCompanion toCompanion(bool nullToAbsent) {
+    return PracticeTargetsCompanion(
+      activityId: Value(activityId),
+      kind: Value(kind),
+      value: Value(value),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory PracticeTargetRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PracticeTargetRow(
+      activityId: serializer.fromJson<String>(json['activityId']),
+      kind: serializer.fromJson<String>(json['kind']),
+      value: serializer.fromJson<double>(json['value']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'activityId': serializer.toJson<String>(activityId),
+      'kind': serializer.toJson<String>(kind),
+      'value': serializer.toJson<double>(value),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  PracticeTargetRow copyWith({
+    String? activityId,
+    String? kind,
+    double? value,
+    DateTime? updatedAt,
+  }) => PracticeTargetRow(
+    activityId: activityId ?? this.activityId,
+    kind: kind ?? this.kind,
+    value: value ?? this.value,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  PracticeTargetRow copyWithCompanion(PracticeTargetsCompanion data) {
+    return PracticeTargetRow(
+      activityId: data.activityId.present
+          ? data.activityId.value
+          : this.activityId,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      value: data.value.present ? data.value.value : this.value,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PracticeTargetRow(')
+          ..write('activityId: $activityId, ')
+          ..write('kind: $kind, ')
+          ..write('value: $value, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(activityId, kind, value, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PracticeTargetRow &&
+          other.activityId == this.activityId &&
+          other.kind == this.kind &&
+          other.value == this.value &&
+          other.updatedAt == this.updatedAt);
+}
+
+class PracticeTargetsCompanion extends UpdateCompanion<PracticeTargetRow> {
+  final Value<String> activityId;
+  final Value<String> kind;
+  final Value<double> value;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const PracticeTargetsCompanion({
+    this.activityId = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.value = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PracticeTargetsCompanion.insert({
+    required String activityId,
+    required String kind,
+    required double value,
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : activityId = Value(activityId),
+       kind = Value(kind),
+       value = Value(value);
+  static Insertable<PracticeTargetRow> custom({
+    Expression<String>? activityId,
+    Expression<String>? kind,
+    Expression<double>? value,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (activityId != null) 'activity_id': activityId,
+      if (kind != null) 'kind': kind,
+      if (value != null) 'value': value,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PracticeTargetsCompanion copyWith({
+    Value<String>? activityId,
+    Value<String>? kind,
+    Value<double>? value,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return PracticeTargetsCompanion(
+      activityId: activityId ?? this.activityId,
+      kind: kind ?? this.kind,
+      value: value ?? this.value,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (activityId.present) {
+      map['activity_id'] = Variable<String>(activityId.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (value.present) {
+      map['value'] = Variable<double>(value.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PracticeTargetsCompanion(')
+          ..write('activityId: $activityId, ')
+          ..write('kind: $kind, ')
+          ..write('value: $value, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$VyanaDatabase extends GeneratedDatabase {
   _$VyanaDatabase(QueryExecutor e) : super(e);
   $VyanaDatabaseManager get managers => $VyanaDatabaseManager(this);
@@ -8227,6 +8543,9 @@ abstract class _$VyanaDatabase extends GeneratedDatabase {
   late final $PatternsTable patterns = $PatternsTable(this);
   late final $CycleDaysTable cycleDays = $CycleDaysTable(this);
   late final $UserActivitiesTable userActivities = $UserActivitiesTable(this);
+  late final $PracticeTargetsTable practiceTargets = $PracticeTargetsTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -8246,6 +8565,7 @@ abstract class _$VyanaDatabase extends GeneratedDatabase {
     patterns,
     cycleDays,
     userActivities,
+    practiceTargets,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -12961,6 +13281,199 @@ typedef $$UserActivitiesTableProcessedTableManager =
       UserActivityRow,
       PrefetchHooks Function()
     >;
+typedef $$PracticeTargetsTableCreateCompanionBuilder =
+    PracticeTargetsCompanion Function({
+      required String activityId,
+      required String kind,
+      required double value,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+typedef $$PracticeTargetsTableUpdateCompanionBuilder =
+    PracticeTargetsCompanion Function({
+      Value<String> activityId,
+      Value<String> kind,
+      Value<double> value,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$PracticeTargetsTableFilterComposer
+    extends Composer<_$VyanaDatabase, $PracticeTargetsTable> {
+  $$PracticeTargetsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get activityId => $composableBuilder(
+    column: $table.activityId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PracticeTargetsTableOrderingComposer
+    extends Composer<_$VyanaDatabase, $PracticeTargetsTable> {
+  $$PracticeTargetsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get activityId => $composableBuilder(
+    column: $table.activityId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PracticeTargetsTableAnnotationComposer
+    extends Composer<_$VyanaDatabase, $PracticeTargetsTable> {
+  $$PracticeTargetsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get activityId => $composableBuilder(
+    column: $table.activityId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<double> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$PracticeTargetsTableTableManager
+    extends
+        RootTableManager<
+          _$VyanaDatabase,
+          $PracticeTargetsTable,
+          PracticeTargetRow,
+          $$PracticeTargetsTableFilterComposer,
+          $$PracticeTargetsTableOrderingComposer,
+          $$PracticeTargetsTableAnnotationComposer,
+          $$PracticeTargetsTableCreateCompanionBuilder,
+          $$PracticeTargetsTableUpdateCompanionBuilder,
+          (
+            PracticeTargetRow,
+            BaseReferences<
+              _$VyanaDatabase,
+              $PracticeTargetsTable,
+              PracticeTargetRow
+            >,
+          ),
+          PracticeTargetRow,
+          PrefetchHooks Function()
+        > {
+  $$PracticeTargetsTableTableManager(
+    _$VyanaDatabase db,
+    $PracticeTargetsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PracticeTargetsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PracticeTargetsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PracticeTargetsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> activityId = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<double> value = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PracticeTargetsCompanion(
+                activityId: activityId,
+                kind: kind,
+                value: value,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String activityId,
+                required String kind,
+                required double value,
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PracticeTargetsCompanion.insert(
+                activityId: activityId,
+                kind: kind,
+                value: value,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PracticeTargetsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$VyanaDatabase,
+      $PracticeTargetsTable,
+      PracticeTargetRow,
+      $$PracticeTargetsTableFilterComposer,
+      $$PracticeTargetsTableOrderingComposer,
+      $$PracticeTargetsTableAnnotationComposer,
+      $$PracticeTargetsTableCreateCompanionBuilder,
+      $$PracticeTargetsTableUpdateCompanionBuilder,
+      (
+        PracticeTargetRow,
+        BaseReferences<
+          _$VyanaDatabase,
+          $PracticeTargetsTable,
+          PracticeTargetRow
+        >,
+      ),
+      PracticeTargetRow,
+      PrefetchHooks Function()
+    >;
 
 class $VyanaDatabaseManager {
   final _$VyanaDatabase _db;
@@ -12993,4 +13506,6 @@ class $VyanaDatabaseManager {
       $$CycleDaysTableTableManager(_db, _db.cycleDays);
   $$UserActivitiesTableTableManager get userActivities =>
       $$UserActivitiesTableTableManager(_db, _db.userActivities);
+  $$PracticeTargetsTableTableManager get practiceTargets =>
+      $$PracticeTargetsTableTableManager(_db, _db.practiceTargets);
 }

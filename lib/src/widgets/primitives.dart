@@ -786,6 +786,92 @@ void showVyanaSnackBar(
     );
 }
 
+/// One number, with its unit shown rather than explained. Used by §5's
+/// "Custom" target; returns null when cancelled or left empty.
+Future<double?> showVyanaNumberDialog({
+  required BuildContext context,
+  required String title,
+  required String suffix,
+  bool allowDecimal = false,
+}) {
+  final t = context.vyana;
+  final field = TextEditingController();
+  return showDialog<double>(
+    context: context,
+    builder: (ctx) {
+      void submit() {
+        final value = double.tryParse(field.text.trim().replaceAll(',', '.'));
+        Navigator.of(ctx).pop(value);
+      }
+
+      return Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Panel(
+          pad: 20,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: VyanaType.titleSerif.copyWith(color: t.text)),
+              const SizedBox(height: 12),
+              Container(
+                constraints: const BoxConstraints(minHeight: 48),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: t.hairline),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: field,
+                        autofocus: true,
+                        keyboardType: TextInputType.numberWithOptions(
+                          decimal: allowDecimal,
+                        ),
+                        onSubmitted: (_) => submit(),
+                        style: VyanaType.mono12
+                            .copyWith(color: t.text, fontSize: 15),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      suffix,
+                      style: VyanaType.mono12
+                          .copyWith(color: t.mutedInk, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: Cta(
+                      label: 'Cancel',
+                      solid: false,
+                      onTap: () => Navigator.of(ctx).pop(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Cta(label: 'Set', icon: 'check', onTap: submit),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 Future<T?> showVyanaConfirmDialog<T>({
   required BuildContext context,
   required String title,

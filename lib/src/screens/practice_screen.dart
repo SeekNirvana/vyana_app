@@ -68,6 +68,10 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
             IconBtn(icon: 'insights', onTap: () => openWeeklyInsights(context)),
           ],
         ),
+        // Bug 30: the eyebrow printed SUGGESTED TODAY either way, so beside
+        // the intent chip it read as "your status is only a suggestion" even
+        // after the user had chosen it. Home's heading stays "Suggested
+        // practice" — that names the practice, not the status.
         // Per the design: SUGGESTED TODAY ── line ── intent chip · score.
         // The chip is editable here (same stored value as Home); the score
         // deep-links to Metrics. No sentence — the reason lives in the card.
@@ -76,6 +80,8 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
         LayoutBuilder(
           builder: (context, constraints) {
             final scale = MediaQuery.textScalerOf(context).scale(1);
+            final intentEyebrow =
+                intentState.confirmed ? 'FOR TODAY' : 'SUGGESTED TODAY';
             final status = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -107,7 +113,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  MonoEyebrow('SUGGESTED TODAY', size: 11, spacing: 0.9),
+                  MonoEyebrow(intentEyebrow, size: 11, spacing: 0.9),
                   const SizedBox(height: 8),
                   status,
                 ],
@@ -115,7 +121,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
             }
             return Row(
               children: [
-                MonoEyebrow('SUGGESTED TODAY', size: 11, spacing: 0.9),
+                MonoEyebrow(intentEyebrow, size: 11, spacing: 0.9),
                 const SizedBox(width: 8),
                 Expanded(child: Container(height: 1, color: t.hairline)),
                 const SizedBox(width: 8),
@@ -892,6 +898,10 @@ class ActivityDetailScreen extends ConsumerStatefulWidget {
 /// Gym's remembered mode (§5, mock 12d).
 const _gymModeKey = 'vyana.practice.gymTracksSets';
 
+/// "On my own" is remembered per practice, not globally: someone may want a
+/// voice for Yoga Flow and silence for Breathwork.
+const _onMyOwnKeyPrefix = 'vyana.practice.onMyOwn.';
+
 class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
   /// Null for open-ended sessions: no preset length except timed practices.
   late int _duration = widget.minutes ?? widget.activity.dur;
@@ -899,11 +909,54 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
   /// Gym only. Defaults to "Start and end", as the handover specifies.
   bool _tracksSets = false;
 
+  /// §5 (12f). Guided is the default; the choice is remembered per practice.
+  bool _onMyOwn = false;
+
+  /// §5 "Optional target", remembered per practice and offered pre-set.
+  PracticeTarget? _target;
+
   @override
   void initState() {
     super.initState();
     if (widget.activity.kind == 'strength') {
       unawaited(_loadGymMode());
+    }
+    if (offersOnMyOwn(widget.activity)) unawaited(_loadOnMyOwn());
+    unawaited(_loadTarget());
+  }
+
+  /// A suggestion from Home always opens Guided with its preset length, so
+  /// the practice it promised is the practice that runs.
+  bool get _suggested => widget.minutes != null;
+
+  Future<void> _loadOnMyOwn() async {
+    if (_suggested) return;
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getBool('$_onMyOwnKeyPrefix${widget.activity.id}');
+    if (mounted && stored != null) setState(() => _onMyOwn = stored);
+  }
+
+  Future<void> _loadTarget() async {
+    final row = await ref.read(databaseProvider).practiceTarget(
+          widget.activity.id,
+        );
+    if (!mounted || row == null) return;
+    final kind = PracticeTarget.kindFromName(row.kind);
+    if (kind == null) return;
+    setState(() => _target = PracticeTarget(kind: kind, value: row.value));
+  }
+
+  Future<void> _setTarget(PracticeTarget? target) async {
+    setState(() => _target = target);
+    final db = ref.read(databaseProvider);
+    if (target == null) {
+      await db.clearPracticeTarget(widget.activity.id);
+    } else {
+      await db.setPracticeTarget(
+        activityId: widget.activity.id,
+        kind: target.kind.name,
+        value: target.value,
+      );
     }
   }
 
@@ -934,7 +987,9 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
   /// §5 Length: only a timed practice has a length to choose, because only a
   /// timed practice keeps it. Movement is open-ended and counts up, so
   /// offering it a preset would promise an end it never delivers.
-  bool get _hasLengthChooser => widget.activity.isTimed;
+  /// On my own has no length to choose: a countdown is guidance, which is the
+  /// thing that mode turns off. It gets the optional target instead.
+  bool get _hasLengthChooser => widget.activity.isTimed && !_onMyOwn;
 
   List<int> get _lengthOptions {
     final base = widget.activity.dur;
@@ -1063,9 +1118,24 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                     // Open by default until the practice has been done once.
                     _HowItWorks(
                       activity: a,
+                      steps: howStepsFor(
+                        a,
+                        gymTracksSets: _tracksSets,
+                        onMyOwn: _onMyOwn,
+                        hasTarget: _target != null,
+                      ),
                       accent: ac,
                       initiallyOpen: !everDone,
                     ),
+                    if (offersTarget(a, onMyOwn: _onMyOwn)) ...[
+                      const SizedBox(height: 6),
+                      _TargetRow(
+                        activity: a,
+                        target: _target,
+                        accent: ac,
+                        onPick: _setTarget,
+                      ),
+                    ],
                     if (_hasLengthChooser) ...[
                       const SizedBox(height: 18),
                       const SectionHead(eyebrow: 'Length', title: 'How long?'),
@@ -1091,12 +1161,39 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
               if (a.kind == 'strength')
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                  child: _GymModeSwitch(
-                    tracksSets: _tracksSets,
+                  child: _ModeSwitch(
+                    leftLabel: 'Start and end',
+                    rightLabel: 'Track sets & rest',
+                    rightSelected: _tracksSets,
+                    // Bug 27: say what you get, not what to tap — the steps
+                    // in "How it works" now cover the tapping.
+                    hint: _tracksSets
+                        ? 'Sets, rest times and heart-rate recovery'
+                        : 'Time and heart rate',
                     onPick: (value) async {
                       setState(() => _tracksSets = value);
                       final prefs = await SharedPreferences.getInstance();
                       await prefs.setBool(_gymModeKey, value);
+                    },
+                  ),
+                ),
+              // §5 (12f): the same switch shape as Gym's, directly above
+              // Start. A suggestion from Home always runs Guided.
+              if (offersOnMyOwn(a) && !_suggested)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: _ModeSwitch(
+                    leftLabel: 'Guided',
+                    rightLabel: 'On my own',
+                    rightSelected: _onMyOwn,
+                    hint: _onMyOwn
+                        ? 'Start and end. No voice or cues. The ring still '
+                            'measures how it helps.'
+                        : "Vyana's voice, pacer and cues lead the practice.",
+                    onPick: (value) async {
+                      setState(() => _onMyOwn = value);
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool('$_onMyOwnKeyPrefix${a.id}', value);
                     },
                   ),
                 ),
@@ -1126,6 +1223,10 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
         widget.activity,
         minutes: _hasLengthChooser ? _duration : null,
         tracksSets: _tracksSets,
+        onMyOwn: _onMyOwn && !_suggested,
+        target: offersTarget(widget.activity, onMyOwn: _onMyOwn)
+            ? _target
+            : null,
       );
       if (!context.mounted) return;
       if (error != null) {
@@ -1559,17 +1660,158 @@ Future<void> showAddYourOwnSportSheet(
 }
 
 /// Gym's two modes, with the hint that says what each one asks of you.
-class _GymModeSwitch extends StatelessWidget {
-  const _GymModeSwitch({required this.tracksSets, required this.onPick});
+/// §5 "Optional target": a collapsed row under "How it works". A target is a
+/// goal, never a limit — the session counts up and only the user ends it —
+/// so this sets a cue, not a timer.
+class _TargetRow extends StatefulWidget {
+  const _TargetRow({
+    required this.activity,
+    required this.target,
+    required this.accent,
+    required this.onPick,
+  });
 
-  final bool tracksSets;
+  final Activity activity;
+  final PracticeTarget? target;
+  final Color accent;
+  final ValueChanged<PracticeTarget?> onPick;
+
+  @override
+  State<_TargetRow> createState() => _TargetRowState();
+}
+
+class _TargetRowState extends State<_TargetRow> {
+  bool _open = false;
+
+  static const List<double> _minutes = [15, 30, 45, 60];
+  static const List<double> _kilometres = [1, 3, 5, 10];
+
+  Future<void> _custom(PracticeTargetKind kind) async {
+    final value = await showVyanaNumberDialog(
+      context: context,
+      title: kind == PracticeTargetKind.time ? 'Target time' : 'Target distance',
+      suffix: kind == PracticeTargetKind.time ? 'min' : 'km',
+      allowDecimal: kind == PracticeTargetKind.distance,
+    );
+    if (value == null || value <= 0) return;
+    widget.onPick(PracticeTarget(kind: kind, value: value));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final target = widget.target;
+    final showsDistance = widget.activity.gps;
+
+    Widget choices(PracticeTargetKind kind, List<double> values) => Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final v in values)
+              Pill(
+                label: PracticeTarget(kind: kind, value: v).label,
+                active: target?.kind == kind && target?.value == v,
+                accent: widget.accent,
+                onTap: () => widget.onPick(
+                  PracticeTarget(kind: kind, value: v),
+                ),
+              ),
+            Pill(
+              label: 'Custom',
+              active: target?.kind == kind && !values.contains(target?.value),
+              accent: widget.accent,
+              onTap: () => _custom(kind),
+            ),
+          ],
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _open = !_open),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    target == null ? 'Set a target' : 'Target',
+                    style: VyanaType.label
+                        .copyWith(color: t.heading, fontSize: 16.5),
+                  ),
+                ),
+                if (target != null) ...[
+                  Text(
+                    target.label,
+                    style: VyanaType.mono12.copyWith(
+                      color: widget.accent,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  // The × is the only way a target is cleared, so it stays
+                  // visible rather than hiding inside the open panel.
+                  InkWell(
+                    onTap: () => widget.onPick(null),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: VyanaIcon('x', size: 14, color: t.mutedInk),
+                    ),
+                  ),
+                ] else
+                  VyanaIcon(
+                    _open ? 'chevU' : 'chevD',
+                    size: 18,
+                    color: t.mutedInk,
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (_open || target != null) ...[
+          choices(PracticeTargetKind.time, _minutes),
+          if (showsDistance) ...[
+            const SizedBox(height: 10),
+            Text(
+              'DISTANCE',
+              style: VyanaType.mono12.copyWith(color: t.mutedInk, fontSize: 11),
+            ),
+            const SizedBox(height: 8),
+            choices(PracticeTargetKind.distance, _kilometres),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+/// A two-option switch directly above Start, with one line saying what the
+/// selected mode gives you. Gym (mock 12d) and On my own (12f) share it, so
+/// the two never drift into looking like different kinds of choice.
+class _ModeSwitch extends StatelessWidget {
+  const _ModeSwitch({
+    required this.leftLabel,
+    required this.rightLabel,
+    required this.rightSelected,
+    required this.hint,
+    required this.onPick,
+  });
+
+  final String leftLabel;
+  final String rightLabel;
+  final bool rightSelected;
+  final String hint;
   final ValueChanged<bool> onPick;
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
     Widget option(String label, bool value) {
-      final active = tracksSets == value;
+      final active = rightSelected == value;
       return Expanded(
         child: InkWell(
           onTap: () => onPick(value),
@@ -1604,16 +1846,14 @@ class _GymModeSwitch extends StatelessWidget {
       children: [
         Row(
           children: [
-            option('Start and end', false),
+            option(leftLabel, false),
             const SizedBox(width: 8),
-            option('Track sets & rest', true),
+            option(rightLabel, true),
           ],
         ),
         const SizedBox(height: 6),
         Text(
-          tracksSets
-              ? 'Log a set, then rest; Vyana watches your HR drop.'
-              : 'Nothing to tap until you finish.',
+          hint,
           style: VyanaType.caption.copyWith(color: t.mutedInk, fontSize: 12.5),
         ),
       ],
@@ -1781,11 +2021,16 @@ class _ActivitySessionRow extends StatelessWidget {
 class _HowItWorks extends StatefulWidget {
   const _HowItWorks({
     required this.activity,
+    required this.steps,
     required this.accent,
     required this.initiallyOpen,
   });
 
   final Activity activity;
+
+  /// From [howStepsFor], so the steps follow the Gym / On my own switch and
+  /// any target rather than describing one fixed way of practising.
+  final List<String> steps;
   final Color accent;
   final bool initiallyOpen;
 
@@ -1828,8 +2073,8 @@ class _HowItWorksState extends State<_HowItWorks> {
           ),
         ),
         if (_open) ...[
-          for (var i = 0; i < a.how.length; i++)
-            _HowStep(index: i + 1, text: a.how[i], accent: widget.accent),
+          for (var i = 0; i < widget.steps.length; i++)
+            _HowStep(index: i + 1, text: widget.steps[i], accent: widget.accent),
           // dur appears only as a broad first-time suggestion, never a timer.
           if (!a.isTimed && a.dur > 0) ...[
             const SizedBox(height: 8),

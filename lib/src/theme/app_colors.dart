@@ -64,7 +64,7 @@ class VyanaColors extends ThemeExtension<VyanaColors> {
   Color get qGood => const Color(0xFF20AD78);
   Color get qGoodSoft => const Color(0xFF55C99A);
   /// Middle band ("fair"): a yellow amber, deliberately yellower than the
-  /// orange-gold Perform intent so the two never read as one colour. Grey was
+  /// orange Perform intent so the two never read as one colour. Grey was
   /// the design's choice here but on a phone it reads as "not connected".
   Color get qLevel => const Color(0xFFD4B647);
   Color get qLevelSoft => const Color(0xFFE6CC6B);
@@ -103,8 +103,10 @@ class VyanaColors extends ThemeExtension<VyanaColors> {
   // and play button. Must never recolour the score, the arc, or a metric card.
   Color get intentRecover => const Color(0xFF6E7BBF);
   Color get intentRecoverSoft => const Color(0xFF9DA8DB);
-  Color get intentPerform => const Color(0xFFE3A448);
-  Color get intentPerformSoft => const Color(0xFFF2C676);
+  // Perform is orange, not gold: gold (#E3A448) is reserved for brand moments
+  // and ring sync states, and an intent sharing it read as a sync badge.
+  Color get intentPerform => const Color(0xFFF5923A);
+  Color get intentPerformSoft => const Color(0xFFF9B97E);
   Color get intentSettle => const Color(0xFF00D4FF);
   Color get intentSettleSoft => const Color(0xFF66E4FF);
 

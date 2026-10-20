@@ -979,10 +979,13 @@ List<SessionRow> todaysFinishedSessions(
 }) {
   final today = now ?? DateTime.now();
   final day = DateTime(today.year, today.month, today.day);
+  // Bug 32: keyed by the start date, a session that crossed midnight landed
+  // on the day before and vanished from "Done today" the moment it ended.
+  // A session belongs to the day it was finished on.
   final rows = [
     for (final s in sessions)
       if (s.endedAt != null &&
-          DateTime(s.startedAt.year, s.startedAt.month, s.startedAt.day) == day)
+          DateTime(s.endedAt!.year, s.endedAt!.month, s.endedAt!.day) == day)
         s,
   ]..sort((a, b) => a.startedAt.compareTo(b.startedAt));
   return rows;
@@ -1033,7 +1036,11 @@ class _DoneChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final activity = activityById(row.vyanaActivityType);
-    final minutes = row.endedAt!.difference(row.startedAt).inMinutes;
+    // Bug 32: `.inMinutes` truncates, so a 40-second try read "0m" — which
+    // says the session was worth nothing rather than that it was short.
+    final length = sessionLengthLabel(
+      row.endedAt!.difference(row.startedAt),
+    );
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(100),
@@ -1044,7 +1051,7 @@ class _DoneChip extends StatelessWidget {
           border: Border.all(color: t.hairline),
         ),
         child: Text(
-          '${activity?.name ?? 'Session'} ${minutes}m',
+          '${activity?.name ?? 'Session'} $length',
           style: VyanaType.caption.copyWith(color: t.textSec, fontSize: 13),
         ),
       ),

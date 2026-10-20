@@ -195,7 +195,8 @@ void main() {
 
     final db = readLib('src/data/db.dart');
     expect(db, contains('class Patterns extends Table'));
-    expect(db, contains('int get schemaVersion => 10;'));
+    expect(db, contains('int get schemaVersion => 11;'));
+    expect(db, contains('class PracticeTargets extends Table'));
 
     final catalog = readLib('src/data/catalog.dart');
     expect(catalog, contains('kLucidDreamingId'));

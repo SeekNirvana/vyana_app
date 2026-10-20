@@ -34,6 +34,41 @@ class _ActiveBody extends StatelessWidget {
   final SessionController controller;
   final Color accent;
 
+  /// Bug 28: most sessions under a minute are tries, so saving one is worth a
+  /// question. Dismissing the dialog changes nothing — the session runs on.
+  Future<void> _endAndSave(BuildContext context) async {
+    if (controller.isShortSession) {
+      final choice = await showVyanaConfirmDialog<bool>(
+        context: context,
+        title: 'Save this short session?',
+        message: 'It ran for under a minute.',
+        confirmLabel: 'Save',
+        cancelLabel: 'Discard',
+      );
+      if (choice == null) return;
+      if (choice == false) {
+        await controller.discard();
+        if (context.mounted) Navigator.of(context).maybePop();
+        return;
+      }
+    }
+    await controller.end();
+  }
+
+  Future<void> _discard(BuildContext context) async {
+    final confirmed = await showVyanaConfirmDialog<bool>(
+      context: context,
+      title: 'Discard this session?',
+      message: 'Nothing will be saved.',
+      confirmLabel: 'Discard',
+      cancelLabel: 'Keep going',
+      destructive: true,
+    );
+    if (confirmed != true) return;
+    await controller.discard();
+    if (context.mounted) Navigator.of(context).maybePop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
@@ -77,6 +112,8 @@ class _ActiveBody extends StatelessWidget {
           ),
         ),
         _VoiceCueBanner(cue: controller.activeCue, accent: accent),
+        if (controller.target != null)
+          _TargetProgress(controller: controller, accent: accent),
         Expanded(child: liveSessionBody(controller, accent)),
         // Bug 12 (2): at zero a timed practice offers Finish or Keep going,
         // rather than silently counting on past the length it promised.
@@ -137,13 +174,79 @@ class _ActiveBody extends StatelessWidget {
                 child: Cta(
                   label: 'End & save',
                   icon: 'stop',
-                  onTap: () => controller.end(),
+                  onTap: () => _endAndSave(context),
                 ),
+              ),
+              const SizedBox(width: 12),
+              // Bug 28: a quiet way out. Without it, looking at a practice to
+              // see how it works always wrote a session.
+              _RoundControl(
+                icon: 'x',
+                onTap: () => _discard(context),
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+/// §5 "Optional target": progress toward the goal, which the session counts
+/// up to and then carries on past. Deliberately a bar rather than a
+/// countdown — nothing here is running out.
+class _TargetProgress extends StatelessWidget {
+  const _TargetProgress({required this.controller, required this.accent});
+
+  final SessionController controller;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final target = controller.target!;
+    final progress = controller.targetProgress;
+    final reached = controller.targetReached;
+    final done = switch (target.kind) {
+      PracticeTargetKind.time =>
+        PracticeTarget._trim(controller.elapsed.inSeconds / 60),
+      PracticeTargetKind.distance =>
+        PracticeTarget._trim(controller.distanceMeters / 1000),
+    };
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  reached ? 'Target reached' : 'Target',
+                  style: VyanaType.eyebrow
+                      .copyWith(color: reached ? accent : t.mutedInk),
+                ),
+              ),
+              Text(
+                '$done of ${target.label}',
+                style: VyanaType.mono12.copyWith(
+                  color: reached ? accent : t.textSec,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: progress ?? 0,
+              minHeight: 4,
+              backgroundColor: t.hairline,
+              valueColor: AlwaysStoppedAnimation<Color>(accent),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -248,6 +351,22 @@ class _SummaryBody extends StatelessWidget {
 
   bool get _isPast => controller == null;
 
+  /// `Target 30 min · reached` or `Target 30 min · 24 of 30 min`.
+  String? _targetLine(Map<dynamic, dynamic> s, Duration duration) {
+    final kind = PracticeTarget.kindFromName(s['targetKind'] as String?);
+    final value = (s['targetValue'] as num?)?.toDouble();
+    if (kind == null || value == null || value <= 0) return null;
+    final target = PracticeTarget(kind: kind, value: value);
+    if (s['targetReached'] == true) return 'Target ${target.label} · reached';
+    final done = switch (kind) {
+      PracticeTargetKind.time => duration.inSeconds / 60,
+      PracticeTargetKind.distance =>
+        (((s['distanceMeters'] as int?) ?? 0) / 1000),
+    };
+    return 'Target ${target.label} · ${PracticeTarget._trim(done)} of '
+        '${target.label}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
@@ -286,6 +405,17 @@ class _SummaryBody extends StatelessWidget {
                   : 'Stored locally on your device',
               style: VyanaType.caption.copyWith(color: t.textSec)),
         ),
+        // §5: whether the target was met. A session ended short still reads
+        // honestly ("24 of 30 min") rather than quietly dropping the goal.
+        if (_targetLine(s, duration) case final line?) ...[
+          const SizedBox(height: 10),
+          Center(
+            child: Text(
+              line,
+              style: VyanaType.mono12.copyWith(color: t.textSec),
+            ),
+          ),
+        ],
         const SizedBox(height: 22),
         Row(
           children: [

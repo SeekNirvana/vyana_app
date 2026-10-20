@@ -7,6 +7,12 @@ part of '../../main.dart';
 
 Widget liveSessionBody(SessionController controller, Color accent) {
   final kind = controller.activity?.kind ?? 'indoor';
+  // §5 (12f) "On my own": no pacer, no orb, no guided sequence and no audio —
+  // the plain count-up body, which is exactly what the mode promises. The
+  // ring, its samples and the summary are untouched.
+  if (controller.onMyOwn) {
+    return IndoorBody(controller: controller, accent: accent);
+  }
   // §5 (mock 12d): Gym is one practice with two modes. "Start and end" is
   // the default — nothing to tap during the session — and "Track sets & rest"
   // uses the set/rest timer body.
