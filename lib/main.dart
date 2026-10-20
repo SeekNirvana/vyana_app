@@ -85,7 +85,7 @@ part 'src/screens/pattern_detail_screen.dart';
 part 'src/screens/you_subscreens.dart';
 part 'src/screens/session_screen.dart';
 part 'src/screens/session_bodies.dart';
-part 'src/screens/weekly_screen.dart';
+part 'src/screens/your_week_screen.dart';
 part 'src/screens/home_screen.dart';
 part 'src/screens/vitals_detail_screen.dart';
 part 'src/screens/practice_screen.dart';

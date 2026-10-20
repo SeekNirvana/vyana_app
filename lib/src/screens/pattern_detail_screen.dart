@@ -6,6 +6,76 @@ Future<void> openPatternDetail(BuildContext context, PatternRow pattern) {
   );
 }
 
+Future<void> openPatternsList(BuildContext context) {
+  return Navigator.of(context).push<void>(
+    MaterialPageRoute(builder: (_) => const PatternsListScreen()),
+  );
+}
+
+/// Every pattern Nova has found — holding, weakening and ended. The cards on
+/// Metrics and Journal show only the strongest current one. This list used
+/// to live inside Weekly Insights, which is gone (bug 29); it was the one
+/// honest section on that screen, so it kept its own home.
+class PatternsListScreen extends ConsumerWidget {
+  const PatternsListScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.vyana;
+    final rows = ref.watch(patternsProvider).valueOrNull ?? const <PatternRow>[];
+    return Scaffold(
+      body: DecoratedBox(
+        decoration: BoxDecoration(gradient: t.bgGradient),
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
+            children: [
+              Row(
+                children: [
+                  IconBtn(
+                    icon: 'chevL',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        MonoEyebrow('NOVA', size: 10.5),
+                        Text(
+                          'Patterns',
+                          style:
+                              VyanaType.appBarSerif.copyWith(color: t.text),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              if (rows.isEmpty)
+                Text(
+                  'No patterns yet. Nova needs a few weeks of dreams, '
+                  'sessions and sleep to find one — and will say when one ends.',
+                  style: VyanaType.caption
+                      .copyWith(color: t.textSec, height: 1.45),
+                )
+              else
+                for (final p in rows)
+                  PatternCard(
+                    pattern: p,
+                    tint: patternLook(p, t).tint,
+                    glyph: patternLook(p, t).glyph,
+                    margin: const EdgeInsets.only(bottom: 8),
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Tapping a pattern card opens the evidence: the claim, its lifespan, then
 /// the specific records it was computed from — the dream entries beside the
 /// sleep data for those nights, or the session days beside their next-day

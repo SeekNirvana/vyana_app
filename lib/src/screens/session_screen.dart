@@ -471,16 +471,19 @@ class _SummaryBody extends StatelessWidget {
           MorningAfterBlock(row: row!),
         ],
         const SizedBox(height: 22),
-        Cta(
-          label: 'See weekly trends',
-          icon: 'chart',
-          solid: false,
-          onTap: () {
-            controller?.clear();
-            Navigator.of(context).pop();
-            openWeeklyInsights(context);
-          },
-        ),
+        // Bug 29: this led to Weekly Insights, which was mostly seed data.
+        // The useful thing after a session is this practice's own history.
+        if (a case final activity?)
+          Cta(
+            label: 'Your ${activity.name} history',
+            icon: 'chart',
+            solid: false,
+            onTap: () {
+              controller?.clear();
+              Navigator.of(context).pop();
+              openActivityDetail(context, activity);
+            },
+          ),
         const SizedBox(height: 10),
         Cta(
           label: _isPast ? 'Close' : 'Done',

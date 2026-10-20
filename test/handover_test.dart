@@ -440,4 +440,97 @@ void main() {
       expect(readinessScoreFrom(sleepScore: null, hrv: null), isNull);
     });
   });
+
+  group('your week / month (bug 29)', () {
+    SessionRow session({
+      required String id,
+      required String activity,
+      required String category,
+      required DateTime started,
+      required int minutes,
+    }) =>
+        SessionRow(
+          id: id,
+          category: category,
+          vyanaActivityType: activity,
+          ringSportType: 0,
+          startedAt: started,
+          endedAt: started.add(Duration(minutes: minutes)),
+          phoneLocationEnabled: false,
+        );
+
+    // Wednesday.
+    final now = DateTime(2026, 10, 21, 18);
+
+    test('a week totals only its own sessions, by the day they ended', () {
+      final rows = [
+        session(
+          id: 'a',
+          activity: 'outdoorRun',
+          category: 'sport',
+          started: DateTime(2026, 10, 19, 8),
+          minutes: 40,
+        ), // Monday
+        session(
+          id: 'b',
+          activity: 'breathwork',
+          category: 'mind',
+          started: DateTime(2026, 10, 21, 7),
+          minutes: 20,
+        ), // Wednesday
+        session(
+          id: 'c',
+          activity: 'outdoorRun',
+          category: 'sport',
+          started: DateTime(2026, 10, 12, 8),
+          minutes: 30,
+        ), // last week
+      ];
+      final summary = PeriodSummary.of(
+        rows,
+        const PracticePeriod(month: false, offset: 0),
+        now: now,
+      );
+      expect(summary.sessions, 2);
+      expect(summary.minutes, 60);
+      expect(summary.activeDays, 2);
+      expect(summary.dayCount, 7);
+      // Mindfulness and wellness only.
+      expect(summary.mindfulMinutes, 20);
+      // Sorted by time, longest first.
+      expect(summary.byPractice.first.activityId, 'outdoorRun');
+      expect(summary.byPractice.first.minutes, 40);
+    });
+
+    test('last week is a different period, reachable by going back', () {
+      final rows = [
+        session(
+          id: 'c',
+          activity: 'outdoorRun',
+          category: 'sport',
+          started: DateTime(2026, 10, 12, 8),
+          minutes: 30,
+        ),
+      ];
+      const thisWeek = PracticePeriod(month: false, offset: 0);
+      expect(PeriodSummary.of(rows, thisWeek, now: now).sessions, 0);
+      expect(PeriodSummary.of(rows, thisWeek.earlier, now: now).sessions, 1);
+      // Nothing ahead of the current period to look at.
+      expect(thisWeek.later, isNull);
+      expect(thisWeek.earlier.later, isNotNull);
+    });
+
+    test('nothing falls back to a seed', () {
+      final summary = PeriodSummary.of(
+        const [],
+        const PracticePeriod(month: false, offset: 0),
+        now: now,
+      );
+      expect(summary.isEmpty, isTrue);
+      expect(summary.sessions, 0);
+      expect(summary.minutes, 0);
+      expect(summary.activeDays, 0);
+      expect(summary.byPractice, isEmpty);
+    });
+  });
 }

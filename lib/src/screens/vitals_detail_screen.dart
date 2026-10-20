@@ -96,7 +96,11 @@ class _VitalsDetailScreenState extends State<VitalsDetailScreen> {
                   accent: meta.accent,
                   value: _currentValue(controller, metric),
                   unit: meta.unit,
-                  caption: meta.caption,
+                  // Bug 25 (1): say which value this is. Without it the big
+                  // number looks like the reading just taken, and a spot
+                  // measurement that did not move it looked like a failure.
+                  caption: _heroCaption(metric, meta.caption),
+                  spot: _spotReadingLine(controller, metric, meta.unit),
                 ),
                 const SizedBox(height: 16),
                 if (points.length >= 2) ...[
@@ -182,7 +186,15 @@ class _VitalsDetailScreenState extends State<VitalsDetailScreen> {
                     ),
                   ),
               ],
-              if (_retestActionFor(metric, controller) != null) ...[
+              // Bug 24: Stress is derived from HRV — the ring stores no
+              // stress series — but its button asked the ring for a pressure
+              // measurement this page never shows. It spun, finished, and
+              // nothing changed. Stress is also not a moment reading: it
+              // describes a stretch of time.
+              if (metric == VitalsMetricKind.stress) ...[
+                const SizedBox(height: 14),
+                _StressSourceNote(controller: controller),
+              ] else if (_retestActionFor(metric, controller) != null) ...[
                 const SizedBox(height: 14),
                 _RetestButton(controller: controller, metric: metric),
               ],
@@ -442,6 +454,7 @@ class _MetricHero extends StatelessWidget {
     required this.value,
     required this.unit,
     required this.caption,
+    this.spot,
   });
 
   final String icon;
@@ -449,6 +462,9 @@ class _MetricHero extends StatelessWidget {
   final String value;
   final String unit;
   final String caption;
+
+  /// The spot reading just taken, where the hero itself is a day value.
+  final String? spot;
 
   @override
   Widget build(BuildContext context) {
@@ -494,6 +510,13 @@ class _MetricHero extends StatelessWidget {
                     ],
                   ],
                 ),
+                if (spot case final line?) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    line,
+                    style: VyanaType.mono12.copyWith(color: t.textSec),
+                  ),
+                ],
               ],
             ),
           ),
@@ -708,13 +731,42 @@ _MetricMeta _metricMeta(VitalsMetricKind kind) => switch (kind) {
   ),
 };
 
+/// Whose value the hero is showing. Only the two day-scoped vitals need
+/// saying; everywhere else the hero is simply the latest reading.
+String _heroCaption(VitalsMetricKind kind, String fallback) => switch (kind) {
+      VitalsMetricKind.heartRate => 'Resting',
+      VitalsMetricKind.hrv => 'Overnight',
+      _ => fallback,
+    };
+
+/// `Just now · 72 ms · 09:31` — the spot reading the user just took, on its
+/// own line, for the vitals whose hero is a day value (bug 25 (1)).
+String? _spotReadingLine(
+  RingController controller,
+  VitalsMetricKind kind,
+  String unit,
+) {
+  if (kind != VitalsMetricKind.heartRate && kind != VitalsMetricKind.hrv) {
+    return null;
+  }
+  final outcome = controller.lastMeasurement;
+  if (outcome == null || !outcome.captured || outcome.value == null) {
+    return null;
+  }
+  return 'Just now · ${outcome.value}${unit.isEmpty ? '' : ' $unit'} · '
+      '${outcome.clockLabel}';
+}
+
 String _currentValue(RingController controller, VitalsMetricKind kind) {
   final v = controller.vitals;
   final dashboard = HomeDashboard.from(controller);
   return switch (kind) {
     VitalsMetricKind.steps => '${dashboard.todaySteps}',
-    VitalsMetricKind.heartRate => valueOrDash(v.heartRate),
-    VitalsMetricKind.hrv => valueOrDash(v.hrv),
+    // Bugs 16 and 25 (1): the hero is the day's value, the same one Home,
+    // readiness and Metrics use. A spot reading appears on its own line
+    // below rather than silently rewriting this morning's recovery number.
+    VitalsMetricKind.heartRate => valueOrDash(dashboard.restingHr),
+    VitalsMetricKind.hrv => valueOrDash(dashboard.overnightHrv),
     VitalsMetricKind.spo2 => valueOrDash(v.bloodOxygen),
     VitalsMetricKind.calories => '${dashboard.todayCalories}',
     VitalsMetricKind.distance => formatDistanceMeters(
@@ -897,6 +949,40 @@ MeasurementAction? _retestActionFor(
   return null;
 }
 
+/// Bug 24: what stands where Stress's "Take a new reading" button was. One
+/// grey line saying where the number comes from, linking to the page where a
+/// reading actually changes it.
+class _StressSourceNote extends StatelessWidget {
+  const _StressSourceNote({required this.controller});
+
+  final RingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Panel(
+      pad: 14,
+      onTap: () => openVitalDetail(context, controller, VitalsMetricKind.hrv),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Stress is worked out from your HRV through the day. Take an '
+              'HRV reading to update it.',
+              style: VyanaType.caption.copyWith(
+                color: t.textSec,
+                height: 1.45,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          VyanaIcon('chevR', size: 17, color: t.textMuted),
+        ],
+      ),
+    );
+  }
+}
+
 class _RetestButton extends StatelessWidget {
   const _RetestButton({required this.controller, required this.metric});
   final RingController controller;
@@ -916,7 +1002,10 @@ class _RetestButton extends StatelessWidget {
         // clean reading and a failed one no longer look the same.
         final outcome = controller.lastMeasurement;
         final showResult = !busy && outcome != null;
-        final success = outcome?.captured ?? false;
+        // A reading only counts as a success if it actually produced a
+        // number — see bug 25 (2) below.
+        final success =
+            (outcome?.captured ?? false) && outcome?.value != null;
 
         final String title;
         final String subtitle;
@@ -927,12 +1016,12 @@ class _RetestButton extends StatelessWidget {
               : controller.testStatus;
         } else if (showResult && success) {
           title = 'New reading';
-          final value = outcome.value;
-          subtitle = value == null
-              ? 'Saved at ${outcome.clockLabel}.'
-              : '$value${unit.isEmpty ? '' : ' $unit'} · '
-                  '${outcome.clockLabel}';
+          subtitle = '${outcome.value}${unit.isEmpty ? '' : ' $unit'} · '
+              '${outcome.clockLabel}';
         } else if (showResult) {
+          // Bug 25 (2): a measurement that captured nothing used to read
+          // "Saved at 09:31." — a success message with no number in it. If
+          // there is no value there is nothing to report but the failure.
           title = 'Take a new reading';
           subtitle =
               "Couldn't get a clean reading. Keep the ring snug and try again.";

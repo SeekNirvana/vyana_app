@@ -65,7 +65,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
               onTap: () => openSessionHistory(context),
             ),
             const SizedBox(width: 8),
-            IconBtn(icon: 'insights', onTap: () => openWeeklyInsights(context)),
+            IconBtn(icon: 'insights', onTap: () => openYourWeek(context)),
           ],
         ),
         // Bug 30: the eyebrow printed SUGGESTED TODAY either way, so beside
@@ -196,6 +196,9 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
         // §5 / mock 12c: the last session, openable. One line, because the
         // point is to be able to get back to it, not to re-report it.
         _RecentLine(sessions: sessions),
+        // §5: THIS WEEK sits under Recent and opens Your week. Hidden until
+        // the first session ever — an empty chart is not an invitation.
+        const ThisWeekCard(),
         const SizedBox(height: 20),
         // ── Catalogue ─────────────────────────────────────────────────────
         // §5: Movement is past thirty rows, so there has to be a way in
