@@ -331,7 +331,9 @@ class PairedPranaPanel extends StatelessWidget {
       ),
       if (firmware != null && firmware.isNotEmpty)
         SmallMetric(label: 'Firmware', value: firmware),
-      if (ring.rssi != null) SmallMetric(label: 'RSSI', value: '${ring.rssi}'),
+      // Bug 31: always shown, because "—" is information and a silently
+      // missing row is not. Never prints 0, which read as a full signal.
+      SmallMetric(label: 'RSSI', value: rssiDisplayText(ring.rssi)),
     ];
 
     final t = context.vyana;
@@ -512,7 +514,10 @@ class DeviceTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                SmallMetric(label: 'RSSI', value: '${deviceRssi(device)}'),
+                SmallMetric(
+                  label: 'RSSI',
+                  value: rssiDisplayText(deviceRssi(device)),
+                ),
               ],
             ),
           ),

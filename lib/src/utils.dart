@@ -66,6 +66,19 @@ int deviceRssi(dynamic device) {
   return readInt(device, const ['rssiValue', 'rssi']) ?? -999;
 }
 
+/// Signal strength as it should be shown (bug 31).
+///
+/// A ring already connected in system Bluetooth advertises nothing, so its
+/// stored RSSI is saved as 0 — and "RSSI 0" read as a perfect signal when it
+/// actually means "no reading". A real connected value is negative. The
+/// pinned SDK (v0.2.7) exposes RSSI only on a scan result, with no live read
+/// on a connected device, so an unknown value says so rather than inventing
+/// a number.
+String rssiDisplayText(int? rssi) {
+  if (rssi == null || rssi == 0 || rssi == -999 || rssi > 0) return '—';
+  return '$rssi dBm';
+}
+
 int? deviceBatteryLevel(
   dynamic device,
   DeviceBasicSnapshot? basicInfo,

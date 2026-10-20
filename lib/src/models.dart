@@ -929,6 +929,18 @@ class RingHistory {
   final List<dynamic> invasive;
   final List<dynamic> sport;
 
+  /// Same history with [sleep] swapped in — used after an overnight sync
+  /// that deliberately did not ask the ring for sleep (bug 19).
+  RingHistory withSleep(List<dynamic> sleep) => RingHistory(
+        steps: steps,
+        sleep: sleep,
+        heartRate: heartRate,
+        bloodPressure: bloodPressure,
+        combined: combined,
+        invasive: invasive,
+        sport: sport,
+      );
+
   factory RingHistory.empty() => const RingHistory(
     steps: [],
     sleep: [],
