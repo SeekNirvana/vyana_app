@@ -131,9 +131,16 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
       if (nights.isNotEmpty) {
         final baselines = ref.read(personalBaselinesProvider.notifier);
         unawaited(baselines.noteDataStart(nights.last.day));
+        final usable = averageableNights(nights, history: c.history);
         baselines.applySleepTarget([
-          for (final n in averageableNights(nights, history: c.history).take(14))
-            n.breakdown.asleepSeconds,
+          for (final n in usable.take(14)) n.breakdown.asleepSeconds,
+        ]);
+        // Bug 22 (3): readiness measures HRV against the same base the HRV
+        // row does, so the score and the row can never disagree.
+        final hrvPoints = vitalHistoryPoints(c.history, VitalsMetricKind.hrv);
+        baselines.applyReadinessHrvRange([
+          for (final n in usable.take(kBaselineWindowDays))
+            ?hrvForDay(hrvPoints: hrvPoints, night: n)?.toDouble(),
         ]);
       }
     });

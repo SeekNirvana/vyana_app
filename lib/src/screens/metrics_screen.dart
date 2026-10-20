@@ -688,6 +688,7 @@ class _VitalRowData {
     required this.quality,
     required this.caption,
     required this.badge,
+    this.note,
   });
 
   final VitalsMetricKind kind;
@@ -699,10 +700,15 @@ class _VitalRowData {
   final String unit;
   final String delta;
 
-  /// `good` (inside range) · `poor` (outside) · `level` (no range / no data)
+  /// `good` · `poor` · `watch` (amber safety floor) · `level` (grey — no
+  /// range, no data, or a reading that warrants no verdict either way).
   final String quality;
   final String? caption;
   final String? badge;
+
+  /// Plain-language line for a reading that needs explaining rather than
+  /// just colouring — today, only resting HR under 40 bpm (bug 23).
+  final String? note;
 }
 
 /// Baseline = mean of the window excluding today's reading.
@@ -794,11 +800,18 @@ List<_VitalRowData> _buildVitalRows(
       );
     }
     final base = _baseline(points, range.days);
-    final inRange = range_?.contains(today);
-    final quality = inRange == null ? 'level' : (inRange ? 'good' : 'poor');
+    // Bug 23: a range is not a box. Anything outside it used to be rose, so
+    // 9h30m of sleep, an HRV of 95 and an athlete's resting 48 all read as
+    // bad news. Each range now says which side is actually a problem.
+    final verdict = range_ == null
+        ? null
+        : vitalVerdict(kind: kind, range: range_, value: today);
+    final quality = verdict?.quality ?? 'level';
     final caption = range_ == null
         ? null
-        : (inRange == true ? range_.caption : '${range_.caption} · OUTSIDE');
+        : (verdict?.captionSuffix == null
+            ? range_.caption
+            : '${range_.caption} · ${verdict!.captionSuffix}');
     final delta = deltaOverride ??
         (base == null
             ? 'First readings — no base yet'
@@ -811,7 +824,7 @@ List<_VitalRowData> _buildVitalRows(
     return _VitalRowData(
       kind: kind, name: name, icon: icon, ink: ink, supported: true,
       value: fmt(today), unit: unit, delta: delta, quality: quality,
-      caption: caption, badge: badge,
+      caption: caption, badge: badge, note: verdict?.note,
     );
   }
 
@@ -1065,6 +1078,8 @@ class _VitalRow extends StatelessWidget {
     final q = switch (data.quality) {
       'good' => t.qGoodSoft,
       'poor' => t.qPoorSoft,
+      // Bug 23: a safety floor — amber, and always explained by data.note.
+      'watch' => t.qLevelSoft,
       _ => t.mutedInk,
     };
     final caption = !data.supported ? 'NOT ON THIS RING' : data.caption;
@@ -1135,6 +1150,19 @@ class _VitalRow extends StatelessWidget {
                   if (caption != null) ...[
                     const SizedBox(height: 3),
                     MonoEyebrow(caption, size: 10.5, spacing: 0.6),
+                  ],
+                  // Bug 23: an amber reading is always explained — a colour
+                  // on its own would be a worry with no way to act on it.
+                  if (data.note case final note?) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      note,
+                      style: VyanaType.caption.copyWith(
+                        color: t.textSec,
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
                   ],
                 ],
               ),
