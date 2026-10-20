@@ -299,6 +299,7 @@ class PairedPranaPanel extends StatelessWidget {
     required this.reconnecting,
     required this.onReconnect,
     required this.onUnpair,
+    this.onRename,
     super.key,
   });
 
@@ -310,6 +311,7 @@ class PairedPranaPanel extends StatelessWidget {
   final bool reconnecting;
   final VoidCallback onReconnect;
   final VoidCallback onUnpair;
+  final VoidCallback? onRename;
 
   @override
   Widget build(BuildContext context) {
@@ -377,10 +379,17 @@ class PairedPranaPanel extends StatelessWidget {
                   ],
                 ),
               ),
+              // Bug 26: rename lives beside the name it changes, instead of
+              // in a menu one screen back.
+              if (onRename != null)
+                IconBtn(icon: 'edit', onTap: onRename!),
             ],
           ),
           const SizedBox(height: 12),
-          Wrap(spacing: 6, runSpacing: 6, children: metrics),
+          // Mock 16a: a 2 x 2 grid (Status · Battery / Firmware · RSSI)
+          // rather than a wrap, so the four facts keep the same places and
+          // the panel's height does not jump as values come and go.
+          _InfoGrid(metrics: metrics),
           const SizedBox(height: 14),
           Row(
             children: [
@@ -407,7 +416,8 @@ class PairedPranaPanel extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Other PRANA rings are hidden until this ring is unpaired.',
+            'To switch rings, tap one. Vyana will ask to unpair '
+            '${ring.displayName} first.',
             style: VyanaType.caption.copyWith(color: t.textMuted, height: 1.45),
           ),
         ],
@@ -795,6 +805,38 @@ class VitalCard extends StatelessWidget {
         onTap: item.onTap,
         child: content,
       ),
+    );
+  }
+}
+
+/// Mock 16a: the ring's four facts as a fixed 2 x 2 grid. A wrap re-flowed
+/// whenever a value appeared or changed width, so the same fact moved
+/// between rows between glances.
+class _InfoGrid extends StatelessWidget {
+  const _InfoGrid({required this.metrics});
+
+  final List<Widget> metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var row = 0; row * 2 < metrics.length; row++) ...[
+          if (row > 0) const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: metrics[row * 2]),
+              const SizedBox(width: 6),
+              Expanded(
+                child: row * 2 + 1 < metrics.length
+                    ? metrics[row * 2 + 1]
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

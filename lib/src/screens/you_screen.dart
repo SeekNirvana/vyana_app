@@ -20,6 +20,8 @@ Future<void> openScanner(BuildContext context, RingController c) {
         onReconnectPaired: () => c.reconnectSavedRing(force: true),
         onUnpair: c.unpairCurrentRing,
         onConnectedDeviceDetected: c.handleScannerDetectedConnection,
+        // Bug 26: rename moved onto the ring screen, beside the name.
+        onRename: c.renameRing,
         onFirstConnected: c.pairedRing == null
             ? () => unawaited(openRingOnboarding(navigator.context, c))
             : null,
@@ -218,16 +220,37 @@ class YouScreen extends ConsumerWidget {
         if (c.hasRingContext) ...[
           _SettingsGroup(
             rows: [
+              // Bug 26: the same Sync now sits at the top of You → Ring,
+              // shown whether or not the ring is connected — when it is not,
+              // reconnecting is the thing the user actually wants.
+              _SettingsRow(
+                icon: 'refresh',
+                iconColor: t.heading,
+                label: c.isConnected ? 'Sync now' : 'Reconnect',
+                subtitle: c.isSyncing
+                    ? 'Syncing your ring…'
+                    : (lastSync == null
+                        ? 'Not synced yet'
+                        : 'Last synced ${_clockLabel(lastSync)}'),
+                onTap: !c.isReady || c.isSyncing
+                    ? null
+                    : () => c.isConnected
+                        ? unawaited(syncRingWithFeedback(context, c))
+                        : unawaited(c.reconnectSavedRing(force: true)),
+              ),
               _SettingsRow(
                 icon: 'ring',
                 iconColor: t.heading,
                 label: c.pairedRing == null ? 'Scan & pair' : 'Manage ring',
-                subtitle: c.pairedRing == null ? null : 'Pair, rename, unpair',
+                subtitle: c.pairedRing == null ? null : 'Status, sync, rename',
                 trailing: c.pairedRing == null
                     ? null
                     : Text('PAIRED',
                         style: VyanaType.mono10.copyWith(color: t.textMuted)),
-                onTap: c.isReady ? () => _manageRing(context, ref, c) : null,
+                // Bug 26: opens the ring screen directly. The old sheet
+                // offered pair / rename / unpair — all of which now live on
+                // that screen, beside the ring they act on.
+                onTap: c.isReady ? () => openScanner(context, c) : null,
               ),
               if (c.supportsHealthMonitoring)
                 _SettingsRow(
@@ -548,73 +571,9 @@ class YouScreen extends ConsumerWidget {
     return '$n order${n == 1 ? '' : 's'} · $status';
   }
 
-  /// Manage ring: pair/scan, rename and unpair in one place — renaming is
-  /// device identity, not its own destination.
-  Future<void> _manageRing(
-    BuildContext context,
-    WidgetRef ref,
-    RingController c,
-  ) {
-    final t = context.vyana;
-    return showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          16, 0, 16, 16 + MediaQuery.paddingOf(sheetContext).bottom,
-        ),
-        child: Panel(
-          pad: 12,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _SettingsRow(
-                icon: 'bluetooth',
-                iconColor: t.heading,
-                label: c.pairedRing == null ? 'Scan & pair' : 'Pair or reconnect',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  openScanner(context, c);
-                },
-              ),
-              Divider(height: 1, color: t.borderSoft, indent: 14, endIndent: 14),
-              _SettingsRow(
-                icon: 'feather',
-                label: 'Rename ring',
-                onTap: c.isConnected
-                    ? () {
-                        Navigator.of(sheetContext).pop();
-                        _renameRing(context, c);
-                      }
-                    : null,
-              ),
-              Divider(height: 1, color: t.borderSoft, indent: 14, endIndent: 14),
-              _SettingsRow(
-                icon: 'x',
-                iconColor: t.vit('hr'),
-                label: 'Unpair',
-                chevron: false,
-                onTap: c.pairedRing == null
-                    ? null
-                    : () async {
-                        final ok = await showVyanaConfirmDialog<bool>(
-                          context: sheetContext,
-                          title: 'Unpair this ring?',
-                          message: 'Vyana forgets the ring. Your synced history stays on this phone.',
-                          confirmLabel: 'Unpair',
-                          destructive: true,
-                        );
-                        if (ok != true) return;
-                        await c.unpairCurrentRing();
-                        if (sheetContext.mounted) Navigator.of(sheetContext).pop();
-                      },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  // _manageRing is gone (bug 26): pair, rename and unpair all live on the
+  // ring screen now, beside the ring they act on, so the sheet in between
+  // was one tap and one layer with nothing of its own to say.
 
   static String _themeLabel(ThemeMode m) => switch (m) {
     ThemeMode.dark => 'Dark',
@@ -696,40 +655,7 @@ class YouScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _renameRing(BuildContext context, RingController c) async {
-    final current = c.selectedDevice == null
-        ? ''
-        : deviceLabel(c.selectedDevice);
-    var edited = current;
-    final name = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Rename ring'),
-        content: TextFormField(
-          initialValue: current,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Ring name'),
-          textInputAction: TextInputAction.done,
-          onChanged: (value) => edited = value,
-          onFieldSubmitted: (value) =>
-              Navigator.of(dialogContext).pop(normalizeRingName(value)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(normalizeRingName(edited)),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (name == null) return;
-    await c.renameRing(name);
-  }
+  // _renameRing moved onto the ring screen (bug 26).
 }
 
 /// You's section heading: grey mono eyebrow over a neutral title, on two
