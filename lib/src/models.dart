@@ -613,6 +613,20 @@ class SavedPranaRing {
 
   String get displayName => _cleanText(name) ?? 'PRANA ring';
 
+  /// The ring's model, for the screen title (bug 26) — read from the saved
+  /// ring rather than hard-coded, so a future model shows its own name. The
+  /// user's own rename ("Leena 03BE") is not a model, so the first word is
+  /// only used when it still looks like one.
+  String get modelName {
+    final type = _cleanText(deviceType);
+    if (type != null) return type;
+    final first = _cleanText(name)?.split(' ').first;
+    if (first != null && first.toUpperCase() == first && first.length > 2) {
+      return first;
+    }
+    return 'PRANA';
+  }
+
   String get displayAddress =>
       _cleanText(address) ??
       _cleanText(macAddress) ??
