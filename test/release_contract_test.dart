@@ -295,10 +295,84 @@ void main() {
     // Bug 5: the Android 12+ splash uses its own padded asset.
     final pubspec = File('pubspec.yaml').readAsStringSync();
     expect(pubspec, contains('assets/splash_logo_android12.png'));
-    expect(pubspec, contains('version: 1.1.2+9'));
+    expect(pubspec, contains('version: 1.2.0+10'));
 
     final manifest = File('scripts/release-manifest.txt').readAsStringSync();
     expect(manifest, contains('judged against typical ranges'));
     expect(manifest, contains('Period started'));
+  });
+
+  test('v1.2.0 background alerts, honest ranges, targets, your week', () {
+    // Bug 21 (1): scheduled alerts need both receivers declared, or they
+    // never fire. This is the whole reason the alerts were silent.
+    final manifest =
+        File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+    expect(manifest, contains('ScheduledNotificationReceiver'));
+    expect(manifest, contains('ScheduledNotificationBootReceiver'));
+    expect(manifest, contains('android.permission.RECEIVE_BOOT_COMPLETED'));
+
+    // Bug 21 (2): the service must survive a disconnect — that is when it
+    // is needed. Bug 21 (3): the old saved `false` is migrated once.
+    final ring = readLib('src/state/ring_controller.dart');
+    expect(ring, contains('_pairedRing != null'));
+    expect(ring, contains('Reconnecting to your ring'));
+    expect(ring, contains('_foregroundDefaultMigratedKey'));
+    // Bug 19: overnight syncs no longer ask the ring for sleep.
+    expect(ring, contains('isLikelyAsleep'));
+    final repo = readLib('src/repository.dart');
+    expect(repo, contains('includeSleep'));
+
+    // Bugs 22 and 23.
+    final quality = readLib('src/vitals_quality.dart');
+    expect(quality, contains('isNightForDay'));
+    expect(quality, contains('kDayTurnoverHour'));
+    expect(quality, contains('RangeDirection'));
+    expect(quality, contains('vitalVerdict'));
+    expect(quality, contains('kRestingHrFloor'));
+    expect(quality, contains('sleptOnAfter'));
+    expect(quality, contains('sessionLengthLabel'));
+
+    // Bug 29: nothing may fall back to seed content again.
+    final catalog = readLib('src/data/catalog.dart');
+    expect(catalog, isNot(contains('class WeeklySeed')));
+    expect(catalog, isNot(contains('class HomeSeed')));
+    expect(catalog, contains('howStepsFor'));
+    expect(catalog, contains('offersOnMyOwn'));
+    expect(catalog, contains('offersTarget'));
+    expect(
+      File('lib/src/screens/weekly_screen.dart').existsSync(),
+      isFalse,
+      reason: 'Weekly Insights is replaced by Your week / month',
+    );
+    final week = readLib('src/screens/your_week_screen.dart');
+    expect(week, contains('class PeriodSummary'));
+    expect(week, contains('THIS WEEK'));
+
+    // §11: Perform is orange, and gold stays a brand colour.
+    final colors = readLib('src/theme/app_colors.dart');
+    expect(colors, contains('0xFFF5923A'));
+    expect(colors, contains('0xFFF9B97E'));
+
+    // Bug 5 with the new mark, and the generator that keeps it inside the
+    // Android mask.
+    final pubspec2 = File('pubspec.yaml').readAsStringSync();
+    expect(pubspec2, contains('assets/logo_adaptive_foreground.png'));
+    expect(
+      File('scripts/build-brand-assets.py').existsSync(),
+      isTrue,
+    );
+
+    final fingerprints =
+        File('scripts/release-manifest.txt').readAsStringSync();
+    for (final line in const [
+      'Discard this session?',
+      'Set a target',
+      'On my own',
+      'FOR TODAY',
+      'PRANA RINGS NEAR ME',
+      'counts as light sleep',
+    ]) {
+      expect(fingerprints, contains(line));
+    }
   });
 }

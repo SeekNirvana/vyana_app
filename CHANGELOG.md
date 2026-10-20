@@ -1,5 +1,116 @@
 # Changelog
 
+## v1.2.0 — 2026-10-21 · Background alerts, honest ranges, targets
+
+The 9 Oct handover reopened the backlog after v1.1.2: sixteen bugs found
+on 6 Oct and six changes. This release works through all of them.
+
+### Added
+
+- **Optional target on count-up practices (§5).** A goal, not a length —
+  the session still counts up and only you end it. 15 / 30 / 45 / 60 min,
+  plus 1 / 3 / 5 / 10 km on GPS practices, Custom either way, remembered
+  per practice and offered pre-set with a clear ×. Movement gets a spoken
+  cue at halfway and on arrival; mindfulness and wellness get a soft bell
+  only, since a voice is the thing they were avoiding. The summary reads
+  "Target 30 min · reached", or "· 24 of 30 min" when it was not.
+- **"On my own" (§5).** Guided / On my own above Start on the fifteen
+  practices where the guidance is optional. No voice, pacer, orb or
+  audio; the ring mode, its samples and the summary are unchanged, so
+  the session still measures what the practice did. Remembered per
+  practice. A suggestion from Home always opens Guided.
+- **This week, and Your week / month (§5).** A card on Practice under
+  Recent, and a screen behind it: Week · Month, period arrows that stop
+  at the current period, SESSIONS · TIME · DAYS, stacked bars by day or
+  calendar week with a segment per practice in its pin-slot hue, By
+  practice rows opening that practice's history, Mindful and HRV cards,
+  and a Patterns row. Replaces Weekly Insights (`29`).
+- **The new Vyana mark** — a drop inside an open gold ring — on the
+  launcher icon, the splash and the app icon, on both platforms.
+- **End a session without saving (`28`).** A quiet Discard beside End &
+  save, with a confirmation; anything under a minute asks before saving.
+- **"Still asleep after 07:02?" (`14(d)`).** The one correction the app
+  offers for a night the ring ended at a brief waking.
+
+### Fixed
+
+- **`21` Background alerts and reconnect still did not work** — bugs 6
+  and 18 had regressed, for three separate reasons. The scheduled alerts
+  use `zonedSchedule`, but the manifest declared neither receiver
+  flutter_local_notifications needs, so they could never fire. The
+  foreground service required a live connection, so the moment the ring
+  dropped, the service whose job is to reconnect it was stopped. And the
+  on-by-default from v1.1.2 could not reach anyone who already had a
+  saved `false` — that is, every user who reported it.
+- **`19` Overnight syncs cut the night short.** With the service on all
+  night, a sleep-data request mid-night appears to make the ring close
+  its open sleep record. Between your own bedtime and wake time the
+  periodic sync no longer asks for sleep; the night is fetched on the
+  first sync after you wake.
+- **`22` Readiness and sleep reset at midnight.** Every daily value was
+  keyed to the calendar date, so at 00:00 last night's sleep belonged to
+  yesterday and the new day had no night: Sleep read "Not recorded" and
+  readiness fell back to a handful of HRV samples on a fixed scale,
+  where one high reading gave 100. The day now turns over at wake.
+- **`23` Values that were "too good" were flagged red.** 9h 30m of
+  sleep, an HRV above 90, SpO₂ 99% and an athlete's resting 48 all read
+  rose with "OUTSIDE". Each range now carries the direction that is
+  actually a problem, and the caption says ABOVE or BELOW. Resting HR
+  under 40 bpm is amber and explained, never silently personalised.
+- **`24` Stress had a "Take a new reading" button** that asked the ring
+  for a measurement the page never showed. Removed, and replaced with
+  one line saying where the number comes from.
+- **`25` A spot reading still looked like a failure** on HRV and heart
+  rate, whose hero is the day's value. The hero is now captioned
+  "Overnight" or "Resting", with the reading just taken on its own line.
+  A measurement that captured nothing says so instead of "Saved".
+- **`26` There was no manual sync** outside the stale banner. Sync now
+  sits on the ring screen and at the top of You → Ring. The ring screen
+  also gains the 2 × 2 info grid, rename beside the name, and "PRANA
+  rings near me"; Manage ring opens it directly.
+- **`27` Gym's "How it works"** described only the sets mode, although
+  Start and end is the default. The steps follow the switch.
+- **`29` Weekly Insights was mostly fake data** — a fixed sentence about
+  Zone-2 runs, an HRV trend that was always 48→58 ms, 40 calm minutes
+  every week — shown to real users as their own. `WeeklySeed` and
+  `HomeSeed` are deleted, so nothing can fall back to them again.
+- **`30` Practice said "Suggested today"** even after the intent was
+  confirmed, which read as "your status is only a suggestion".
+- **`31` The ring screen showed "RSSI 0" while connected.** A connected
+  ring advertises nothing, so 0 meant "no reading", not a full signal.
+- **`32` A 40-second session showed as "0m"**, and one that crossed
+  midnight landed on the previous day in Done today.
+- **`33` Downhill Skiing and Snowboarding promised "runs"** nothing can
+  count. Copy only; tracking is unchanged.
+- **`5` The splash mark was cropped on Android 12+**, and would have
+  been again with the new art: the mark fills 66% of its tile and the
+  mask is a circle two-thirds of the canvas. `scripts/build-brand-assets.py`
+  cuts the mark out and re-centres it inside the central 62%, for the
+  splash and for the adaptive launcher foreground.
+
+### Changed
+
+- **Perform is orange** `#F5923A` (soft `#F9B97E`), was `#E3A448` /
+  `#F2C676`. Gold is reserved for brand moments and ring sync states.
+
+### Known limitations
+
+- **`20` Sleep starts when the ring sees you settle, not when you fall
+  asleep.** Checked against the 25 nights of real cached history: every
+  one opens with a *light sleep* stage and not one opens awake, so this
+  ring does not separate time in bed from time asleep, and inferring an
+  onset from heart rate would be inventing a number. The Sleep detail
+  says so. The code handles the other case if a future ring labels it.
+- **Scanning while a ring is paired stays blocked** until someone
+  confirms on hardware that it does not disturb the connection or a
+  sync; the SDK may only handle one ring at a time.
+  `kScanWhilePairedVerified` is the only switch.
+- **The ring photo on the ring screen** needs
+  `assets/ring_images/ring_inside.png` (a transparent cut-out). The
+  layout is in place and renders nothing until that file is added.
+- **Live RSSI** is still the scan-time value: the pinned SDK (v0.2.7)
+  exposes no read on a connected device, so an unknown signal shows "—".
+
 ## v1.1.2 — 2026-10-03 · Honest numbers, personal normals, cycle tracking
 
 The updated 2.0 handover (28 Sep) replaced its spec with a backlog of 14 open
