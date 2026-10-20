@@ -1028,52 +1028,11 @@ class WeeklyInsight {
   final String accent;
 }
 
-class WeeklySeed {
-  WeeklySeed._();
-  static const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-  static const load = [38, 62, 20, 74, 30, 88, 26];
-  static const calmMin = [22, 14, 35, 9, 28, 12, 40];
-  static const hrvTrend = [48, 46, 52, 50, 55, 53, 58];
-  static const activeDays = 6;
-  static const strainLabel = 'Balanced';
-  static const strainValue = 'Moderate';
-  static const strainDetail = 'Two hard days well spaced by recovery.';
-  static const northStar =
-      'Easy Zone-2 runs the morning after 7h+ sleep lifted your HRV about two '
-      'days later — by roughly 8%. The same run on short sleep did the opposite.';
-  static const cards = <WeeklyInsight>[
-    WeeklyInsight('Sleep → effort',
-        'Your best sessions followed nights above 7 hours. Protect sleep before hard days.',
-        'sleep'),
-    WeeklyInsight('Calm',
-        '126 calm minutes this week, up 18%. Pranayama is doing the heavy lifting.',
-        'hrv'),
-    WeeklyInsight('Recovery',
-        'HRV trended up all week. A good window to add one more intensity day.',
-        'readiness'),
-  ];
-}
-
-class HomeSeed {
-  HomeSeed._();
-  static const userName = 'Aarav';
-  static const streak = 14;
-  static const readinessScore = 82;
-  static const readinessLabel = 'Primed';
-  static const readinessDelta = 6;
-  static const drivers = <ReadinessDriver>[
-    ReadinessDriver('HRV balance', 'Good'),
-    ReadinessDriver('Resting HR', 'Optimal'),
-    ReadinessDriver('Sleep', 'Fair', good: false),
-    ReadinessDriver('Recovery', 'High'),
-  ];
-  static const quickPractices = ['breathwork', 'walk', 'sunSalutation'];
-  static const insights = <HomeInsight>[
-    HomeInsight('nova', 'Sleep', 'Your deep sleep dropped 18% on nights you trained after 7pm. Try winding down by 9:30.', 'luna'),
-    HomeInsight('nova', 'Recovery', 'HRV climbed steadily this week — your recovery is trending up. A good window to push intensity.', 'nova'),
-    HomeInsight('nova', 'Activity', "You're 660 steps from a 14-day streak. A short evening walk closes it.", 'steps'),
-  ];
-}
+// WeeklySeed and HomeSeed are deleted (bug 29). They were placeholder
+// content — a fixed north-star sentence, an HRV trend that was always
+// 48->58 ms, 40 calm minutes every week, a 14-day streak and a user called
+// Aarav — and Weekly Insights showed them to real users as their own data.
+// Nothing may fall back to them again, so there is nothing to fall back to.
 
 /// Keeps [registerUserActivities] in step with the table, so the catalogue
 /// and every `activityById` lookup see the user's own sports.
