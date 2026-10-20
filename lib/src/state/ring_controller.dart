@@ -104,6 +104,11 @@ class RingController extends ChangeNotifier {
   static const _foregroundServiceEnabledKey = 'foreground_service_enabled_v1';
   static const _foregroundServiceAllowedKey = 'foreground_service_allowed_v1';
 
+  /// Bug 21 (3): marks that the pre-v1.1.2 `false` default has been migrated
+  /// once, so a `false` the user chooses afterwards is respected.
+  static const _foregroundDefaultMigratedKey =
+      'foreground_service_default_migrated_v1';
+
   HealthMonitoringSettings _healthMonitoring = const HealthMonitoringSettings(
     enabled: true,
     intervalMinutes: kHealthMonitoringDefaultInterval,
@@ -1053,7 +1058,10 @@ class RingController extends ChangeNotifier {
     _publishMeasurementSnapshot();
   }
 
-  Future<RingSyncFeedback?> syncDeviceData() => _syncDeviceData();
+  /// A sync the user asked for always fetches sleep: they are awake and
+  /// looking at the screen, so bug 19's overnight caution does not apply.
+  Future<RingSyncFeedback?> syncDeviceData() =>
+      _syncDeviceData(includeSleep: true);
 
   String? _resolveCacheDeviceId() {
     final basicId = _basicInfo?.deviceId;
@@ -1112,9 +1120,16 @@ class RingController extends ChangeNotifier {
     }
   }
 
-  Future<RingSyncFeedback?> _syncDeviceData() async {
+  Future<RingSyncFeedback?> _syncDeviceData({bool? includeSleep}) async {
     if (!_isReady || !_isConnected || _isSyncing) return null;
     _lastPeriodicSync = DateTime.now();
+    // Bug 19: a sleep-data request mid-night closes the ring's open sleep
+    // record, so the night ends at the sync. Overnight syncs therefore ask
+    // for everything except sleep; the night is fetched on the first sync
+    // after wake. An explicit sync (the user tapping Sync now) always asks.
+    final fetchSleep = includeSleep ??
+        !isLikelyAsleep(DateTime.now(), sleepDaySummaries(_history.sleep));
+    final retainedSleep = _history.sleep;
     final wantsTonight = !hasTonightSleep &&
         DateTime.now().hour < kTonightSleepGiveUpHour;
     _set(() {
@@ -1127,7 +1142,7 @@ class RingController extends ChangeNotifier {
 
     RingSyncFeedback? feedback;
     try {
-      final result = await _repo.sync().timeout(
+      final result = await _repo.sync(includeSleep: fetchSleep).timeout(
         const Duration(seconds: 90),
         onTimeout: () {
           throw TimeoutException('Ring sync timed out after 90 seconds.');
@@ -1156,7 +1171,12 @@ class RingController extends ChangeNotifier {
         _lastConnectionConfirmedAt = DateTime.now();
         _basicInfo = result.basicInfo;
         _features = result.features;
-        _history = result.history.sanitized();
+        // An overnight sync did not ask for sleep, so the nights already
+        // known are kept rather than blanked by an empty list.
+        _history = (fetchSleep
+                ? result.history
+                : result.history.withSleep(retainedSleep))
+            .sanitized();
         _historyHydratedFromCache = false;
         _cachedHistorySyncedAt = DateTime.now();
         if (logStatus != null) {
@@ -1257,6 +1277,20 @@ class RingController extends ChangeNotifier {
     // users read as "my ring stopped working". The notification is the cost,
     // and the switch stays in You.
     final hasPairedRing = await PranaRingStore.load() != null;
+    // Bug 21 (3): the default above only helps someone who never had the
+    // setting. Anyone who paired a ring before v1.1.2 has a saved `false`
+    // from the old default and keeps it forever after updating, so the
+    // background fix never reaches the users who reported the bug. Migrate
+    // that saved value once; a `false` set deliberately afterwards stands,
+    // because the migration flag is then already written.
+    if (hasPairedRing &&
+        prefs.getBool(_foregroundServiceEnabledKey) == false &&
+        !(prefs.getBool(_foregroundDefaultMigratedKey) ?? false)) {
+      await prefs.setBool(_foregroundServiceEnabledKey, true);
+    }
+    if (!(prefs.getBool(_foregroundDefaultMigratedKey) ?? false)) {
+      await prefs.setBool(_foregroundDefaultMigratedKey, true);
+    }
     final foregroundEnabled =
         prefs.getBool(_foregroundServiceEnabledKey) ?? hasPairedRing;
     final foregroundAllowed =
@@ -2233,7 +2267,12 @@ class RingController extends ChangeNotifier {
 
   void _syncForegroundService() {
     if (!Platform.isAndroid) return;
-    if (_foregroundServiceEnabled && _isConnected) {
+    // Bug 21 (2): this used to require _isConnected, so the moment the ring
+    // dropped, the service whose whole job is to reconnect it was shut down
+    // — and with it the alert evaluation. A disconnected ring is exactly
+    // when it is needed. It runs whenever it is enabled and a ring is
+    // paired, and says so in its notification.
+    if (_foregroundServiceEnabled && _pairedRing != null) {
       unawaited(
         RingForegroundService.start(
           intervalMinutes: _periodicSyncIntervalMinutes,
@@ -2245,7 +2284,20 @@ class RingController extends ChangeNotifier {
   }
 
   void _updateForegroundNotification() {
-    if (!Platform.isAndroid || !_foregroundServiceEnabled || !_isConnected) return;
+    if (!Platform.isAndroid ||
+        !_foregroundServiceEnabled ||
+        _pairedRing == null) {
+      return;
+    }
+    if (!_isConnected) {
+      unawaited(
+        RingForegroundService.update(
+          title: _pairedRing?.displayName ?? 'Vyana',
+          body: 'Reconnecting to your ring…',
+        ),
+      );
+      return;
+    }
     final battery = _vitals.battery != null && _vitals.battery! > 0
         ? _vitals.battery
         : _basicInfo?.batteryPower;

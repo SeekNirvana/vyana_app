@@ -130,7 +130,12 @@ class RingRepository {
     }
   }
 
-  Future<RingSyncResult> sync() async {
+  /// [includeSleep] is false for the overnight syncs (bug 19): asking the
+  /// ring for sleep data mid-night appears to close the open sleep record,
+  /// and the firmware does not reopen it, so the night ends at the time of
+  /// the request. Everything else — HR, battery, steps — still syncs, so the
+  /// connection and the alerts are unaffected.
+  Future<RingSyncResult> sync({bool includeSleep = true}) async {
     final basic = await _safePluginCall<DeviceBasicSnapshot?>(() async {
       final response = await _plugin
           .queryDeviceBasicInfo()
@@ -159,7 +164,11 @@ class RingRepository {
         true;
     final history = RingHistory(
       steps: await _queryHistorySafely(HealthDataType.step, 'steps'),
-      sleep: await _queryHistorySafely(HealthDataType.sleep, 'sleep'),
+      sleep: await _queryHistorySafely(
+        HealthDataType.sleep,
+        'sleep',
+        enabled: includeSleep,
+      ),
       heartRate: await _queryHistorySafely(
         HealthDataType.heartRate,
         'heartRate',

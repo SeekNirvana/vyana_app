@@ -57,7 +57,10 @@ class _RingSyncSettingsScreenState extends State<RingSyncSettingsScreen> {
       onSave: _save,
       children: [
         Text(
-          'How often Vyana fetches new history from the ring while the app is open. '
+          // Bug 21 (4): this said sync runs "while the app is open", which
+          // is the opposite of what the toggle below is for.
+          'How often Vyana fetches new history from the ring. With the '
+          'background setting on, this keeps running while Vyana is closed. '
           'This is separate from the ring\'s own health monitoring interval.',
           style: VyanaType.caption.copyWith(color: t.textSec, height: 1.45),
         ),
@@ -146,8 +149,12 @@ class _RingSyncSettingsScreenState extends State<RingSyncSettingsScreen> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            'Shows a persistent Android notification while it runs. '
-                            'This is plumbing, not an alert — alerts are in Notifications.',
+                            // Bug 21 (4): calling the one switch that makes
+                            // background alerts work "plumbing, not an alert"
+                            // told users to leave it off.
+                            'Keeps your ring connected, reconnects it, and '
+                            'sends alerts while Vyana is closed. Shows a '
+                            'small permanent notification.',
                             style: VyanaType.caption.copyWith(
                               color: t.textSec,
                               height: 1.4,

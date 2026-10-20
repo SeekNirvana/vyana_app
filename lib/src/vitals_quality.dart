@@ -639,6 +639,38 @@ int? hrvForDay({
 /// Shortest stretch of samples that can stand in for a night's HRV (bug 22).
 const Duration kMinOvernightHrvSpan = Duration(hours: 2);
 
+/// Default bedtime and wake hours, used until the ring has enough nights to
+/// say otherwise. Deliberately wide: skipping a sleep sync costs nothing but
+/// a slightly later night, while making the request too early costs the night.
+const int kDefaultBedtimeHour = 22;
+const int kDefaultWakeHour = 9;
+
+/// Whether [now] falls in the stretch where the user is probably asleep,
+/// from their own last 14 nights (bug 19).
+///
+/// Used to decide whether a periodic sync may ask the ring for sleep data.
+/// The ring appears to close its open sleep record when asked mid-night, so
+/// the cheapest fix is not to ask until the night is over.
+bool isLikelyAsleep(DateTime now, List<SleepDaySummary> nights) {
+  var bedtime = kDefaultBedtimeHour;
+  var wake = kDefaultWakeHour;
+  final recent = nights.take(14).toList();
+  if (recent.length >= 3) {
+    bedtime = _medianHour([for (final n in recent) n.windowStart], bedtime);
+    wake = _medianHour([for (final n in recent) n.windowEnd], wake);
+  }
+  // The window wraps midnight, which is the whole point of it.
+  final hour = now.hour;
+  return bedtime <= wake ? (hour >= bedtime && hour < wake)
+      : (hour >= bedtime || hour < wake);
+}
+
+int _medianHour(List<DateTime> times, int fallback) {
+  if (times.isEmpty) return fallback;
+  final hours = [for (final t in times) t.hour]..sort();
+  return hours[hours.length ~/ 2];
+}
+
 /// The HRV range readiness is scored against. Pushed here by the
 /// personal-baselines controller exactly as [sleepScoreDurationTarget] is, so
 /// Home's score, the Metrics chart and the HRV row cannot disagree about the
