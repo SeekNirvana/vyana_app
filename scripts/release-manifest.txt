@@ -114,3 +114,28 @@ DONE TODAY
 The morning after
 Delete session
 THE OTHER
+
+# v1.2.0 — The 9 Oct backlog: background alerts, honest ranges, targets
+# Whole literals only: a const name is inlined, an interpolated string never
+# exists as one, and a middot splits the run in the AOT snapshot.
+Discard this session?
+Save this short session?
+Sets, rest times and heart-rate recovery
+Train as usual. Nothing to tap.
+Just start and end
+Set a target
+Target reached
+Target distance
+On my own
+FOR TODAY
+trained athletes
+counts as light sleep
+worked out from your HRV
+sends alerts while Vyana is closed
+PRANA RINGS NEAR ME
+Up to date
+No sessions yet this week
+Where it went
+By practice
+No patterns yet. Nova needs a few weeks of dreams,
+Time and heart rate across your day

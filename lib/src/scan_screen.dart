@@ -468,6 +468,9 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
                     ],
                   ),
                 ),
+              // Mock 16a: the ring floats between the status panel and the
+              // ring card — rotated, with no box or background behind it.
+              if (_pairedRing != null) const _FloatingRingPhoto(),
               const SizedBox(height: 16),
               if (_pairedRing != null)
                 PairedPranaPanel(
@@ -644,6 +647,38 @@ class _NearbyRings extends StatelessWidget {
               ),
             ),
       ],
+    );
+  }
+}
+
+/// Mock 16a: the ring photographed from the inside, floating between the
+/// status panel and the ring card — rotated about -28°, with no box or
+/// background, so it reads as the object itself rather than an illustration
+/// of one.
+///
+/// The art is `assets/ring_images/ring_inside.png`, a transparent cut-out.
+/// It is not in the repo yet (the other two ring images are JPEGs with their
+/// own backgrounds, which cannot float), so this renders nothing until the
+/// file is dropped into that folder — which is already declared in pubspec,
+/// so no code or config change is needed when it arrives.
+class _FloatingRingPhoto extends StatelessWidget {
+  const _FloatingRingPhoto();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Center(
+        child: Transform.rotate(
+          angle: -28 * math.pi / 180,
+          child: Image.asset(
+            'assets/ring_images/ring_inside.png',
+            height: 132,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+        ),
+      ),
     );
   }
 }

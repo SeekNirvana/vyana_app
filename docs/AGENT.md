@@ -51,7 +51,7 @@ vyana_app/
 │       │   ├── you_screen.dart            # You profile tab (vitals overview, ring settings, wallet)
 │       │   ├── vitals_detail_screen.dart  # Detailed multi-day charts for each vital
 │       │   ├── trends_screen.dart         # Long-term trend analysis
-│       │   ├── weekly_screen.dart         # Weekly strain vs. recovery correlation insights
+│       │   ├── your_week_screen.dart      # This week card + Your week / month (replaced Weekly Insights)
 │       │   ├── profile_screen.dart        # User profile, physical attributes, target metrics
 │       │   ├── health_monitoring_screen.dart # Continuous auto-monitoring intervals on ring
 │       │   ├── sync_settings_screen.dart  # Periodic background sync settings
