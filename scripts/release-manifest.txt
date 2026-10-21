@@ -115,7 +115,7 @@ The morning after
 Delete session
 THE OTHER
 
-# v1.2.0 — The 9 Oct backlog: background alerts, honest ranges, targets
+# v1.1.3 — The 9 Oct backlog: background alerts, honest ranges, targets
 # Whole literals only: a const name is inlined, an interpolated string never
 # exists as one, and a middot splits the run in the AOT snapshot.
 Discard this session?

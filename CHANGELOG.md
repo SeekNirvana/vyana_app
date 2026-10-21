@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.2.0 — 2026-10-21 · Background alerts, honest ranges, targets
+## v1.1.3 — 2026-10-21 · Background alerts, honest ranges, targets
 
 The 9 Oct handover reopened the backlog after v1.1.2: sixteen bugs found
 on 6 Oct and six changes. This release works through all of them.
