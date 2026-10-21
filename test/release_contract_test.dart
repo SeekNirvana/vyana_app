@@ -295,14 +295,14 @@ void main() {
     // Bug 5: the Android 12+ splash uses its own padded asset.
     final pubspec = File('pubspec.yaml').readAsStringSync();
     expect(pubspec, contains('assets/splash_logo_android12.png'));
-    expect(pubspec, contains('version: 1.2.0+10'));
+    expect(pubspec, contains('version: 1.1.3+11'));
 
     final manifest = File('scripts/release-manifest.txt').readAsStringSync();
     expect(manifest, contains('judged against typical ranges'));
     expect(manifest, contains('Period started'));
   });
 
-  test('v1.2.0 background alerts, honest ranges, targets, your week', () {
+  test('v1.1.3 background alerts, honest ranges, targets, your week', () {
     // Bug 21 (1): scheduled alerts need both receivers declared, or they
     // never fire. This is the whole reason the alerts were silent.
     final manifest =

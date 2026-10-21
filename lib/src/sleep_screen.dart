@@ -370,6 +370,18 @@ class _SleepDayAnalytics extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               SleepWaveform(day: day, height: 184, dark: t.isDark),
+              const SizedBox(height: 10),
+              // Bug 20: where the ring marks time in bed as awake, the night
+              // starts when sleep did. This ring labels it light sleep
+              // instead, so this line says so rather than implying a
+              // precision the hardware does not have.
+              Text(
+                day.inBedBeforeSleep
+                    ? day.inBedLabel
+                    : 'The ring starts the night when you settle, so a while '
+                          'spent awake in bed counts as light sleep.',
+                style: TextStyle(color: t.textSec, fontSize: 12),
+              ),
             ],
           ),
         ),
@@ -1035,7 +1047,7 @@ class SleepDayCard extends StatelessWidget {
               day.inBedBeforeSleep
                   ? day.inBedLabel
                   : 'The ring starts the night when you settle, so a while '
-                      'spent awake in bed counts as light sleep.',
+                        'spent awake in bed counts as light sleep.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
