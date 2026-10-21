@@ -295,7 +295,7 @@ void main() {
     // Bug 5: the Android 12+ splash uses its own padded asset.
     final pubspec = File('pubspec.yaml').readAsStringSync();
     expect(pubspec, contains('assets/splash_logo_android12.png'));
-    expect(pubspec, contains('version: 1.1.3+11'));
+    expect(pubspec, contains('version: 1.1.4+12'));
 
     final manifest = File('scripts/release-manifest.txt').readAsStringSync();
     expect(manifest, contains('judged against typical ranges'));
@@ -374,5 +374,27 @@ void main() {
     ]) {
       expect(fingerprints, contains(line));
     }
+  });
+
+  test('v1.1.4 brand sources and the ring photo', () {
+    // Mock 16a's floating ring: the layout shipped in v1.1.3 with nothing
+    // to draw, because this file was never added to the repo.
+    expect(
+      File('assets/ring_images/ring_inside.png').existsSync(),
+      isTrue,
+      reason: 'the ring screen renders no photo without it',
+    );
+
+    // The launcher wants the opaque tile and the app draws the transparent
+    // mark. One file served both before, which is how the icon's dark
+    // square ended up on the splash.
+    final pubspec = File('pubspec.yaml').readAsStringSync();
+    expect(pubspec, contains('image_path: assets/app_icon.png'));
+    expect(pubspec, contains('image: assets/splash_logo.png'));
+    expect(
+      File('assets/logo.png').readAsBytesSync(),
+      isNot(File('assets/app_icon.png').readAsBytesSync()),
+      reason: 'the in-app mark and the launcher tile are different images',
+    );
   });
 }

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.3+11
+version: 1.1.4+12
 
 environment:
   sdk: ^3.12.0
@@ -184,7 +184,12 @@ flutter_launcher_icons:
   # alone on transparency, inside the central 62% — the full tile as a
   # foreground would be clipped by the launcher's mask the same way bug 5
   # clipped the splash.
-  image_path: assets/logo.png
+  #
+  # Both come straight from the handover's vector-derived exports now, so
+  # app_icon.png is the opaque tile and logo.png is the transparent mark
+  # the app draws in-app. They were one file before, which forced the
+  # splash to use the tile and show its dark square.
+  image_path: assets/app_icon.png
   adaptive_icon_background: "#071211"
   adaptive_icon_foreground: assets/logo_adaptive_foreground.png
   remove_alpha_ios: true
@@ -195,6 +200,7 @@ flutter_native_splash:
   android_12:
     color: "#071211"
     # Android 12+ masks the splash icon to a circle two-thirds of the canvas,
-    # so this variant keeps the art inside the central ~62% (bug 5). Built
-    # from splash_logo.png by scripts/build-brand-assets.py.
+    # so this variant keeps the art inside the central ~62% (bug 5). Taken
+    # from the handover export vyana-android12-splash.png (1152px); it no
+    # longer needs deriving by scripts/build-brand-assets.py.
     image: assets/splash_logo_android12.png
