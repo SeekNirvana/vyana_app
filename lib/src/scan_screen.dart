@@ -262,6 +262,11 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
     final at = _lastSyncedAt;
     if (at != null) return 'Last synced ${timeOfDayLabel(at)}';
     if (_syncUpToDate) return 'Up to date';
+    // With no ring paired there is no sync to describe, and _scanHint is
+    // the full "Keep the ring awake…" paragraph — which the Nearby rings
+    // panel already shows, and which mono10 is not a style for. Say
+    // nothing and let that panel carry it.
+    if (_pairedRing == null) return '';
     return _scanHint;
   }
 
@@ -367,6 +372,7 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final accessDenied = _scanAccess != null && !_scanAccess!.granted;
+    final syncLine = _syncLine();
 
     return Scaffold(
       body: DecoratedBox(
@@ -442,12 +448,14 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
                             // stale banner, so when everything looked fine
                             // but the user doubted it there was nothing to
                             // tap. It belongs beside the sync time.
-                            const SizedBox(height: 3),
-                            Text(
-                              _syncLine(),
-                              style: VyanaType.mono10
-                                  .copyWith(color: t.textMuted),
-                            ),
+                            if (syncLine.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                syncLine,
+                                style: VyanaType.mono10
+                                    .copyWith(color: t.textMuted),
+                              ),
+                            ],
                           ],
                         ),
                       ),

@@ -165,10 +165,13 @@ class _MetricsHeader extends StatelessWidget {
 /// (65% sleep score, 35% HRV), so Home's number is the last point here.
 List<({DateTime day, int score})> readinessSeries(
   RingHistory history,
-  int days,
-) {
-  final now = DateTime.now();
-  final since = DateTime(now.year, now.month, now.day)
+  int days, {
+  // Defaults to today. Tests pass the newest night of a frozen fixture so
+  // the window is measured from the data rather than from the wall clock.
+  DateTime? now,
+}) {
+  final today = now ?? DateTime.now();
+  final since = DateTime(today.year, today.month, today.day)
       .subtract(Duration(days: days - 1));
   final hrvPoints = vitalHistoryPoints(history, VitalsMetricKind.hrv);
   final out = <({DateTime day, int score})>[];
