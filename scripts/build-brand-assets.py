@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Derive the Android splash and adaptive-icon art from assets/splash_logo.png.
+"""Derive the Android splash and adaptive-icon art from an opaque brand tile.
+
+SUPERSEDED (v1.1.4). The Vyana 2.0 handover now ships both outputs
+vector-derived at the sizes the tooling wants — vyana-android12-splash.png
+(1152px) and vyana-adaptive-foreground.png (432px) — and those are copied
+into assets/ directly. Cutting the mark back out of a tile estimates the
+background per row and feathers an alpha from it, which is lossy next to
+the real vector export. Do not run this against the current assets: it
+expects an opaque tile, and assets/splash_logo.png is now the transparent
+mark. Kept only for the case where the exports are unavailable.
 
 The brand mark (a drop inside an open gold ring, 9 Oct 2026) ships as an
 opaque dark tile, which is what iOS wants. Android does not: both the
@@ -12,9 +21,8 @@ This cuts the mark out of the tile and re-centres it inside the central 62%:
     assets/splash_logo_android12.png   1152px, on the splash colour
     assets/logo_adaptive_foreground.png 432px, transparent (108dp grid)
 
-Run after changing assets/splash_logo.png, then regenerate:
+To regenerate the launcher icons and splash from the handover exports:
 
-    python3 scripts/build-brand-assets.py
     dart run flutter_launcher_icons
     dart run flutter_native_splash:create
 

@@ -260,17 +260,20 @@ class ThisWeekCard extends ConsumerWidget {
               '${summary.activeDays} of 7 days',
               style: VyanaType.caption.copyWith(color: t.textSec),
             ),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 40,
-              child: _StackedBars(
-                buckets: summary.buckets,
-                labels: const ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
-                pins: pins,
-                // Days that have not happened yet stay empty rather than
-                // reading as days with nothing done.
-                futureFrom: todayIndex + 1,
-              ),
+            const SizedBox(height: 12),
+            // Mock 6a: the bar row owns 30px and the day letters sit under
+            // it at 9px. Sharing one 40px box between the two left about
+            // 19px of bar, so a mid-week day came out a 9px nub and the
+            // stacked colours stopped reading as a chart at all.
+            _StackedBars(
+              buckets: summary.buckets,
+              labels: const ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
+              pins: pins,
+              // Days that have not happened yet stay empty rather than
+              // reading as days with nothing done.
+              futureFrom: todayIndex + 1,
+              barHeight: 30,
+              labelSize: 9,
             ),
           ],
         ),
@@ -564,6 +567,8 @@ class _StackedBars extends StatelessWidget {
     required this.pins,
     this.futureFrom = -1,
     this.showScale = false,
+    this.barHeight,
+    this.labelSize = 11.5,
   });
 
   final List<Map<String, int>> buckets;
@@ -574,6 +579,11 @@ class _StackedBars extends StatelessWidget {
   final int futureFrom;
   final bool showScale;
 
+  /// Fixed height for the bar row. Null fills the parent, which needs a
+  /// bounded height above it.
+  final double? barHeight;
+  final double labelSize;
+
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
@@ -581,28 +591,31 @@ class _StackedBars extends StatelessWidget {
       for (final b in buckets) b.values.fold<int>(0, (a, v) => a + v),
     ];
     final peak = totals.isEmpty ? 0 : totals.reduce(math.max);
-    return Column(
+    final bars = Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              for (var i = 0; i < buckets.length; i++)
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: _Bar(
-                      segments: buckets[i],
-                      total: totals[i],
-                      peak: peak,
-                      pins: pins,
-                      isFuture: futureFrom >= 0 && i >= futureFrom,
-                    ),
-                  ),
-                ),
-            ],
+        for (var i = 0; i < buckets.length; i++)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2.5),
+              child: _Bar(
+                segments: buckets[i],
+                total: totals[i],
+                peak: peak,
+                pins: pins,
+                isFuture: futureFrom >= 0 && i >= futureFrom,
+              ),
+            ),
           ),
-        ),
+      ],
+    );
+    return Column(
+      mainAxisSize: barHeight == null ? MainAxisSize.max : MainAxisSize.min,
+      children: [
+        if (barHeight == null)
+          Expanded(child: bars)
+        else
+          SizedBox(height: barHeight, child: bars),
         const SizedBox(height: 5),
         Row(
           children: [
@@ -612,6 +625,7 @@ class _StackedBars extends StatelessWidget {
                   child: Text(
                     labels[i],
                     style: VyanaType.mono10.copyWith(
+                      fontSize: labelSize,
                       color: futureFrom >= 0 && i >= futureFrom
                           ? t.textMuted
                           : t.mutedInk,
@@ -660,7 +674,7 @@ class _Bar extends StatelessWidget {
       return Align(
         alignment: Alignment.bottomCenter,
         child: Container(
-          height: 2,
+          height: 3,
           decoration: BoxDecoration(
             color: t.hairline,
             borderRadius: BorderRadius.circular(2),
@@ -670,23 +684,28 @@ class _Bar extends StatelessWidget {
     }
     final ordered = segments.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
+    // Mock 6a: each practice is its own rounded segment with a 1.5px gap,
+    // largest at the bottom. Clipping the whole bar instead ran the hues
+    // together, so a day holding two practices read as one block.
     return FractionallySizedBox(
       heightFactor: (total / peak).clamp(0.06, 1.0),
       alignment: Alignment.bottomCenter,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: Column(
-          children: [
-            for (final e in ordered)
-              Expanded(
-                flex: e.value.clamp(1, 1 << 20),
-                child: Container(
-                  width: double.infinity,
-                  color: practiceHue(e.key, pins, t),
+      child: Column(
+        children: [
+          for (var i = ordered.length - 1; i >= 0; i--) ...[
+            if (i < ordered.length - 1) const SizedBox(height: 1.5),
+            Expanded(
+              flex: ordered[i].value.clamp(1, 1 << 20),
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: practiceHue(ordered[i].key, pins, t),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

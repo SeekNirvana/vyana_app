@@ -1,5 +1,41 @@
 # Changelog
 
+## v1.1.4 — 2026-10-21 · The mark as drawn, the ring photo, a readable week
+
+Brand and asset work from the Vyana 2.0 handover that the v1.1.3 pass
+missed, plus a second look at the This week chart.
+
+### Added
+
+- **The ring photo on the ring screen (mock 16a).** The transparent
+  cut-out `assets/ring_images/ring_inside.png` is in the repo at last, so
+  the ring that floats between the status panel and the paired card
+  renders instead of leaving the slot empty. The layout has been waiting
+  for this file since v1.1.3.
+
+### Fixed
+
+- **The splash drew the icon's dark tile as a square.**
+  `assets/splash_logo.png` was the opaque iOS export, so the pre-12 splash
+  showed a `#0C211D` square against the `#071211` background rather than
+  the mark alone. It is now the handover's transparent `vyana_logo.png`,
+  which is what that file was exported for.
+- **Brand sources come from the handover exports.** The Android 12 splash
+  and the adaptive launcher foreground were derived from the opaque tile
+  by `scripts/build-brand-assets.py`, which estimates the tile's
+  background per row and feathers an alpha out of it. The handover ships
+  both vector-derived at the sizes the tooling wants (1152px and 432px),
+  so they are used directly. The launcher's opaque tile moves to its own
+  `assets/app_icon.png`, leaving `assets/logo.png` as the transparent
+  in-app mark the app actually draws.
+- **This week's chart was too small to read (mock 6a).** The bars and the
+  day letters shared one 40px box, which left about 19px of bar — a
+  mid-week day came out a 9px nub — and the whole bar was clipped as a
+  single shape, so a day holding two practices read as one block. The bar
+  row now owns 30px, the letters sit under it at 9px, each practice is its
+  own 2px-radius segment with a 1.5px gap and the largest at the bottom,
+  and a day with nothing done is a 3px hairline.
+
 ## v1.1.3 — 2026-10-21 · Background alerts, honest ranges, targets
 
 The 9 Oct handover reopened the backlog after v1.1.2: sixteen bugs found
