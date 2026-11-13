@@ -278,6 +278,14 @@ class RingForegroundService {
       serviceTypes: const [ForegroundServiceTypes.connectedDevice],
       notificationTitle: 'Vyana is running',
       notificationText: 'Keeping your ring connected',
+      // The one notification that is always on screen, so the one most
+      // worth not being a white blob. flutter_foreground_task resolves the
+      // drawable through a manifest meta-data name rather than taking a
+      // resource directly.
+      notificationIcon: const NotificationIcon(
+        metaDataName: 'app.seeknirvana.vyana.FOREGROUND_NOTIFICATION_ICON',
+        backgroundColor: kNotificationAccent,
+      ),
       callback: ringForegroundServiceCallback,
     );
 

@@ -200,3 +200,5 @@ AudioRouteService
 Your own endpoint
 On this phone
 Test and save
+ic_notification
+kNotificationAccent

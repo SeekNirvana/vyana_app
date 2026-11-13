@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#071211</color>
+    <!-- The gold from the mark. Android ≥ O tints the small icon and the
+         app name in the shade with this, so the row reads as Vyana rather
+         than as a grey system notification. -->
+    <color name="vyana_notification_accent">#E3A448</color>
 </resources>

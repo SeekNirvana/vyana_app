@@ -51,6 +51,21 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         tools:replace="android:label">
+        <!-- The status bar masks a small icon to its alpha and tints it, so
+             the full-colour launcher icon came out as a solid white blob.
+             These point every notification at the white-on-transparent
+             silhouette instead. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/vyana_notification_accent" />
+        <!-- Resolved by flutter_foreground_task's NotificationIcon, which
+             takes a meta-data name rather than a resource directly. -->
+        <meta-data
+            android:name="app.seeknirvana.vyana.FOREGROUND_NOTIFICATION_ICON"
+            android:resource="@drawable/ic_notification" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
