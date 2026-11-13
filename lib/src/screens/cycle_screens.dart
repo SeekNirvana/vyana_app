@@ -245,8 +245,12 @@ class _CycleEndPrompt extends ConsumerWidget {
                 label: 'Yes',
                 onTap: () async {
                   final db = ref.read(databaseProvider);
-                  // Log through to the proposed end, then confirm it.
-                  var day = status.runs.first.start;
+                  final run = status.runs.first;
+                  // Bug 34: a run is contiguous, so everything up to its own
+                  // end is already logged. Only the days between that end and
+                  // the proposed one are new — re-writing the earlier days
+                  // would clear a confirmation that is already on them.
+                  var day = run.end.add(const Duration(days: 1));
                   while (!day.isAfter(proposed)) {
                     await db.addCycleDay(day);
                     day = day.add(const Duration(days: 1));
@@ -439,6 +443,13 @@ class CycleCalendarScreen extends ConsumerStatefulWidget {
 class _CycleCalendarScreenState extends ConsumerState<CycleCalendarScreen> {
   late DateTime _month;
 
+  /// Whether the user changed any logged day on this visit. Bug 34: editing
+  /// the dates *is* the answer to "did your period end on …?", so Done
+  /// confirms the run — but only when something was actually edited, so
+  /// simply looking at the calendar cannot close a period that is still
+  /// running.
+  bool _edited = false;
+
   @override
   void initState() {
     super.initState();
@@ -453,6 +464,24 @@ class _CycleCalendarScreenState extends ConsumerState<CycleCalendarScreen> {
     } else {
       await db.addCycleDay(day);
     }
+    if (mounted) setState(() => _edited = true);
+  }
+
+  /// Bug 34: the calendar only ever added and removed days, so correcting the
+  /// dates yourself left the question in place for good. On Done, a latest run
+  /// whose last day is already past is a finished run — record it as one.
+  Future<void> _confirmEditedRun() async {
+    if (!_edited) return;
+    final rows = ref.read(cycleDaysProvider).valueOrNull ?? const [];
+    final runs = periodRuns(rows);
+    if (runs.isEmpty) return;
+    final latest = runs.first;
+    if (latest.endConfirmed) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    // Still running if it reaches today: there is nothing to confirm yet.
+    if (!latest.end.isBefore(today)) return;
+    await ref.read(databaseProvider).confirmCycleEnd(latest.end);
   }
 
   @override
@@ -468,7 +497,10 @@ class _CycleCalendarScreenState extends ConsumerState<CycleCalendarScreen> {
       sub: 'Metrics',
       ctaLabel: 'Done',
       ctaIcon: 'check',
-      onSave: () => Navigator.of(context).pop(),
+      onSave: () async {
+        await _confirmEditedRun();
+        if (context.mounted) Navigator.of(context).pop();
+      },
       children: [
           _MonthHeader(
             month: _month,

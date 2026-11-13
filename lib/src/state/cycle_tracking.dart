@@ -127,12 +127,19 @@ class CycleStatus {
   }
 
   /// The end date a never-confirmed run is assumed to have.
+  ///
+  /// Bug 34: this was the assumed length alone, so once the user had logged
+  /// the real days in the calendar the question named a day *inside* the run.
+  /// Confirming it left the run's own last day unconfirmed, the run still
+  /// counted as unfinished, and the question came back. The proposed day is
+  /// therefore the later of the two — always a day that can be confirmed.
   DateTime? get proposedEnd {
     if (runs.isEmpty) return null;
     final latest = runs.first;
     if (latest.endConfirmed) return null;
     final length = averagePeriodLength ?? kDefaultPeriodLength;
-    return latest.start.add(Duration(days: length - 1));
+    final assumed = latest.start.add(Duration(days: length - 1));
+    return assumed.isAfter(latest.end) ? assumed : latest.end;
   }
 
   /// Whether to ask "Did your period end on …?" — two days after the proposed

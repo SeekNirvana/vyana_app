@@ -576,4 +576,47 @@ void main() {
       }
     });
   });
+
+  group('period end prompt (bug 34)', () {
+    CycleDayRow day(int d, {bool confirmed = false}) => CycleDayRow(
+          day: DateTime(2026, 10, d),
+          endConfirmed: confirmed,
+          createdAt: DateTime(2026, 10, d),
+        );
+    // Two days past the run's last day, so the question is due.
+    final today = DateTime(2026, 10, 14);
+
+    test('the question names a day the run can be confirmed on', () {
+      // Started on the 7th, corrected back to the 6th in the calendar and
+      // logged through the 11th. The assumed length alone would propose the
+      // 10th — a day inside the run, which could never finish it.
+      final rows = [for (var d = 6; d <= 11; d++) day(d)];
+      final status = cycleStatusFrom(rows, now: today);
+      expect(status.runs.first.start, DateTime(2026, 10, 6));
+      expect(status.runs.first.end, DateTime(2026, 10, 11));
+      expect(status.proposedEnd, DateTime(2026, 10, 11));
+      expect(status.shouldAskEnd, isTrue);
+    });
+
+    test("confirming the run's last day ends the question for good", () {
+      // What Done in the calendar (and Yes on the prompt) now writes.
+      final rows = [
+        for (var d = 6; d <= 10; d++) day(d),
+        day(11, confirmed: true),
+      ];
+      final status = cycleStatusFrom(rows, now: today);
+      expect(status.runs.first.endConfirmed, isTrue);
+      expect(status.proposedEnd, isNull);
+      expect(status.shouldAskEnd, isFalse);
+      // And the real length is recorded, not the assumed five days.
+      expect(status.averagePeriodLength, 6);
+    });
+
+    test('a run still reaching today is never asked about', () {
+      final rows = [for (var d = 12; d <= 14; d++) day(d)];
+      final status = cycleStatusFrom(rows, now: today);
+      expect(status.periodInProgress, isTrue);
+      expect(status.shouldAskEnd, isFalse);
+    });
+  });
 }
