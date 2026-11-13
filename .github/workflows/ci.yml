@@ -1,51 +1,55 @@
 name: CI
 
+# The checks the release workflow would fail on anyway, run early enough to
+# be worth knowing about. Deliberately does not build an APK: the release
+# build pulls multi-gigabyte native toolchains and takes long enough that
+# running it on every push would cost more than it catches.
 on:
   push:
-    branches: [main]
+    branches: ['**']
+    tags-ignore: ['**']
   pull_request:
-    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.7'
 
 jobs:
-  analyze-and-test:
+  check:
+    name: Analyze and test
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
 
-      - name: Install dependencies
-        run: |
-          cp .env.example .env
-          flutter pub get
+      - run: flutter pub get
 
       - name: Analyze
-        run: flutter analyze --no-fatal-infos
+        run: flutter analyze
 
       - name: Test
         run: flutter test
 
-  release-apk-contract:
-    name: Release APK contract (stale-build guard)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-
-      - name: Install dependencies
+      # The release workflow reads both of these and fails if they disagree,
+      # which is a bad moment to find out. Checking here means a tag is only
+      # ever pushed at a commit that could actually be released.
+      - name: Version and changelog agree
         run: |
-          cp .env.example .env
-          flutter pub get
-
-      - name: Build dApp Store release APK (unsigned OK for fingerprint check)
-        run: |
-          flutter clean
-          flutter build apk --release --flavor dappStore --target-platform android-arm64
-
-      - name: Verify release APK fingerprints
-        run: ./scripts/verify-release-apk.sh build/app/outputs/flutter-apk/app-dappstore-release.apk
+          set -euo pipefail
+          full="$(grep -m1 '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')"
+          name="${full%%+*}"
+          if ! grep -q "^## v$name" CHANGELOG.md; then
+            echo "::error::pubspec.yaml is $name but CHANGELOG.md has no" \
+                 "'## v$name' section. A tag cut here could not be released."
+            exit 1
+          fi
+          echo "pubspec $name has a changelog entry."

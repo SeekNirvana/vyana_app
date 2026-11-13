@@ -1,0 +1,214 @@
+name: Release
+
+# Cut a release by pushing a tag that matches the version in pubspec.yaml:
+#
+#     git tag v1.1.5 && git push origin v1.1.5
+#
+# A manual run publishes a prerelease instead, so a dry run never claims to
+# be the latest version.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.47.7'
+  JAVA_VERSION: '17'
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── The tag and the app have to agree about what version this is ────
+      # A release whose APK reports a different version than its tag is the
+      # kind of thing nobody notices until a bug report cites a build that
+      # does not exist.
+      - name: Resolve and verify the version
+        id: version
+        run: |
+          set -euo pipefail
+          full="$(grep -m1 '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')"
+          name="${full%%+*}"
+          code="${full##*+}"
+          echo "name=$name"  >> "$GITHUB_OUTPUT"
+          echo "code=$code"  >> "$GITHUB_OUTPUT"
+          echo "Version $name (build $code)"
+
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+            if [ "$tag" != "v$name" ]; then
+              echo "::error::Tag $tag does not match pubspec version $name." \
+                   "Bump pubspec.yaml or retag as v$name."
+              exit 1
+            fi
+          fi
+
+      # The release body is the changelog entry, so an empty one means
+      # nobody wrote down what changed — worth failing over.
+      - name: Extract the changelog entry
+        id: notes
+        run: |
+          set -euo pipefail
+          v="${{ steps.version.outputs.name }}"
+          awk -v ver="## v$v" '
+            index($0, ver) == 1 { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::No '## v$v' section in CHANGELOG.md, or it is empty."
+            exit 1
+          fi
+          echo "Release notes: $(wc -l < release-notes.md) lines"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      # ── dApp Store signing, when the repository has the keys ────────────
+      # android/app/build.gradle.kts only creates a signing config for a
+      # flavor whose key.properties entries are filled in, so writing only
+      # the dappStore ones is what makes the generic build unsigned and this
+      # one signed. No build-file change is needed to tell them apart.
+      - name: Prepare dApp Store signing
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.DAPPSTORE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.DAPPSTORE_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.DAPPSTORE_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.DAPPSTORE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ] || [ -z "${STORE_PASSWORD:-}" ] \
+             || [ -z "${KEY_PASSWORD:-}" ] || [ -z "${KEY_ALIAS:-}" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::dApp Store signing secrets are not set." \
+                 "Both APKs will be published unsigned."
+            exit 0
+          fi
+
+          mkdir -p android/keystores
+          chmod 700 android/keystores
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode \
+            > android/keystores/vyana-dappstore.keystore
+          chmod 600 android/keystores/vyana-dappstore.keystore
+
+          # Deliberately the only flavor given keys. googlePlay is left
+          # without, which is what makes it come out unsigned.
+          umask 077
+          cat > android/key.properties <<EOF
+          dappStoreStorePassword=${STORE_PASSWORD}
+          dappStoreKeyPassword=${KEY_PASSWORD}
+          dappStoreKeyAlias=${KEY_ALIAS}
+          dappStoreStoreFile=../keystores/vyana-dappstore.keystore
+          EOF
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      # ── The two artifacts ───────────────────────────────────────────────
+      # On-device AI ships arm64 + x86_64 native libraries, so a universal
+      # APK is the only one that installs everywhere these models run.
+      - name: Build the generic APK (unsigned)
+        run: flutter build apk --flavor googlePlay --release
+
+      - name: Build the Solana dApp Store APK
+        run: flutter build apk --flavor dappStore --release
+
+      - name: Collect the artifacts
+        id: dist
+        run: |
+          set -euo pipefail
+          v="${{ steps.version.outputs.name }}"
+          out=build/app/outputs/flutter-apk
+          mkdir -p dist
+
+          # AGP appends -unsigned when a variant has no signing config, so
+          # take whichever of the two names it produced.
+          pick() {
+            for candidate in "$@"; do
+              if [ -f "$candidate" ]; then echo "$candidate"; return 0; fi
+            done
+            echo "::error::None of these were built: $*"
+            return 1
+          }
+
+          generic="$(pick "$out/app-googleplay-release-unsigned.apk" \
+                          "$out/app-googleplay-release.apk")"
+          dapp="$(pick "$out/app-dappstore-release.apk" \
+                       "$out/app-dappstore-release-unsigned.apk")"
+
+          cp "$generic" "dist/vyana-$v-generic-unsigned.apk"
+          cp "$dapp"    "dist/vyana-$v-solana-dappstore.apk"
+
+          # R8 mapping files, so a crash trace from a published build can
+          # still be read months later.
+          if compgen -G "build/app/outputs/mapping/*/mapping.txt" > /dev/null; then
+            zip -j "dist/vyana-$v-mappings.zip" \
+              build/app/outputs/mapping/*/mapping.txt
+          fi
+
+          ( cd dist && sha256sum *.apk *.zip 2>/dev/null > SHA256SUMS.txt || true )
+          ls -lh dist
+
+      - name: Compose the release body
+        run: |
+          set -euo pipefail
+          v="${{ steps.version.outputs.name }}"
+          {
+            cat release-notes.md
+            echo
+            echo '---'
+            echo
+            echo '### Downloads'
+            echo
+            echo "| File | What it is |"
+            echo "|---|---|"
+            echo "| \`vyana-$v-generic-unsigned.apk\` | Universal build, **not signed** — sign it yourself before installing. |"
+            if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+              echo "| \`vyana-$v-solana-dappstore.apk\` | Solana dApp Store build, signed with the dApp Store key. |"
+            else
+              echo "| \`vyana-$v-solana-dappstore.apk\` | Solana dApp Store build — **unsigned**, because no signing secrets were set on this run. |"
+            fi
+            echo
+            echo "Checksums are in \`SHA256SUMS.txt\`. Build ${{ steps.version.outputs.code }}."
+          } > release-body.md
+          cat release-body.md
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}-dev', steps.version.outputs.name) }}
+          name: Vyana ${{ steps.version.outputs.name }}
+          body_path: release-body.md
+          files: dist/*
+          # A manual run is a dry run: it must never be served to anyone
+          # asking for the current version.
+          prerelease: ${{ github.ref_type != 'tag' }}
+          make_latest: ${{ github.ref_type == 'tag' }}
+
+      - name: Remove the signing material
+        if: always()
+        run: rm -rf android/key.properties android/keystores
