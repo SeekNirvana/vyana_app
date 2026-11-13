@@ -166,23 +166,27 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
       _monitorBusy = true;
       _monitorMessage = null;
     });
-    await widget.controller.applyHealthMonitoring(
+    final result = await widget.controller.applyHealthMonitoring(
       enabled: _monitorEnabled,
       intervalMinutes: _monitorInterval,
     );
     if (!mounted) return;
-    final result = widget.controller.healthMonitoring;
-    final ok = result.ringAcknowledged ||
-        widget.controller.status.contains('confirmed');
     setState(() {
       _monitorBusy = false;
       // A ring that will not confirm used to leave "Working…" on screen
       // with nothing to tap and no way back — setup became a dead end on
       // the second of four steps. Say what happened and let them past; the
       // interval is changeable any time in You › Ring data.
-      _monitorMessage = ok ? null : result.lastMessage;
+      //
+      // The reason comes from the returned result, not from the
+      // controller: when the ring is not connected applyHealthMonitoring
+      // returns early with "Connect your ring first." without writing it to
+      // _healthMonitoring, so reading the controller there gave a stale
+      // message — or none at all, leaving the step silent about why it had
+      // not moved on.
+      _monitorMessage = result.successful ? null : result.message;
     });
-    if (ok) _goTo(2);
+    if (result.successful) _goTo(2);
   }
 
   Future<void> _onWipeContinue() async {
