@@ -577,6 +577,29 @@ void main() {
     });
   });
 
+  group('glucose is an estimate, not a test (bug 39)', () {
+    test('the range is the typical day, not the fasting window', () {
+      expect(kGlucoseRange.low, 4.0);
+      expect(kGlucoseRange.high, 7.8);
+      expect(kGlucoseRange.caption, 'TYPICAL 4–7.8 MMOL/L · RING ESTIMATE');
+      expect(kGlucoseRange.caption, isNot(contains('FASTING')));
+    });
+
+    test('no verdict colour, in range or out', () {
+      for (final value in [3.2, 4.0, 5.4, 7.8, 11.0]) {
+        expect(
+          vitalVerdict(
+            kind: VitalsMetricKind.glucose,
+            range: kGlucoseRange,
+            value: value,
+          ).quality,
+          'level',
+          reason: '$value mmol/L must be grey',
+        );
+      }
+    });
+  });
+
   group('background ring alerts (bug 44)', () {
     RingAlertSnapshot snap({
       int? battery,

@@ -689,7 +689,8 @@ _MetricMeta _metricMeta(VitalsMetricKind kind) => switch (kind) {
     accent: 'glucose',
     unit: 'mmol/L',
     caption: 'Latest',
-    footnote: 'Non-invasive glucose estimates when supported by your ring.',
+    // Bug 39: one line, and the only one that matters about this number.
+    footnote: 'An estimate from the ring, not a blood test.',
   ),
   VitalsMetricKind.uricAcid => const _MetricMeta(
     eyebrow: 'Biomarker',

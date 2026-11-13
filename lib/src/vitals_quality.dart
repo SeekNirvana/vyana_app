@@ -323,6 +323,13 @@ VitalVerdict vitalVerdict({
     return (quality: 'poor', captionSuffix: 'ABOVE', note: null);
   }
 
+  // Bug 39: a ring glucose reading is an estimate, not a blood test, so it
+  // earns no verdict either way — grey in range and grey out of it. Green
+  // would claim a clinical result; rose would raise an alarm on one.
+  if (kind == VitalsMetricKind.glucose) {
+    return (quality: 'level', captionSuffix: null, note: null);
+  }
+
   // Sleep is measured against the user's own target (§14), not the range.
   if (kind == VitalsMetricKind.sleep) {
     final target = sleepScoreDurationTarget.inSeconds / 3600;
@@ -373,6 +380,11 @@ const double kTemperatureTypicalMax = 37.0;
 
 /// Stress index calm zone (0–100), from [stressZoneForLevel]'s calm cutoff.
 const double kStressCalmMax = 34;
+
+/// Glucose across a normal day, in mmol/L — fasting at the low end, after
+/// meals at the top. Not the fasting range (bug 39).
+const double kGlucoseTypicalMin = 4.0;
+const double kGlucoseTypicalMax = 7.8;
 
 /// How often the user trains — asked as behaviour, never as identity. Maps to
 /// a personal resting-HR band; unanswered falls back to the clinical range,
@@ -461,10 +473,15 @@ const VitalReferenceRange kSystolicRange = VitalReferenceRange(
   high: 120,
   caption: 'NORMAL <120/80',
 );
+/// Bug 39: this was the clinical *fasting* range, 4–5.6, printed under a
+/// reading the ring takes whenever it likes. A ring reading is not a fasting
+/// test, so that range never applied to it, and "FASTING" means nothing to
+/// most people. The typical span across a normal day is what applies:
+/// fasting at the low end, after meals at the top.
 const VitalReferenceRange kGlucoseRange = VitalReferenceRange(
-  low: 4.0,
-  high: 5.6,
-  caption: 'FASTING 4–5.6',
+  low: kGlucoseTypicalMin,
+  high: kGlucoseTypicalMax,
+  caption: 'TYPICAL 4–7.8 MMOL/L · RING ESTIMATE',
 );
 
 /// Reference window for a metric, or null for metrics with no published
