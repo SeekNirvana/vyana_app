@@ -87,15 +87,17 @@ class GuidePersonaDefinition {
 // every guide usable.
 const String _kSharedModelLabel = 'Gemma E2B · on-device';
 
-/// Approximate download size of the shared bundle **plus Nova's voice**,
-/// shown wherever the app asks the user to install Nova. One constant so the
-/// pill, the store and You never disagree.
+/// Approximate download size of the shared Gemma bundle, shown wherever the
+/// app asks the user to install Nova. One constant so the pill, the store
+/// and You never disagree.
 ///
-/// Bug 42: the Kokoro voice (~90 MB quantised) downloads in the same install
-/// step, so this is the combined figure. Confirm it against the real files on
-/// a device once the voice is packaged — [kNovaVoiceApproxBytes] is the
-/// estimate it rests on.
-const String kGuideModelSizeLabel = '3.2 GB';
+/// **Nova's voice is not in this figure.** It used to be: the voice was
+/// folded into the same install step at an estimated 90 MB. The real pack is
+/// 355 MB of full-precision weights, which is too much to add to someone's
+/// download without asking, so it is its own opt-in in Guides › Vani Voice
+/// and advertises its own size ([novaVoiceApproxSizeLabel]). Nova works
+/// without it; she just does not read her replies aloud.
+const String kGuideModelSizeLabel = '3.1 GB';
 
 /// Item 51 — Nova's instructions. Roughly 150 tokens, about half the length
 /// of the prompt it replaces, because the cap it shares with the data blocks

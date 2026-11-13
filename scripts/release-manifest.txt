@@ -81,7 +81,7 @@ How often you train
 Erases ring data and unpairs
 metrics:hrv-after:
 journal:tag:
-3.2 GB
+3.1 GB
 
 # v1.1.1 — Ring state you can act on: stale/disconnected pill, alerts persist
 Reaching your ring…
@@ -191,3 +191,8 @@ DisplayScaleLayer
 Skip — set this later
 kHealthMonitoringApplyTimeout
 Light, dark, or whatever the phone is set to
+kokoro-en-v0_19
+Download Nova's voice
+Nova's voice is not available in this build yet. Replies
+Needs Nova's voice installed
+355 MB
