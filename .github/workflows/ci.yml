@@ -39,6 +39,26 @@ jobs:
       - name: Test
         run: flutter test
 
+      # A declared-but-absent asset fails the release build inside Gradle,
+      # minutes in, with a message that never mentions pubspec. `.env` is
+      # excluded because it is gitignored by design and written from secrets
+      # at release time — the point here is the others.
+      - name: Declared assets exist
+        run: |
+          set -euo pipefail
+          missing=0
+          while IFS= read -r asset; do
+            [ -z "$asset" ] && continue
+            [ "$asset" = ".env" ] && continue
+            if [ ! -e "$asset" ]; then
+              echo "::error::pubspec.yaml declares '$asset', which is not in" \
+                   "the repository. The release build will fail on it."
+              missing=1
+            fi
+          done < <(awk '/^  assets:/{f=1;next} f&&/^    - /{print substr($0,7)} f&&!/^    - /&&NF{exit}' pubspec.yaml)
+          [ "$missing" -eq 0 ] && echo "All declared assets present."
+          exit "$missing"
+
       # The release workflow reads both of these and fails if they disagree,
       # which is a bad moment to find out. Checking here means a tag is only
       # ever pushed at a commit that could actually be released.

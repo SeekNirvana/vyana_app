@@ -80,6 +80,28 @@ jobs:
           channel: stable
           cache: true
 
+      # pubspec declares `.env` as a bundled asset and .gitignore keeps it
+      # out of the repository, so without this the Gradle build fails on a
+      # missing asset before it compiles a line of Dart.
+      - name: Write .env
+        env:
+          REOWN_PROJECT_ID: ${{ secrets.REOWN_PROJECT_ID }}
+          SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
+        run: |
+          set -euo pipefail
+          umask 077
+          {
+            echo "REOWN_PROJECT_ID=${REOWN_PROJECT_ID:-}"
+            echo "SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}"
+          } > .env
+          if [ -z "${REOWN_PROJECT_ID:-}" ]; then
+            echo "::warning::REOWN_PROJECT_ID is not set." \
+                 "WalletConnect pairing will not work in this build."
+          fi
+          # Never the values — this is bundled into a public APK, but the log
+          # is a different audience.
+          echo "Wrote .env with $(wc -l < .env) keys."
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -209,6 +231,6 @@ jobs:
           prerelease: ${{ github.ref_type != 'tag' }}
           make_latest: ${{ github.ref_type == 'tag' }}
 
-      - name: Remove the signing material
+      - name: Remove the build-time secrets
         if: always()
-        run: rm -rf android/key.properties android/keystores
+        run: rm -rf android/key.properties android/keystores .env
