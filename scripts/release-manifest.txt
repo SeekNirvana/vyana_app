@@ -188,3 +188,6 @@ clearRingRecordedData
 Display size
 More fits on screen
 DisplayScaleLayer
+Skip — set this later
+kHealthMonitoringApplyTimeout
+Light, dark, or whatever the phone is set to

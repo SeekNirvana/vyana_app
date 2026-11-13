@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyana/main.dart';
@@ -25,6 +26,21 @@ void main() {
           child: Scaffold(body: Center(child: child)),
         ),
       );
+
+  /// Fails when [text] was squeezed below the width it asked for.
+  ///
+  /// Line counting cannot be used here: the test font is square, so real
+  /// strings wrap at widths they never would on a device. This measures the
+  /// property that actually broke instead — whether the row handed this
+  /// text all the width it wanted.
+  void expectNotSqueezed(WidgetTester tester, String text) {
+    final paragraph = tester.renderObject<RenderParagraph>(find.text(text));
+    expect(
+      paragraph.size.width,
+      closeTo(paragraph.getMaxIntrinsicWidth(double.infinity), 0.5),
+      reason: '"$text" was squeezed narrower than it asked for',
+    );
+  }
 
   Future<void> at(
     WidgetTester tester,
@@ -380,5 +396,90 @@ void main() {
         }
       });
     }
+  });
+
+  // The You settings row has broken twice: once by overflowing when a wide
+  // control sat in `trailing`, once by wrapping "Notifications" to
+  // "Notification / s" after that control was made Flexible and began
+  // taking flex space from the label.
+  group('a settings row gives the label the width the trailing leaves', () {
+    for (final scale in [1.0, 1.3, 1.5]) {
+      testWidgets('a short trailing is laid out at its own width · ${scale}x',
+          (t) async {
+        await at(
+          t,
+          small,
+          SizedBox(
+            width: 336,
+            child: SettingsGroup(rows: [
+              SettingsRow(
+                icon: 'bell',
+                label: 'Notifications',
+                subtitle: 'Ring offline, low battery, vitals alerts',
+                trailing: const Text('2 OF 3 ON',
+                    style: TextStyle(fontSize: 10)),
+                onTap: () {},
+              ),
+            ]),
+          ),
+          textScale: scale,
+        );
+        // The bug: Flexible gave the trailing flex 1 against the label's
+        // Expanded, so the row split in half and both were squeezed.
+        expectNotSqueezed(t, '2 OF 3 ON');
+        expect(t.getSize(find.text('Notifications')).width, greaterThan(0));
+      });
+
+      testWidgets('a full-width control gets the row, not the gap · ${scale}x',
+          (t) async {
+        await at(
+          t,
+          tiny,
+          SizedBox(
+            width: 296,
+            child: ProviderScope(
+              child: SettingsGroup(rows: [
+                SettingsRow(
+                  icon: 'textSize',
+                  label: 'Display size',
+                  subtitle: 'More fits on screen',
+                  chevron: false,
+                  enabled: true,
+                  below: const DisplayScalePills(scale: 0.85),
+                ),
+              ]),
+            ),
+          ),
+          textScale: scale,
+        );
+        // 296 less the group's 4 and the row's 12 of padding on each side.
+        expect(
+          t.getSize(find.byType(DisplayScalePills)).width,
+          closeTo(296 - 8 - 24, 1),
+        );
+        for (final option in kDisplayScales) {
+          expect(find.text(displayScaleLabel(option)), findsOneWidget);
+        }
+      });
+    }
+  });
+
+
+  // Ring setup: the step's own chrome has to make room for the keyboard.
+  group('ring setup makes room for the keyboard', () {
+    test('a full-height step keeps the ring at its drawn size', () {
+      expect(onboardingRingBox(640), 132);
+      expect(onboardingRingBox(560), 132);
+    });
+
+    test('a shorter step shrinks it rather than overflowing', () {
+      // 360dp at Large with the keyboard up is roughly this.
+      expect(onboardingRingBox(480), 84);
+    });
+
+    test('with barely any room the decoration goes entirely', () {
+      expect(onboardingRingBox(400), 0);
+      expect(onboardingRingBox(260), 0);
+    });
   });
 }

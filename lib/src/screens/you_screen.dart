@@ -277,12 +277,12 @@ class YouScreen extends ConsumerWidget {
         // notifications, find) then the destructive pair on their own ──
         const _YouHeading('Your ring', 'PRANA'),
         if (c.hasRingContext) ...[
-          _SettingsGroup(
+          SettingsGroup(
             rows: [
               // Bug 26: the same Sync now sits at the top of You → Ring,
               // shown whether or not the ring is connected — when it is not,
               // reconnecting is the thing the user actually wants.
-              _SettingsRow(
+              SettingsRow(
                 icon: 'refresh',
                 iconColor: t.heading,
                 label: c.isConnected ? 'Sync now' : 'Reconnect',
@@ -298,7 +298,7 @@ class YouScreen extends ConsumerWidget {
                         // Bug 48: same feedback path everywhere.
                         : unawaited(reconnectWithFeedback(context, c)),
               ),
-              _SettingsRow(
+              SettingsRow(
                 icon: 'ring',
                 iconColor: t.heading,
                 label: c.pairedRing == null ? 'Scan & pair' : 'Manage ring',
@@ -316,7 +316,7 @@ class YouScreen extends ConsumerWidget {
               // became one: the ring's own interval and Vyana's collection
               // interval read as a pair, which is the only way either makes
               // sense.
-              _SettingsRow(
+              SettingsRow(
                 icon: 'activity',
                 iconColor: t.heading,
                 label: 'Ring data',
@@ -330,7 +330,7 @@ class YouScreen extends ConsumerWidget {
                 ),
                 onTap: () => openRingData(context, c),
               ),
-              _SettingsRow(
+              SettingsRow(
                 icon: 'bell',
                 iconColor: t.heading,
                 label: 'Notifications',
@@ -342,7 +342,7 @@ class YouScreen extends ConsumerWidget {
                 onTap: () => openNotificationSettings(context),
               ),
               if (c.supportsFindRing)
-                _SettingsRow(
+                SettingsRow(
                   icon: 'target',
                   iconColor: t.heading,
                   label: 'Find my ring',
@@ -351,15 +351,15 @@ class YouScreen extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 10),
-          _SettingsGroup(
+          SettingsGroup(
             rows: [
-              _SettingsRow(
+              SettingsRow(
                 icon: 'bluetooth',
                 iconColor: t.heading,
                 label: 'Disconnect',
                 onTap: c.isConnected ? c.disconnect : null,
               ),
-              _SettingsRow(
+              SettingsRow(
                 icon: 'alert',
                 iconColor: t.vit('hr'),
                 label: 'Reset PRANA ring',
@@ -371,15 +371,15 @@ class YouScreen extends ConsumerWidget {
             ],
           ),
         ] else
-          _SettingsGroup(
+          SettingsGroup(
             rows: [
-              _SettingsRow(
+              SettingsRow(
                 icon: 'ring',
                 iconColor: t.heading,
                 label: 'Scan & pair',
                 onTap: c.isReady ? () => openScanner(context, c) : null,
               ),
-              _SettingsRow(
+              SettingsRow(
                 icon: 'bell',
                 iconColor: t.heading,
                 label: 'Notifications',
@@ -394,9 +394,9 @@ class YouScreen extends ConsumerWidget {
           ),
         const SizedBox(height: 10),
         // ── Commerce, unchanged ────────────────────────────────────────────
-        _SettingsGroup(
+        SettingsGroup(
           rows: [
-            _SettingsRow(
+            SettingsRow(
               icon: 'ring',
               iconColor: t.heading,
               label: 'Buy a PRANA ring',
@@ -404,7 +404,7 @@ class YouScreen extends ConsumerWidget {
               onTap: () => openRingOrder(context),
             ),
             if (orders.isNotEmpty)
-              _SettingsRow(
+              SettingsRow(
                 icon: 'db',
                 iconColor: t.heading,
                 label: 'Your orders',
@@ -416,9 +416,9 @@ class YouScreen extends ConsumerWidget {
         const SizedBox(height: 18),
         // ── Nova ──────────────────────────────────────────────────────────
         const _YouHeading('Nova', 'Your private guide'),
-        _SettingsGroup(
+        SettingsGroup(
           rows: [
-            _SettingsRow(
+            SettingsRow(
               icon: 'brain',
               iconColor: t.heading,
               label: 'On-device model',
@@ -433,7 +433,7 @@ class YouScreen extends ConsumerWidget {
               ),
               onTap: () => openNovaFootprint(context),
             ),
-            _SettingsRow(
+            SettingsRow(
               icon: 'speaker',
               iconColor: t.heading,
               label: 'Voice cues',
@@ -453,9 +453,9 @@ class YouScreen extends ConsumerWidget {
         const SizedBox(height: 18),
         // ── Practice · the weekly plan (item 46) ──────────────────────────
         const _YouHeading('Practice', 'My week'),
-        _SettingsGroup(
+        SettingsGroup(
           rows: [
-            _SettingsRow(
+            SettingsRow(
               icon: 'calendar',
               iconColor: t.heading,
               label: 'My week',
@@ -471,9 +471,9 @@ class YouScreen extends ConsumerWidget {
         const SizedBox(height: 18),
         // ── About you · baselines ──────────────────────────────────────────
         const _YouHeading('About you', 'Baselines'),
-        _SettingsGroup(
+        SettingsGroup(
           rows: [
-            _SettingsRow(
+            SettingsRow(
               icon: 'run',
               iconColor: t.heading,
               label: 'How often you train',
@@ -487,7 +487,7 @@ class YouScreen extends ConsumerWidget {
             ),
             // §14: the answers Nova asked for stay visible and editable here,
             // beside the one question we ask up front.
-            _SettingsRow(
+            SettingsRow(
               icon: 'insights',
               iconColor: t.heading,
               label: 'Your normal',
@@ -502,7 +502,7 @@ class YouScreen extends ConsumerWidget {
             ),
             // §14b: the Cycle row exists only while the profile says female.
             if (profile.gender == UserGender.female)
-              _SettingsRow(
+              SettingsRow(
                 icon: 'calendar',
                 iconColor: t.heading,
                 label: 'Cycle',
@@ -517,21 +517,26 @@ class YouScreen extends ConsumerWidget {
         ),
         // ── Appearance ─────────────────────────────────────────────────────
         const _YouHeading('Appearance', 'Theme and size'),
-        _SettingsGroup(
+        SettingsGroup(
           rows: [
-            _SettingsRow(
+            // Both appearance controls are segmented, and three words do
+            // not fit beside a label on a narrow row — "Theme" wrapped to
+            // "The / me" at the Large display size. They get the row's full
+            // width, under the label, and now read as a pair.
+            SettingsRow(
               icon: 'sunDim',
               iconColor: t.heading,
               label: 'Theme',
+              subtitle: 'Light, dark, or whatever the phone is set to',
               chevron: false,
               enabled: true,
-              trailing: _ThemePills(mode: mode),
+              below: _ThemePills(mode: mode),
             ),
             // The same screen arrives with a third less room on a 360dp
             // phone than on a 411dp one, and Vyana is drawn proportionally
             // larger there. Android's own Display size fixes it system-wide;
             // this is the same lever where people will actually find it.
-            _SettingsRow(
+            SettingsRow(
               icon: 'textSize',
               iconColor: t.heading,
               label: 'Display size',
@@ -544,9 +549,9 @@ class YouScreen extends ConsumerWidget {
         ),
         // ── Your data ──────────────────────────────────────────────────────
         const _YouHeading('Your data', 'Export and sovereignty'),
-        _SettingsGroup(
+        SettingsGroup(
           rows: [
-            _SettingsRow(
+            SettingsRow(
               icon: 'download',
               iconColor: t.heading,
               label: 'Export health data',
@@ -555,21 +560,21 @@ class YouScreen extends ConsumerWidget {
                   style: VyanaType.mono10.copyWith(color: t.textMuted)),
               onTap: () => openExports(context, ref, section: ExportSection.health),
             ),
-            _SettingsRow(
+            SettingsRow(
               icon: 'download',
               iconColor: t.heading,
               label: 'Export your journal',
               subtitle: 'All entries, or dreams, reflections, ideas, meals separately',
               onTap: () => openExports(context, ref, section: ExportSection.journal),
             ),
-            _SettingsRow(
+            SettingsRow(
               icon: 'db',
               iconColor: t.heading,
               label: 'Export everything',
               subtitle: 'Machine-readable archive',
               onTap: () => openExports(context, ref, section: ExportSection.archive),
             ),
-            _SettingsRow(
+            SettingsRow(
               icon: 'shield',
               iconColor: t.heading,
               label: 'Cloud sync',
@@ -589,16 +594,16 @@ class YouScreen extends ConsumerWidget {
           ],
         ),
         const _YouHeading('Vyana', 'About & privacy'),
-        _SettingsGroup(
+        SettingsGroup(
           rows: [
-            _SettingsRow(
+            SettingsRow(
               icon: 'info',
               iconColor: t.heading,
               label: 'About Vyana',
               subtitle: 'Mission, ethos, ring capabilities, version',
               onTap: () => openAbout(context, c),
             ),
-            _SettingsRow(
+            SettingsRow(
               icon: 'shield',
               iconColor: t.heading,
               label: 'Privacy & sovereignty',
@@ -833,26 +838,36 @@ class _ThemePills extends ConsumerWidget {
         color: t.mutedInk.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
       ),
+      // Equal shares, each word shrinking inside its own segment — the
+      // same shape as DisplayScalePills, so neither control can push the
+      // row past the edge at any size or text scale.
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
           for (final m in ThemeMode.values)
-            InkWell(
-              onTap: () => ref.read(themeModeProvider.notifier).set(m),
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(9, 6, 9, 7),
-                decoration: BoxDecoration(
-                  color: mode == m
-                      ? t.heading.withValues(alpha: 0.14)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  YouScreen._themeLabel(m),
-                  style: VyanaType.caption.copyWith(
-                    color: mode == m ? t.text : t.mutedInk,
-                    fontWeight: mode == m ? FontWeight.w700 : FontWeight.w500,
+            Expanded(
+              child: InkWell(
+                onTap: () => ref.read(themeModeProvider.notifier).set(m),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(6, 7, 6, 8),
+                  decoration: BoxDecoration(
+                    color: mode == m
+                        ? t.heading.withValues(alpha: 0.14)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      YouScreen._themeLabel(m),
+                      maxLines: 1,
+                      softWrap: false,
+                      style: VyanaType.caption.copyWith(
+                        color: mode == m ? t.text : t.mutedInk,
+                        fontWeight:
+                            mode == m ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -863,9 +878,9 @@ class _ThemePills extends ConsumerWidget {
   }
 }
 
-class _SettingsGroup extends StatelessWidget {
-  const _SettingsGroup({required this.rows});
-  final List<_SettingsRow> rows;
+class SettingsGroup extends StatelessWidget {
+  const SettingsGroup({super.key, required this.rows});
+  final List<SettingsRow> rows;
 
   @override
   Widget build(BuildContext context) {
@@ -890,8 +905,13 @@ class _SettingsGroup extends StatelessWidget {
   }
 }
 
-class _SettingsRow extends StatelessWidget {
-  const _SettingsRow({
+/// One row in a You settings group. Public so the layout cases can render
+/// it: this row carries a label, an optional subtitle, an optional trailing
+/// control and an optional full-width one, and that combination has broken
+/// on a narrow phone twice.
+class SettingsRow extends StatelessWidget {
+  const SettingsRow({
+    super.key,
     required this.icon,
     required this.label,
     this.onTap,
@@ -963,10 +983,12 @@ class _SettingsRow extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (trailing != null) ...[
-                    Flexible(child: trailing!),
-                    const SizedBox(width: 8),
-                  ],
+                  // Deliberately NOT Flexible: in a Row it would take flex
+                  // space away from the label's Expanded and split the row
+                  // in half, wrapping "Notifications" to "Notification / s".
+                  // A control too wide to sit beside the label belongs in
+                  // [below] instead.
+                  if (trailing != null) ...[trailing!, const SizedBox(width: 8)],
                   if (chevron) VyanaIcon('chevR', size: 17, color: t.textMuted),
                 ],
               ),
