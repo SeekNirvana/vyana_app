@@ -82,7 +82,7 @@ How often you train
 Erases ring data and unpairs
 metrics:hrv-after:
 journal:tag:
-3.1 GB
+3.2 GB
 
 # v1.1.1 — Ring state you can act on: stale/disconnected pill, alerts persist
 Reaching your ring…
@@ -134,8 +134,45 @@ worked out from your HRV
 sends alerts while Vyana is closed
 PRANA RINGS NEAR ME
 Up to date
-No sessions yet this week
+No sessions in the last 7 days
 Where it went
 By practice
 No patterns yet. Nova needs a few weeks of dreams,
 Time and heart rate across your day
+
+# v1.1.5 — the 13 Nov handover
+# Whole literals only: a const name is inlined, an interpolated string never
+# exists as one, and a middot splits the run in the AOT snapshot.
+READING LAST NIGHT
+No reading today
+RING ESTIMATE
+An estimate from the ring, not a blood test.
+Did your period end on
+When did your last period start?
+CONNECTING TO YOUR RING
+Reaching your ring
+Keep it close and try again.
+Ring screen
+ON THE CHARGER
+PRANA rings
+LAST 7 DAYS
+Your practice
+Suggested activity
+Wind down
+Planned today
+YOUR USUAL
+Pin it
+My week
+Three is the limit
+Low readiness. Try
+Remind me
+DATA (from the ring and app, not the user)
+Listen first: respond fully to what the person asked
+Never guess numbers.
+Diagnostics
+Did it keep watching?
+Honor and Huawei phones close background apps
+That will not last the night. Charge it before bed or there
+Charge it soon
+Open Diagnostics
+Licences
