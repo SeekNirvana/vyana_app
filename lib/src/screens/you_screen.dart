@@ -20,6 +20,8 @@ Future<void> openScanner(BuildContext context, RingController c) {
         onReconnectPaired: () => c.reconnectSavedRing(force: true),
         onUnpair: c.unpairCurrentRing,
         onConnectedDeviceDetected: c.handleScannerDetectedConnection,
+        // Bug 37: the app's own last sync, not this screen's.
+        lastSyncedAt: c.lastSyncedAt,
         // Bug 26: rename moved onto the ring screen, beside the name.
         onRename: c.renameRing,
         onFirstConnected: c.pairedRing == null
