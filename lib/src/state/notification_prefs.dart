@@ -145,6 +145,7 @@ class RingAlertSnapshot {
     required this.spo2,
     required this.hrBandLow,
     required this.hrBandHigh,
+    this.charging = false,
   });
 
   factory RingAlertSnapshot.from(RingController c, {TrainingFrequency? band}) {
@@ -162,6 +163,7 @@ class RingAlertSnapshot {
       spo2: c.vitals.bloodOxygen,
       hrBandLow: hrBand.low,
       hrBandHigh: hrBand.high,
+      charging: c.wasChargingWhenLastSeen,
     );
   }
 
@@ -177,6 +179,11 @@ class RingAlertSnapshot {
   final int? spo2;
   final double hrBandLow;
   final double hrBandHigh;
+
+  /// Bug 43: the newest status says charging, connected or not. The ring is
+  /// off the finger on purpose, so neither a battery reading mid-charge nor
+  /// two hours out of reach is news.
+  final bool charging;
 
   /// Bug 44 (3): a cached percentage from hours ago is not a reading. It can
   /// neither raise the alert nor clear one that is already standing.
@@ -209,6 +216,7 @@ class RingAlertSnapshot {
         'spo2': spo2,
         'hrBandLow': hrBandLow,
         'hrBandHigh': hrBandHigh,
+        'charging': charging,
       };
 
   static RingAlertSnapshot? fromJson(Map<String, Object?> json) {
@@ -230,6 +238,7 @@ class RingAlertSnapshot {
       spo2: json['spo2'] as int?,
       hrBandLow: (json['hrBandLow'] as num?)?.toDouble() ?? 50,
       hrBandHigh: (json['hrBandHigh'] as num?)?.toDouble() ?? 80,
+      charging: json['charging'] == true,
     );
   }
 
@@ -366,6 +375,10 @@ Future<void> _evaluateBattery(
   VitalsNotificationService notify,
   DateTime at,
 ) async {
+  // Bug 43: on the charger the battery is on its way up, by choice. Nothing
+  // to warn about, and nothing to clear either — the percentage mid-charge
+  // is not the percentage the user will wear.
+  if (s.charging) return;
   final battery = s.batteryPercent;
   // Bug 44 (3): no current reading, no decision — neither fire nor clear.
   if (battery == null || battery <= 0 || !s.batteryIsCurrent) return;
@@ -449,6 +462,8 @@ Future<void> _evaluateOffline(
     return;
   }
   if (!s.paired) return;
+  // Bug 43: a ring taken off and put on charge is out of reach on purpose.
+  if (s.charging) return;
   final sinceMs = store.getInt(_AlertKeys.offlineSince);
   if (sinceMs == null) {
     // Start the clock from the last confirmed connection when we know it,

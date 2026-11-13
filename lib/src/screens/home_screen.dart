@@ -245,6 +245,14 @@ class _RingPill extends StatelessWidget {
         false,
         'refresh',
       ),
+      // Bug 43: charging is neither a sync state nor a verdict, so it is
+      // grey — never the gold of a sync or the green of a good reading.
+      RingUiState.charging => (
+        battery == null ? 'CHARGING' : '$battery%',
+        t.textSec,
+        false,
+        'batteryCharging',
+      ),
       _ => (
         battery == null ? 'RING' : '$battery%',
         live ? t.textSec : t.mutedInk,
@@ -252,6 +260,11 @@ class _RingPill extends StatelessWidget {
         null,
       ),
     };
+    // The charging pill keeps its own hairline rather than the shared border,
+    // so the mock's rgba(143,163,155,.4) is exactly what is drawn.
+    final borderTone = state == RingUiState.charging
+        ? t.mutedInk.withValues(alpha: 0.4)
+        : (filled ? tone : t.border);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -262,7 +275,7 @@ class _RingPill extends StatelessWidget {
           decoration: BoxDecoration(
             color: filled ? tone.withValues(alpha: 0.16) : Colors.transparent,
             borderRadius: BorderRadius.circular(100),
-            border: Border.all(color: filled ? tone : t.border),
+            border: Border.all(color: borderTone),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

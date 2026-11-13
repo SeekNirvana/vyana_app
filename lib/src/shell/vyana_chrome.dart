@@ -304,6 +304,10 @@ enum RingUiState { synced, syncing, stale, disconnected, charging }
 
 RingUiState ringUiStateOf(RingController c) {
   if (c.isSyncing) return RingUiState.syncing;
+  // Bug 43: the state existed and the mock had it, but nothing ever returned
+  // it, so a charging ring showed a plain percentage. The SDK reports the
+  // status; this is the one place that has to read it.
+  if (c.isCharging) return RingUiState.charging;
   if (ringIsOffline(c)) return RingUiState.disconnected;
   if (ringIsStale(c)) return RingUiState.stale;
   return RingUiState.synced;
@@ -341,6 +345,15 @@ String _agoLabel(DateTime at) {
         pulse: false,
       );
     case RingUiState.charging:
+      // Mock Home 5a: grey, and it says what it is — the ring is off the
+      // finger on purpose, so nothing here is a warning.
+      return (
+        text: c.batteryPercent == null
+            ? 'ON THE CHARGER'
+            : 'ON THE CHARGER · ${c.batteryPercent}%',
+        color: t.mutedInk,
+        pulse: false,
+      );
     case RingUiState.synced:
       if (!c.isConnected) {
         // A short drop while the SDK reconnects — say so, quietly.

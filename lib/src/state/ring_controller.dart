@@ -314,6 +314,22 @@ class RingController extends ChangeNotifier {
   /// is a missing night (bug 14a takes over).
   static const int kTonightSleepGiveUpHour = 12;
 
+  /// Normalised battery status from the newest source that reported one —
+  /// `normal`, `low`, `charging`, `full` or `-`. Bug 43: the pill needs this
+  /// to show the ring on its charger rather than a bare percentage.
+  String? get batteryStatus =>
+      _basicInfo?.batteryStatus ?? _pairedRing?.batteryStatus;
+
+  /// Whether the ring is on its charger *right now* — what the pill shows.
+  bool get isCharging => _isConnected && wasChargingWhenLastSeen;
+
+  /// Whether the newest status we have says charging, connected or not. A
+  /// ring on its charger often drops out of range; it is still off the
+  /// finger on purpose, so the low-battery and out-of-reach alerts have
+  /// nothing to warn about (bug 43).
+  bool get wasChargingWhenLastSeen =>
+      normalizedBatteryStatus(batteryStatus) == 'charging';
+
   /// Battery percent from the newest source that reported one.
   int? get batteryPercent {
     final v = _vitals.battery;

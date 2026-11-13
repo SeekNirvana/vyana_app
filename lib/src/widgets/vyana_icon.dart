@@ -104,6 +104,9 @@ class VyanaIcon extends StatelessWidget {
     'pinOff': Icons.push_pin_outlined,
     'sync': Icons.sync_rounded,
     'battery': Icons.battery_std_rounded,
+    // Bug 43: the ring on its charger. Deliberately grey wherever it is
+    // used — charging is neither a sync state nor a verdict.
+    'batteryCharging': Icons.battery_charging_full_rounded,
     'more': Icons.more_horiz_rounded,
     'filter': Icons.tune_rounded,
     'stats': Icons.bar_chart_rounded,

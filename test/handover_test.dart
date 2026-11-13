@@ -577,6 +577,40 @@ void main() {
     });
   });
 
+  group('the ring on its charger (bug 43)', () {
+    test('the SDK statuses that mean charging', () {
+      for (final raw in ['2', 'charging', 'charge', 'CHARGING']) {
+        expect(normalizedBatteryStatus(raw), 'charging', reason: raw);
+      }
+      expect(normalizedBatteryStatus('0'), 'normal');
+      expect(normalizedBatteryStatus('full'), 'full');
+      expect(normalizedBatteryStatus(null), '-');
+    });
+
+    test('charging survives the trip to the service isolate', () {
+      final charging = RingAlertSnapshot.fromJson(
+        RingAlertSnapshot(
+          at: DateTime.now(),
+          hasRingContext: true,
+          paired: true,
+          connected: false,
+          batteryPercent: 8,
+          batteryReadAt: DateTime.now(),
+          lastSyncedAt: DateTime.now(),
+          lastConnectionConfirmedAt: DateTime.now(),
+          restingHr: null,
+          spo2: null,
+          hrBandLow: 50,
+          hrBandHigh: 80,
+          charging: true,
+        ).toJson(),
+      )!;
+      // 8% and out of reach, but on the charger on purpose — neither the
+      // low-battery nor the two-hour offline alert has anything to say.
+      expect(charging.charging, isTrue);
+    });
+  });
+
   group('glucose is an estimate, not a test (bug 39)', () {
     test('the range is the typical day, not the fasting window', () {
       expect(kGlucoseRange.low, 4.0);
@@ -605,8 +639,10 @@ void main() {
       int? battery,
       Duration batteryAge = Duration.zero,
       bool connected = true,
+      bool charging = false,
     }) =>
         RingAlertSnapshot(
+          charging: charging,
           at: DateTime.now(),
           hasRingContext: true,
           paired: true,
