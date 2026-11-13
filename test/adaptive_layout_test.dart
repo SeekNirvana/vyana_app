@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyana/main.dart';
 import 'package:vyana/src/theme/app_theme.dart';
+import 'package:vyana/src/theme/display_scale.dart';
 import 'package:vyana/src/widgets/primitives.dart';
 
 /// Layout has to survive the device it ships on, not the one it was drawn on.
@@ -242,6 +244,141 @@ void main() {
           expect(find.byType(IconBtn), findsNWidgets(2));
         });
       }
+    }
+  });
+
+
+  // Display size: the app is laid out in a larger logical space and painted
+  // back down, so a 360dp phone can be given a 411dp phone's room.
+  group('display size changes the room the app is laid out in', () {
+    testWidgets('Compact hands the app more logical width', (t) async {
+      t.view.physicalSize = small;
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.reset);
+      late Size seen;
+      await t.pumpWidget(
+        MaterialApp(
+          theme: VyanaTheme.dark(),
+          builder: (context, child) => DisplayScaleLayer(
+            scale: 0.85,
+            child: child ?? const SizedBox.shrink(),
+          ),
+          home: Builder(
+            builder: (context) {
+              seen = MediaQuery.sizeOf(context);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      // 360dp at 0.85 is the room a ~423dp phone has.
+      expect(seen.width, closeTo(360 / 0.85, 0.5));
+      expect(seen.height, closeTo(640 / 0.85, 0.5));
+    });
+
+    testWidgets('Default leaves the tree exactly as it was', (t) async {
+      t.view.physicalSize = small;
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.reset);
+      late Size seen;
+      await t.pumpWidget(
+        MaterialApp(
+          theme: VyanaTheme.dark(),
+          builder: (context, child) => DisplayScaleLayer(
+            scale: kDefaultDisplayScale,
+            child: child ?? const SizedBox.shrink(),
+          ),
+          home: Builder(
+            builder: (context) {
+              seen = MediaQuery.sizeOf(context);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      expect(seen, small);
+    });
+
+    testWidgets('Large narrows it, and the small-screen cases still hold',
+        (t) async {
+      // 320dp at 1.15 is 278dp of layout — inside the 270dp the cases above
+      // already cover, which is why Large is safe to offer at all.
+      t.view.physicalSize = tiny;
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.reset);
+      late Size seen;
+      await t.pumpWidget(
+        MaterialApp(
+          theme: VyanaTheme.dark(),
+          builder: (context, child) => DisplayScaleLayer(
+            scale: 1.15,
+            child: child ?? const SizedBox.shrink(),
+          ),
+          home: Builder(
+            builder: (context) {
+              seen = MediaQuery.sizeOf(context);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      expect(seen.width, closeTo(320 / 1.15, 0.5));
+      expect(seen.width, greaterThan(270));
+    });
+
+    test('the offered sizes stay inside the clamp', () {
+      for (final scale in kDisplayScales) {
+        expect(clampDisplayScale(scale), scale);
+      }
+      expect(clampDisplayScale(0.1), kMinDisplayScale);
+      expect(clampDisplayScale(9), kMaxDisplayScale);
+    });
+
+    test('each size says what it does, not what it is', () {
+      expect(displayScaleLabel(0.85), 'Compact');
+      expect(displayScaleLabel(1.0), 'Default');
+      expect(displayScaleLabel(1.15), 'Large');
+      expect(displayScaleCaption(0.85), 'More fits on screen');
+    });
+  });
+
+  // The control that sets the display size has to survive the display size
+  // it sets. Three words beside a label overflowed the You row by 3.7px on
+  // a 360dp phone at Large; it now gets the row's full width and each word
+  // shrinks inside its own segment.
+  group('the display size control fits the sizes it offers', () {
+    for (final (name, width, textScale) in [
+      ('360dp at Default', 336.0, 1.0),
+      ('360dp at Large', 360 / 1.15 - 24, 1.0),
+      ('320dp at Large', 320 / 1.15 - 24, 1.0),
+      ('320dp at Large, 1.5x text', 320 / 1.15 - 24, 1.5),
+    ]) {
+      testWidgets('all three sizes are readable · $name', (t) async {
+        await t.binding.setSurfaceSize(small);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(
+          ProviderScope(
+            child: MaterialApp(
+              theme: VyanaTheme.dark(),
+              home: MediaQuery(
+                data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+                child: Scaffold(
+                  body: Center(
+                    child: SizedBox(
+                      width: width,
+                      child: const DisplayScalePills(scale: 1.15),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await t.pump();
+        for (final option in kDisplayScales) {
+          expect(find.text(displayScaleLabel(option)), findsOneWidget);
+        }
+      });
     }
   });
 }

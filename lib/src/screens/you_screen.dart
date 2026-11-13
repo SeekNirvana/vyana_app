@@ -205,6 +205,7 @@ class YouScreen extends ConsumerWidget {
     final t = context.vyana;
     final c = ref.watch(ringControllerProvider);
     final mode = ref.watch(themeModeProvider);
+    final displayScale = ref.watch(displayScaleProvider);
     final profile = ref
         .watch(userProfileProvider)
         .maybeWhen(data: (p) => p, orElse: () => const UserProfile());
@@ -515,7 +516,7 @@ class YouScreen extends ConsumerWidget {
           ],
         ),
         // ── Appearance ─────────────────────────────────────────────────────
-        const _YouHeading('Appearance', 'Theme'),
+        const _YouHeading('Appearance', 'Theme and size'),
         _SettingsGroup(
           rows: [
             _SettingsRow(
@@ -525,6 +526,19 @@ class YouScreen extends ConsumerWidget {
               chevron: false,
               enabled: true,
               trailing: _ThemePills(mode: mode),
+            ),
+            // The same screen arrives with a third less room on a 360dp
+            // phone than on a 411dp one, and Vyana is drawn proportionally
+            // larger there. Android's own Display size fixes it system-wide;
+            // this is the same lever where people will actually find it.
+            _SettingsRow(
+              icon: 'textSize',
+              iconColor: t.heading,
+              label: 'Display size',
+              subtitle: displayScaleCaption(displayScale),
+              chevron: false,
+              enabled: true,
+              below: DisplayScalePills(scale: displayScale),
             ),
           ],
         ),
@@ -745,6 +759,67 @@ class _YouHeading extends StatelessWidget {
 }
 
 /// Dark · Light · System as a compact trailing control on the Theme row.
+/// Same shape as [_ThemePills] — one segmented control for each of the two
+/// appearance choices, so they read as a pair.
+class DisplayScalePills extends ConsumerWidget {
+  const DisplayScalePills({super.key, required this.scale});
+
+  final double scale;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.vyana;
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: t.mutedInk.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      // Three segments share the row's width equally and each word shrinks
+      // inside its own segment, so neither a long label nor a large text
+      // scale can push this control past the edge.
+      child: Row(
+        children: [
+          for (final option in kDisplayScales)
+            Expanded(
+              child: InkWell(
+                onTap: () => unawaited(
+                  ref.read(displayScaleProvider.notifier).set(option),
+                ),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(6, 7, 6, 8),
+                  decoration: BoxDecoration(
+                    color: (scale - option).abs() < 0.005
+                        ? t.heading.withValues(alpha: 0.14)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      displayScaleLabel(option),
+                      maxLines: 1,
+                      softWrap: false,
+                      style: VyanaType.caption.copyWith(
+                        color: (scale - option).abs() < 0.005
+                            ? t.text
+                            : t.mutedInk,
+                        fontWeight: (scale - option).abs() < 0.005
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ThemePills extends ConsumerWidget {
   const _ThemePills({required this.mode});
   final ThemeMode mode;
@@ -825,6 +900,7 @@ class _SettingsRow extends StatelessWidget {
     this.subtitle,
     this.chevron = true,
     this.enabled,
+    this.below,
   });
 
   final String icon;
@@ -834,6 +910,12 @@ class _SettingsRow extends StatelessWidget {
   final Color? iconColor;
   final String? subtitle;
   final bool chevron;
+
+  /// A control that gets the row's full width, under the label, instead of
+  /// being squeezed into [trailing]. A segmented control with three words in
+  /// it does not fit beside a label on a 360dp phone — it overflowed the row
+  /// and crushed "Display size" into a one-letter column.
+  final Widget? below;
 
   /// Rows whose control lives in [trailing] (a switch, theme pills) have no
   /// row tap but are not disabled; pass true so they are not dimmed.
@@ -851,34 +933,47 @@ class _SettingsRow extends StatelessWidget {
         opacity: enabled ? 1 : 0.4,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              VyanaIconBadge(name: icon, color: color),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      label,
-                      style: VyanaType.bodySm.copyWith(color: t.text),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        subtitle!,
-                        style: VyanaType.caption.copyWith(
-                          color: t.textSec,
-                          height: 1.4,
+              Row(
+                children: [
+                  VyanaIconBadge(name: icon, color: color),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          label,
+                          style: VyanaType.bodySm.copyWith(color: t.text),
                         ),
-                      ),
-                    ],
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle!,
+                            style: VyanaType.caption.copyWith(
+                              color: t.textSec,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (trailing != null) ...[
+                    Flexible(child: trailing!),
+                    const SizedBox(width: 8),
                   ],
-                ),
+                  if (chevron) VyanaIcon('chevR', size: 17, color: t.textMuted),
+                ],
               ),
-              if (trailing != null) ...[trailing!, const SizedBox(width: 8)],
-              if (chevron) VyanaIcon('chevR', size: 17, color: t.textMuted),
+              if (below != null) ...[
+                const SizedBox(height: 10),
+                below!,
+              ],
             ],
           ),
         ),

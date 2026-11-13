@@ -185,3 +185,6 @@ Erase what the ring stored
 This is not the ring Vyana was using. Choose what to clear
 currentRingNeedsOnboarding
 clearRingRecordedData
+Display size
+More fits on screen
+DisplayScaleLayer

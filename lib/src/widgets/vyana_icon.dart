@@ -61,6 +61,7 @@ class VyanaIcon extends StatelessWidget {
     'refresh': Icons.refresh_rounded,
     'sun': Icons.wb_sunny_rounded,
     'sunDim': Icons.light_mode_rounded,
+    'textSize': Icons.format_size_rounded,
     'play': Icons.play_arrow_rounded,
     'waveform': Icons.graphic_eq_rounded,
     'chart': Icons.bar_chart_rounded,

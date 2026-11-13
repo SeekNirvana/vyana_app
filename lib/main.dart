@@ -42,6 +42,7 @@ import 'src/state/wallet_controller.dart';
 import 'src/theme/app_colors.dart';
 import 'src/theme/app_theme.dart';
 import 'src/theme/app_typography.dart';
+import 'src/theme/display_scale.dart';
 import 'src/theme/theme_mode_controller.dart';
 import 'src/wellness/wellness_state.dart';
 import 'src/services/vitals_notification_service.dart';
@@ -138,12 +139,19 @@ class RingApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(themeModeProvider);
+    final displayScale = ref.watch(displayScaleProvider);
     return MaterialApp(
       title: 'Vyana',
       debugShowCheckedModeBanner: false,
       theme: VyanaTheme.light(),
       darkTheme: VyanaTheme.dark(),
       themeMode: mode,
+      // Wrapped here rather than around `home`, so every route, dialog and
+      // sheet the Navigator pushes is laid out at the chosen size too.
+      builder: (context, child) => DisplayScaleLayer(
+        scale: displayScale,
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: storageReady
           ? const VyanaShell()
           : _StorageUnavailableScreen(
