@@ -175,6 +175,11 @@ class _HomeHeader extends ConsumerWidget {
                         eyebrow.text,
                         color: eyebrow.color,
                         size: 12,
+                        // "ON THE CHARGER · 28%" and "LAST SYNC 14 HOURS
+                        // AGO" end in the number, so on a narrow screen or
+                        // at a large text scale this line shrinks rather
+                        // than ellipsizing its tail away.
+                        shrinkToFit: true,
                       ),
                     ),
                   ],
@@ -945,11 +950,18 @@ class SuggestedPracticeBlock extends StatelessWidget {
                 const SizedBox(height: 3),
                 Row(
                   children: [
-                    MonoEyebrow(
-                      meta ?? '$minutes MIN',
-                      size: 11,
-                      spacing: 0.8,
-                      color: t.heading,
+                    // Items 45/46 made this line long — "PLANNED · 2 OF 3 ·
+                    // YOUR USUAL 40 MIN" where it used to be "15 MIN" — so
+                    // it needs room to give. Unconstrained it overflowed the
+                    // row by 238px at 360dp.
+                    Flexible(
+                      child: MonoEyebrow(
+                        meta ?? '$minutes MIN',
+                        size: 11,
+                        spacing: 0.8,
+                        color: t.heading,
+                        shrinkToFit: true,
+                      ),
                     ),
                     if (compact) ...[
                       const SizedBox(width: 6),

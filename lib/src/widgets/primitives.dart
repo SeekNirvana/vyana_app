@@ -235,13 +235,20 @@ class Cta extends StatelessWidget {
                   VyanaIcon(icon!, size: 19, color: fg),
                   const SizedBox(width: 8),
                 ],
+                // A button label shrinks rather than ellipsizing: "Recon…"
+                // has lost the verb the button exists for. BoxFit.scaleDown
+                // is identity while the label fits, so this only changes
+                // narrow screens and large text scales.
                 Flexible(
-                  child: Text(
-                    label,
-                    style: VyanaType.cta.copyWith(color: fg),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      style: VyanaType.cta.copyWith(color: fg),
+                      maxLines: 1,
+                      softWrap: false,
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                 ),
               ],

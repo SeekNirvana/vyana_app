@@ -255,6 +255,9 @@ class YouScreen extends ConsumerWidget {
                       ].join(' · '),
                       size: 11.5,
                       spacing: 0.8,
+                      // Ends in the ring's state and battery, so it shrinks
+                      // rather than losing its tail on a narrow screen.
+                      shrinkToFit: true,
                     ),
                   ],
                 ),

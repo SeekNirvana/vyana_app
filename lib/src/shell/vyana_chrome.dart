@@ -21,6 +21,7 @@ class MonoEyebrow extends StatelessWidget {
     this.weight = FontWeight.w600,
     this.spacing = 1.1,
     this.maxLines = 1,
+    this.shrinkToFit = false,
   });
 
   final String text;
@@ -30,12 +31,23 @@ class MonoEyebrow extends StatelessWidget {
   final double spacing;
   final int maxLines;
 
+  /// Shrink to fit the width instead of ellipsizing.
+  ///
+  /// An eyebrow ends in the part worth reading — "ON THE CHARGER · 28%",
+  /// "LAST SYNC 14 HOURS AGO" — so dropping its tail loses exactly the
+  /// number it was there to carry. On a narrow screen, or at a large text
+  /// scale, shrinking keeps the whole line. Only for call sites with bounded
+  /// width (inside a Flexible or Expanded); elsewhere a FittedBox has no
+  /// width to fit to.
+  final bool shrinkToFit;
+
   @override
   Widget build(BuildContext context) {
-    return Text(
+    final label = Text(
       text.toUpperCase(),
       maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
+      softWrap: maxLines > 1,
       style: TextStyle(
         fontFamily: VyanaType.mono,
         // Floor: uppercase tracked mono below this is unreadable on a phone.
@@ -45,6 +57,12 @@ class MonoEyebrow extends StatelessWidget {
         height: 1.2,
         color: color ?? context.vyana.mutedInk,
       ),
+    );
+    if (!shrinkToFit) return label;
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: AlignmentDirectional.centerStart,
+      child: label,
     );
   }
 }

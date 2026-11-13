@@ -586,11 +586,21 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
                       controller: _pageController,
                       physics: const NeverScrollableScrollPhysics(),
                       onPageChanged: (p) => setState(() => _page = p),
+                      // The PageView's height is whatever is left after the
+                      // icon, dots and buttons, and on a 1080×1920 screen two
+                      // of these steps are taller than that — "Vitals
+                      // monitoring" by 76px, and "Name your ring" by 115px
+                      // once the keyboard halves the space. Each step
+                      // scrolls rather than overflowing; the Expanded inside
+                      // them are all in Rows, so vertical scrolling is safe.
                       children: [
-                        _buildRenameStep(t),
-                        _buildHealthMonitoringStep(t),
-                        _buildWipeStep(t),
-                        _buildForegroundStep(t),
+                        for (final step in [
+                          _buildRenameStep(t),
+                          _buildHealthMonitoringStep(t),
+                          _buildWipeStep(t),
+                          _buildForegroundStep(t),
+                        ])
+                          SingleChildScrollView(child: step),
                       ],
                     ),
                   ),

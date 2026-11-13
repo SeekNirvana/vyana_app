@@ -1,0 +1,212 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:vyana/main.dart';
+import 'package:vyana/src/theme/app_theme.dart';
+import 'package:vyana/src/widgets/primitives.dart';
+
+/// Layout has to survive the device it ships on, not the one it was drawn on.
+///
+/// Every case here renders at a small phone's logical size and at a large
+/// text scale — the two things that turn a comfortable layout into a
+/// truncated or overflowing one. A RenderFlex overflow throws in a widget
+/// test, so an overflow fails these outright; the expectations below cover
+/// what silently *truncates* instead, which no framework error catches.
+void main() {
+  // A small phone (360x640dp) and an accessibility text scale.
+  const small = Size(360, 640);
+  const tiny = Size(320, 568);
+
+  Widget host(Widget child, {double textScale = 1.0}) => MaterialApp(
+        theme: VyanaTheme.dark(),
+        home: MediaQuery(
+          data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+          child: Scaffold(body: Center(child: child)),
+        ),
+      );
+
+  Future<void> at(
+    WidgetTester tester,
+    Size size,
+    Widget child, {
+    double textScale = 1.0,
+  }) async {
+    await tester.binding.setSurfaceSize(size);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(host(child, textScale: textScale));
+    await tester.pump();
+  }
+
+  group('a button keeps its verb (no "Recon…")', () {
+    for (final (label, scale) in [
+      ('Reconnect', 1.0),
+      ('Reconnect', 1.3),
+      ('Reconnecting…', 1.3),
+      ('Wipe ring data', 1.5),
+    ]) {
+      testWidgets('$label at ${scale}x fits in half a 360dp row', (t) async {
+        await at(
+          t,
+          small,
+          // Two Ctas side by side, as the ring panel draws them: each gets
+          // less than half of 360dp minus padding.
+          SizedBox(
+            width: 320,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Cta(label: label, icon: 'refresh', onTap: () {}),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Cta(label: 'Unpair', icon: 'x', onTap: () {})),
+              ],
+            ),
+          ),
+          textScale: scale,
+        );
+        // Shrunk to fit, never ellipsized: the whole label is still painted.
+        final text = t.widget<Text>(find.text(label));
+        expect(text.overflow, isNot(TextOverflow.ellipsis));
+        expect(find.byType(FittedBox), findsWidgets);
+      });
+    }
+  });
+
+  group('an eyebrow keeps its tail (no "ON THE CHARGER · …")', () {
+    testWidgets('shrinkToFit wraps the label in a FittedBox', (t) async {
+      await at(
+        t,
+        tiny,
+        const SizedBox(
+          width: 180,
+          child: Row(
+            children: [
+              Flexible(
+                child: MonoEyebrow(
+                  'ON THE CHARGER · 62%',
+                  size: 12,
+                  shrinkToFit: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+        textScale: 1.3,
+      );
+      expect(find.byType(FittedBox), findsOneWidget);
+      expect(find.text('ON THE CHARGER · 62%'), findsOneWidget);
+    });
+
+    testWidgets('without it the old ellipsis behaviour is unchanged', (t) async {
+      await at(
+        t,
+        tiny,
+        const SizedBox(
+          width: 180,
+          child: Row(children: [Flexible(child: MonoEyebrow('LAST SYNC'))]),
+        ),
+      );
+      expect(find.byType(FittedBox), findsNothing);
+    });
+  });
+
+  group('the suggestion card survives a small screen', () {
+    for (final scale in [1.0, 1.3, 1.5]) {
+      testWidgets('Planned today at ${scale}x', (t) async {
+        await at(
+          t,
+          small,
+          SizedBox(
+            width: 328,
+            child: SuggestedPracticeBlock(
+              intent: DayIntent.perform,
+              activity: activityById('outdoorRun')!,
+              reason: 'Primes you before a hard session',
+              heading: 'Planned today',
+              minutes: 40,
+              // The longest meta this card can carry (item 46).
+              meta: 'PLANNED · 2 OF 3 · YOUR USUAL 40 MIN',
+              setsTarget: false,
+            ),
+          ),
+          textScale: scale,
+        );
+        expect(find.text('Planned today'), findsOneWidget);
+      });
+    }
+  });
+
+  group('the rows v1.1.5 changed, at every size', () {
+    // The longest string each surface can produce, on the narrowest screen
+    // and the largest text — if these fit, the ordinary cases do.
+    for (final size in [small, tiny]) {
+      for (final scale in [1.0, 1.3, 1.5]) {
+        final where = '${size.width.round()}dp at ${scale}x';
+
+        testWidgets('the Wind down card · $where', (t) async {
+          await at(
+            t,
+            size,
+            SizedBox(
+              width: size.width - 32,
+              child: SuggestedPracticeBlock(
+                intent: DayIntent.settle,
+                activity: activityById('yogaNidra')!,
+                reason: 'Helps your body and mind settle before sleep',
+                heading: 'Wind down',
+                minutes: 25,
+                meta: 'YOUR USUAL · 25 MIN',
+              ),
+            ),
+            textScale: scale,
+          );
+          expect(find.text('Wind down'), findsOneWidget);
+        });
+
+        testWidgets('the fallback card with Pin it · $where', (t) async {
+          await at(
+            t,
+            size,
+            SizedBox(
+              width: size.width - 32,
+              child: SuggestedPracticeBlock(
+                intent: DayIntent.recover,
+                activity: activityById('bodyScan')!,
+                reason: 'Holds the recovery you already earned',
+                heading: 'Suggested activity',
+                minutes: 15,
+                meta: 'YOUR USUAL · 15 MIN',
+                offerPin: true,
+                setsTarget: false,
+                onPin: () {},
+              ),
+            ),
+            textScale: scale,
+          );
+          expect(find.text('Pin it'), findsOneWidget);
+        });
+
+        testWidgets('the compact Practice card · $where', (t) async {
+          await at(
+            t,
+            size,
+            SizedBox(
+              width: size.width - 32,
+              child: SuggestedPracticeBlock(
+                intent: DayIntent.perform,
+                activity: activityById('outdoorRun')!,
+                reason: 'Primes you before a hard session',
+                heading: 'Planned today',
+                minutes: 40,
+                meta: 'PLANNED · 2 OF 3 · YOUR USUAL 40 MIN',
+                compact: true,
+                setsTarget: false,
+              ),
+            ),
+            textScale: scale,
+          );
+          expect(find.byType(SuggestedPracticeBlock), findsOneWidget);
+        });
+      }
+    }
+  });
+}
