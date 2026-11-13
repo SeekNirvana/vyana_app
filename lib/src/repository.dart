@@ -268,10 +268,18 @@ class RingRepository {
   }) async {
     final interval = clampHealthMonitoringInterval(intervalMinutes);
     final response = await _safePluginCall(() {
-      return _plugin.setDeviceHealthMonitoringMode(
-        isEnable: enabled,
-        interval: interval,
-      );
+      // The SDK call never returns when the ring does not answer — the
+      // basic-info query has carried a timeout for that reason since v1.0,
+      // and this one did not. In setup that left "Working…" on screen with
+      // no way forward and no way back out. _safePluginCall turns the
+      // TimeoutException into a null response, which already reads as
+      // "Ring did not respond. Stay close and try again."
+      return _plugin
+          .setDeviceHealthMonitoringMode(
+            isEnable: enabled,
+            interval: interval,
+          )
+          .timeout(kHealthMonitoringApplyTimeout);
     });
 
     final code = readInt(response, const ['statusCode', 'code']);

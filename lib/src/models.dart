@@ -127,6 +127,10 @@ bool ringHealthDeleteSucceeded(
 /// SDK-allowed automatic health monitoring interval (minutes).
 const kHealthMonitoringMinInterval = 1;
 const kHealthMonitoringMaxInterval = 60;
+
+/// How long to wait for the ring to confirm a health-monitoring change
+/// before giving up. The SDK call itself never times out.
+const kHealthMonitoringApplyTimeout = Duration(seconds: 12);
 const kHealthMonitoringDefaultInterval = 15;
 const kHealthMonitoringPresetIntervals = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
 
