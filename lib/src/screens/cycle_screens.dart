@@ -11,6 +11,7 @@ Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
   final profile = ref.read(userProfileProvider).valueOrNull;
   if (profile == null || !profile.shouldOfferCycleSheet) return;
   final t = context.vyana;
+  CycleMode? chosen;
 
   await showModalBottomSheet<void>(
     context: context,
@@ -51,6 +52,7 @@ Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
                 child: Panel(
                   pad: 13,
                   onTap: () async {
+                    chosen = mode;
                     await ref.read(userProfileProvider.notifier).save(
                           profile.copyWith(
                             cycleMode: mode,
@@ -74,6 +76,102 @@ Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  // Bug 35: the sheet asked nothing about the last period, so predictions
+  // started from nothing — day 1, phase and next-period date all blank until
+  // the user happened to log a start. One optional question fixes that.
+  if (chosen == CycleMode.tracking && context.mounted) {
+    await _askLastPeriodStart(context, ref);
+  }
+}
+
+/// "When did your last period start?" — a date picker and a way out. A picked
+/// day is logged as a period start with the length left unconfirmed, so the
+/// §14b predictions work from day one and the calendar can correct it later.
+Future<void> _askLastPeriodStart(BuildContext context, WidgetRef ref) async {
+  final t = context.vyana;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.fromLTRB(
+        16, 0, 16, 16 + MediaQuery.paddingOf(sheetContext).bottom,
+      ),
+      child: Panel(
+        pad: 18,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            MonoEyebrow('OPTIONAL', size: 9),
+            const SizedBox(height: 6),
+            Text(
+              'When did your last period start?',
+              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 21),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'One date and your cycle day, phase and next period are right '
+              'from today. You can correct it in the calendar any time.',
+              style: VyanaType.caption.copyWith(color: t.textSec, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            Panel(
+              pad: 13,
+              onTap: () async {
+                final now = DateTime.now();
+                final picked = await showDatePicker(
+                  context: sheetContext,
+                  initialDate: now.subtract(const Duration(days: 14)),
+                  // A start older than one cycle tells us nothing useful.
+                  firstDate: now.subtract(const Duration(days: 60)),
+                  lastDate: now,
+                  helpText: 'First day of your last period',
+                );
+                if (picked == null) return;
+                await ref
+                    .read(databaseProvider)
+                    .addCycleDay(picked);
+                if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+              },
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Pick the date',
+                      style: VyanaType.label.copyWith(color: t.text),
+                    ),
+                  ),
+                  VyanaIcon('chevronRight', size: 17, color: t.mutedInk),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Panel(
+              pad: 13,
+              // Dismissing the sheet by swiping is the same answer: tracking
+              // is on either way, and the Cycle row in You is there to log
+              // the first day whenever it comes.
+              onTap: () => Navigator.of(sheetContext).pop(),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      "I don't remember",
+                      style: VyanaType.label.copyWith(color: t.textSec),
+                    ),
+                  ),
+                  VyanaIcon('chevronRight', size: 17, color: t.mutedInk),
+                ],
+              ),
+            ),
           ],
         ),
       ),

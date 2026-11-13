@@ -63,6 +63,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     final height = double.tryParse(_height.text.trim());
     final weight = double.tryParse(_weight.text.trim());
 
+    final before = ref.read(userProfileProvider).valueOrNull;
     await ref.read(userProfileProvider.notifier).save(
           UserProfile(
             firstName: first,
@@ -71,10 +72,31 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
             gender: _gender,
             heightCm: height != null && height > 0 ? height : null,
             weightKg: weight != null && weight > 0 ? weight : null,
+            // copyWith is not used here, so the §14b fields have to be
+            // carried over by hand or saving the profile would reset them.
+            cycleMode: before?.cycleMode ?? CycleMode.off,
+            cycleSheetSeen: before?.cycleSheetSeen ?? false,
+            dueDate: before?.dueDate,
           ),
         );
     if (!mounted) return;
-    Navigator.of(context).pop();
+
+    // Bug 35: this save is the moment the gender became female, so the offer
+    // belongs to this screen — but only once it has closed, or the pop below
+    // would dismiss the sheet the instant it appeared. Age is deliberately
+    // not a condition: the offer used to wait for isWellnessReady, so with an
+    // empty age it never appeared at all.
+    final offerCycle = _gender == UserGender.female &&
+        !(before?.cycleSheetSeen ?? false);
+    final navigator = Navigator.of(context);
+    final shellContext = navigator.context;
+    navigator.pop();
+    if (!offerCycle) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (shellContext.mounted) {
+        unawaited(offerCycleTracking(shellContext, ref));
+      }
+    });
   }
 
   @override
