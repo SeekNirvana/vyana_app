@@ -302,7 +302,20 @@ void main() {
     // Bug 5: the Android 12+ splash uses its own padded asset.
     final pubspec = File('pubspec.yaml').readAsStringSync();
     expect(pubspec, contains('assets/splash_logo_android12.png'));
-    expect(pubspec, contains('version: 1.1.4+12'));
+    // Not a hard-coded version — that one breaks on every release and
+    // teaches people to update the assertion without reading it. What
+    // matters is that the version shipping has an entry saying what is in
+    // it, which is also what the release workflow refuses to publish
+    // without.
+    final version = RegExp(r'^version:\s*([0-9.]+)\+(\d+)', multiLine: true)
+        .firstMatch(pubspec);
+    expect(version, isNotNull, reason: 'pubspec has no version line');
+    final changelog = File('CHANGELOG.md').readAsStringSync();
+    expect(
+      changelog,
+      contains('## v${version!.group(1)}'),
+      reason: 'CHANGELOG.md has no entry for ${version.group(1)}',
+    );
 
     final manifest = File('scripts/release-manifest.txt').readAsStringSync();
     expect(manifest, contains('judged against typical ranges'));

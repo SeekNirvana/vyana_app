@@ -113,25 +113,28 @@ class DisplayScaleLayer extends StatelessWidget {
         viewInsets: mq.viewInsets * factor,
         systemGestureInsets: mq.systemGestureInsets * factor,
       ),
-      child: Transform.scale(
-        scale: scale,
+      // FittedBox, not Transform + OverflowBox.
+      //
+      // The obvious version — scale the whole app down and let an OverflowBox
+      // hold a child bigger than the screen — paints correctly and silently
+      // stops accepting taps near the bottom and right edges. RenderBox.hitTest
+      // rejects any position outside the box's own size before it ever asks
+      // the children, and an OverflowBox's own size is the *viewport*, not the
+      // larger child. At Compact on a 360x640 phone that killed every tap below
+      // about 85% of the height — which is where the tab bar lives.
+      //
+      // FittedBox has the same painted result and the right hit behaviour: it
+      // sizes itself to the viewport and maps every point inside it through the
+      // inverse transform into the child, so nothing falls outside. BoxFit.fill
+      // is exact rather than distorting here, because [size] is the viewport
+      // divided by [scale] in both axes, making the x and y factors identical.
+      child: FittedBox(
+        fit: BoxFit.fill,
         alignment: Alignment.topLeft,
-        // The sized child is deliberately larger than the incoming
-        // constraints when scale < 1; without this it would be clamped back
-        // to the screen and the transform would just shrink the app into a
-        // corner. Transform carries hit testing through its matrix, so taps
-        // still land where they look.
-        child: OverflowBox(
-          alignment: Alignment.topLeft,
-          minWidth: 0,
-          maxWidth: double.infinity,
-          minHeight: 0,
-          maxHeight: double.infinity,
-          child: SizedBox(
-            width: size.width,
-            height: size.height,
-            child: child,
-          ),
+        child: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: child,
         ),
       ),
     );

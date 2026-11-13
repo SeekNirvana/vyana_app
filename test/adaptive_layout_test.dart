@@ -482,4 +482,73 @@ void main() {
       expect(onboardingRingBox(260), 0);
     });
   });
+
+
+  // The display-size layer scales the whole app. The first version painted
+  // correctly and silently stopped accepting taps near the bottom and right
+  // edges, because it wrapped the enlarged child in an OverflowBox and
+  // RenderBox.hitTest rejects anything outside a box's own size. On a 360dp
+  // phone at Compact that killed every tap below ~85% of the height — the
+  // tab bar — while everything above it still worked, which is exactly the
+  // kind of bug that reads as "this one screen is broken".
+  group('a scaled app still takes taps at its edges', () {
+    for (final scale in kDisplayScales) {
+      testWidgets('every corner is tappable at ${scale}x', (t) async {
+        t.view.physicalSize = const Size(360, 640);
+        t.view.devicePixelRatio = 1.0;
+        addTearDown(t.view.reset);
+
+        final tapped = <String>[];
+        Widget corner(String name, Alignment at) => Align(
+              alignment: at,
+              child: GestureDetector(
+                onTap: () => tapped.add(name),
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  color: const Color(0xFF00FF00),
+                ),
+              ),
+            );
+
+        await t.pumpWidget(
+          MaterialApp(
+            theme: VyanaTheme.dark(),
+            builder: (context, child) => DisplayScaleLayer(
+              scale: scale,
+              child: child ?? const SizedBox.shrink(),
+            ),
+            home: Scaffold(
+              body: Stack(
+                children: [
+                  corner('topLeft', Alignment.topLeft),
+                  corner('topRight', Alignment.topRight),
+                  corner('bottomLeft', Alignment.bottomLeft),
+                  corner('bottomRight', Alignment.bottomRight),
+                ],
+              ),
+            ),
+          ),
+        );
+        await t.pump();
+
+        // The real check: tap the painted centre of each corner box.
+        for (final entry in {
+          'topLeft': const Offset(24, 24),
+          'topRight': const Offset(336, 24),
+          'bottomLeft': const Offset(24, 616),
+          'bottomRight': const Offset(336, 616),
+        }.entries) {
+          tapped.clear();
+          await t.tapAt(entry.value);
+          await t.pump();
+          expect(
+            tapped,
+            isNotEmpty,
+            reason: '${entry.key} at ${entry.value} got no tap at ${scale}x',
+          );
+        }
+      });
+    }
+  });
 }
