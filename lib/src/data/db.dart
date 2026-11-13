@@ -920,6 +920,41 @@ class VyanaDatabase extends _$VyanaDatabase {
 
   Future<int> clearRingHistoryCaches() => delete(ringHistoryCaches).go();
 
+  /// How many rows in the vault came from a ring rather than from the user.
+  ///
+  /// Used when a *different* ring is paired: the vitals, ECGs and patterns in
+  /// here were recorded by the ring that was replaced, and mixing them with
+  /// the new one's is the kind of quiet wrongness nobody goes looking for.
+  /// Deliberately counts only ring-recorded rows — journal entries, meals,
+  /// practice sessions, the cycle calendar and the weekly plan are the
+  /// user's own and are never part of this offer.
+  Future<int> countRingRecordedRows() async {
+    final counts = await Future.wait([
+      _countRows(ringHistoryCaches),
+      _countRows(ecgRecordings),
+      _countRows(patterns),
+      _countRows(rawSdkEvents),
+    ]);
+    return counts.fold<int>(0, (sum, n) => sum + n);
+  }
+
+  Future<int> _countRows(TableInfo<Table, dynamic> table) async {
+    final expression = countAll();
+    final row = await (selectOnly(table)..addColumns([expression]))
+        .getSingleOrNull();
+    return row?.read(expression) ?? 0;
+  }
+
+  /// Erases what the ring recorded, and nothing the user wrote.
+  Future<void> clearRingRecordedData() async {
+    await batch((b) {
+      b.deleteAll(ringHistoryCaches);
+      b.deleteAll(ecgRecordings);
+      b.deleteAll(patterns);
+      b.deleteAll(rawSdkEvents);
+    });
+  }
+
   // ── ECG recordings ────────────────────────────────────────────────────────
   Future<void> insertEcgRecording({
     required String id,

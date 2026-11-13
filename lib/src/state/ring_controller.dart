@@ -422,6 +422,15 @@ class RingController extends ChangeNotifier {
     return !_onboardedRingIds.contains(id);
   }
 
+  /// True when this ring has never been set up here *and* an earlier ring's
+  /// data is still in the vault — the only case where offering to start
+  /// fresh makes sense.
+  bool get isReplacingAnotherRing {
+    final id = _pairedRing?.identityKey;
+    if (id == null) return _onboardedRingIds.isNotEmpty;
+    return _onboardedRingIds.isNotEmpty && !_onboardedRingIds.contains(id);
+  }
+
   bool get foregroundServiceEnabled => _foregroundServiceEnabled;
 
   bool get foregroundServiceAllowed => _foregroundServiceAllowed;
@@ -1504,6 +1513,29 @@ class RingController extends ChangeNotifier {
         _foregroundServiceEnabledKey, _foregroundServiceEnabled);
     await prefs.setBool(
         _foregroundServiceAllowedKey, _foregroundServiceAllowed);
+  }
+
+  /// Drops the replaced ring's readings from memory and from this
+  /// controller's caches, after the vault rows themselves have been deleted.
+  /// The new ring's own setup (name, monitoring) is not touched.
+  Future<void> forgetPreviousRingData() async {
+    await _historyCache?.clearAll();
+    await _historyLogger.clear();
+    // Setup done for a ring that is no longer here is no longer a reason to
+    // skip setup; only the ring now paired keeps its credit.
+    final keep = _pairedRing?.identityKey;
+    _onboardedRingIds = keep == null ? <String>{} : {keep};
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_onboardedRingIdsKey, _onboardedRingIds.toList());
+    if (_disposed) return;
+    _set(() {
+      _history = RingHistory.empty();
+      _historyHydratedFromCache = false;
+      _cachedHistorySyncedAt = null;
+      _historyLogStatus = HistoryLogStatus.empty();
+      _vitals = RingVitals.empty();
+    });
+    _publishMeasurementSnapshot();
   }
 
   Future<void> completeRingOnboarding({

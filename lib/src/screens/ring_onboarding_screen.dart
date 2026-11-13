@@ -9,16 +9,22 @@ Future<void> openRingOnboarding(BuildContext context, RingController c) {
 }
 
 /// Post-scan first-time setup for a PRANA ring.
-class RingOnboardingScreen extends StatefulWidget {
+///
+/// Runs once per ring, not once per phone: [RingController]
+/// .currentRingNeedsOnboarding decides, so re-pairing a ring you already
+/// named comes straight back to You, while a ring this phone has not seen
+/// gets its own setup.
+class RingOnboardingScreen extends ConsumerStatefulWidget {
   const RingOnboardingScreen({super.key, required this.controller});
 
   final RingController controller;
 
   @override
-  State<RingOnboardingScreen> createState() => _RingOnboardingScreenState();
+  ConsumerState<RingOnboardingScreen> createState() =>
+      _RingOnboardingScreenState();
 }
 
-class _RingOnboardingScreenState extends State<RingOnboardingScreen>
+class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
     with TickerProviderStateMixin {
   late final PageController _pageController;
   late final AnimationController _pulseController;
@@ -40,9 +46,12 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
   bool _monitorEnabled = true;
   int _monitorInterval = kHealthMonitoringDefaultInterval;
 
-  // Step 3: wipe data
+  // Step 3: start fresh
   String? _wipeMessage;
   bool _wipeSuccess = false;
+  bool _wipeRing = true;
+  bool _wipeApp = false;
+  int _previousRingRows = 0;
 
   // Step 4: foreground service
   bool _foregroundEnabled = true;
@@ -66,6 +75,22 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
     _validateName(initialName);
 
     widget.controller.addListener(_onControllerChanged);
+    unawaited(_loadPreviousRingData());
+  }
+
+  /// A different ring means the vitals, ECGs and patterns already in the
+  /// vault belong to the ring being replaced. Offer to clear them — on by
+  /// default, because leaving two rings' readings in one chart is the
+  /// wrongness nobody goes looking for — but only when there is something
+  /// to clear and only for data the ring recorded.
+  Future<void> _loadPreviousRingData() async {
+    if (!widget.controller.isReplacingAnotherRing) return;
+    final rows = await ref.read(databaseProvider).countRingRecordedRows();
+    if (!mounted) return;
+    setState(() {
+      _previousRingRows = rows;
+      _wipeApp = rows > 0;
+    });
   }
 
   @override
@@ -139,21 +164,49 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
 
   Future<void> _onWipeContinue() async {
     if (_wipeBusy || _wipeDone) return;
+    if (!_wipeRing && !_wipeApp) {
+      _goTo(3);
+      return;
+    }
     setState(() {
       _wipeBusy = true;
       _wipeMessage = null;
     });
-    final result = await widget.controller.deleteRingHealthData();
-    if (!mounted) return;
+
+    var ok = true;
+    final done = <String>[];
+    String? failure;
+
+    if (_wipeRing) {
+      final result = await widget.controller.deleteRingHealthData();
+      if (!mounted) return;
+      ok = result.success;
+      if (result.success) {
+        done.add('the ring');
+      } else {
+        failure = result.message;
+      }
+    }
+
+    // The ring-side wipe needs the ring; this half never does, so a ring
+    // that would not confirm does not strand the user's own clean start.
+    if (_wipeApp) {
+      await ref.read(databaseProvider).clearRingRecordedData();
+      await widget.controller.forgetPreviousRingData();
+      if (!mounted) return;
+      done.add('Vyana');
+    }
+
     setState(() {
       _wipeBusy = false;
-      _wipeDone = result.success;
-      _wipeSuccess = result.success;
-      _wipeMessage = result.message;
+      _wipeDone = ok;
+      _wipeSuccess = ok;
+      _wipeMessage = ok
+          ? 'Cleared on ${done.join(' and ')}. Your journal, practices and '
+              'cycle are untouched.'
+          : failure;
     });
-    if (result.success) {
-      _goTo(3);
-    }
+    if (ok) _goTo(3);
   }
 
   Future<void> _onFinish() async {
@@ -473,18 +526,55 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
   }
 
   Widget _buildWipeStep(VyanaColors t) {
+    final replacing = _previousRingRows > 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _stepTitle('Wipe old ring data', t),
+        _stepTitle(replacing ? 'Start fresh' : 'Wipe old ring data', t),
         const SizedBox(height: 10),
         _stepCaption(
-          'Optional: erase any previous health data stored on the ring so Vyana '
-          'starts fresh from your first sync. If this is a new ring, you can skip '
-          'this and keep whatever it already recorded.',
+          replacing
+              ? 'This is not the ring Vyana was using. Choose what to clear '
+                  'so one chart does not end up holding two rings\' readings. '
+                  'Your journal, practices and cycle are never touched.'
+              : 'Optional: erase any previous health data stored on the ring '
+                  'so Vyana starts fresh from your first sync. If this is a '
+                  'new ring, you can skip this and keep whatever it already '
+                  'recorded.',
           t,
         ),
         const SizedBox(height: 24),
+        _wipeChoice(
+          t,
+          icon: 'ring',
+          color: t.gold,
+          title: 'Erase what the ring stored',
+          caption: 'The readings still held on the ring itself',
+          on: _wipeRing,
+          onTap: () => setState(() {
+            _wipeRing = !_wipeRing;
+            _wipeMessage = null;
+          }),
+        ),
+        if (replacing) ...[
+          const SizedBox(height: 12),
+          _wipeChoice(
+            t,
+            icon: 'activity',
+            color: t.vit('hr'),
+            title: 'Erase the last ring\'s data in Vyana',
+            caption: '$_previousRingRows '
+                '${_previousRingRows == 1 ? 'record' : 'records'} — vitals '
+                'history, ECGs and patterns. Journal, practices and cycle '
+                'are kept.',
+            on: _wipeApp,
+            onTap: () => setState(() {
+              _wipeApp = !_wipeApp;
+              _wipeMessage = null;
+            }),
+          ),
+        ],
+        const SizedBox(height: 16),
         if (_wipeMessage != null)
           Panel(
             pad: 14,
@@ -512,6 +602,46 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
             ),
           ),
       ],
+    );
+  }
+
+  Widget _wipeChoice(
+    VyanaColors t, {
+    required String icon,
+    required Color color,
+    required String title,
+    required String caption,
+    required bool on,
+    required VoidCallback onTap,
+  }) {
+    return Panel(
+      pad: 14,
+      grad: true,
+      child: Row(
+        children: [
+          VyanaIconBadge(name: icon, color: color),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(title, style: VyanaType.label.copyWith(color: t.text)),
+                const SizedBox(height: 2),
+                Text(
+                  caption,
+                  style: VyanaType.caption.copyWith(
+                    color: t.textSec,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          VSwitch(on: on, color: color, onTap: onTap),
+        ],
+      ),
     );
   }
 
@@ -614,14 +744,16 @@ class _RingOnboardingScreenState extends State<RingOnboardingScreen>
                   else if (_page == 2)
                     _continueButton(
                       t,
-                      _wipeDone ? 'Continue' : 'Wipe ring data',
+                      _wipeDone || (!_wipeRing && !_wipeApp)
+                          ? 'Continue'
+                          : 'Wipe ring data',
                       _wipeDone ? () => _goTo(3) : _onWipeContinue,
                       busy: _wipeBusy,
                     )
                   else
                     _continueButton(t, "Let's Go!", _onFinish, busy: _finishBusy),
                   const SizedBox(height: 10),
-                  if (_page == 2 && !_wipeDone)
+                  if (_page == 2 && !_wipeDone && (_wipeRing || _wipeApp))
                     TextButton(
                       onPressed: _wipeBusy ? null : () => _goTo(3),
                       child: Text(
