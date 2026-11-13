@@ -840,6 +840,125 @@ SleepNightStatus sleepNightStatus(
   return SleepNightStatus.incomplete;
 }
 
+// ── Why a night is missing (bug 36) ───────────────────────────────────────
+
+/// Why last night is missing or partial. Recorded rather than inferred at the
+/// point of display, because Nova is asked about it directly (item 51) and
+/// "I can't see a night" is a useless answer on its own.
+enum MissingNightReason {
+  /// A real night is on the record.
+  recorded,
+
+  /// Before noon with a paired ring: the night may still be handed over.
+  pending,
+
+  /// No ring has ever handed any history to this phone.
+  neverSynced,
+
+  /// The ring has not synced since before this morning, so the night may be
+  /// sitting on the ring.
+  notSynced,
+
+  /// The ring was out of charge across the night.
+  batteryDied,
+
+  /// Nothing at all was measured overnight — the ring was off the finger.
+  notWorn,
+
+  /// A night is on the record but the recording stopped early.
+  stoppedEarly,
+}
+
+extension MissingNightReasonCopy on MissingNightReason {
+  /// Short phrase for Nova's data block (item 51) and the diagnostics log.
+  /// Lower case, no full stop — it is appended to a line, not read alone.
+  String get phrase => switch (this) {
+    MissingNightReason.recorded => 'recorded',
+    MissingNightReason.pending => 'still syncing',
+    MissingNightReason.neverSynced => 'ring never synced',
+    MissingNightReason.notSynced => 'not synced since last night',
+    MissingNightReason.batteryDied => 'ring battery died',
+    MissingNightReason.notWorn => 'ring not worn',
+    MissingNightReason.stoppedEarly => 'recording stopped early',
+  };
+
+  /// What the user can check, for the "name what to check" rule in item 51.
+  String? get remedy => switch (this) {
+    MissingNightReason.recorded || MissingNightReason.pending => null,
+    MissingNightReason.neverSynced ||
+    MissingNightReason.notSynced => 'keep the ring close and sync',
+    MissingNightReason.batteryDied => 'charge the ring before bed',
+    MissingNightReason.notWorn ||
+    MissingNightReason.stoppedEarly => 'wear the ring overnight',
+  };
+}
+
+/// The clock window last night occupied when no night was recorded, so there
+/// is no [SleepDaySummary] to read one from: yesterday's default bedtime to
+/// this morning's [kOvernightWindowEndHour].
+DateTimeRange overnightWindowFor(DateTime now) {
+  final today = DateTime(now.year, now.month, now.day);
+  return DateTimeRange(
+    start: today
+        .subtract(const Duration(days: 1))
+        .add(const Duration(hours: kDefaultBedtimeHour)),
+    end: today.add(const Duration(hours: kOvernightWindowEndHour)),
+  );
+}
+
+/// Whether the ring measured anything at all between [from] and [to] — the
+/// test for "was it even on the finger".
+bool ringMeasuredBetween(RingHistory history, DateTime from, DateTime to) {
+  final start = from.millisecondsSinceEpoch ~/ 1000;
+  final end = to.millisecondsSinceEpoch ~/ 1000;
+  for (final records in [history.combined, history.heartRate, history.steps]) {
+    for (final record in records) {
+      final ts = timestampOf(record);
+      if (ts != null && ts >= start && ts <= end) return true;
+    }
+  }
+  return false;
+}
+
+/// Battery at or under this counts as flat for the purpose of explaining a
+/// lost night: the ring stops recording before it reports 0.
+const int kFlatBatteryPercent = 5;
+
+/// Why [status] is not [SleepNightStatus.complete]. Never guesses: each
+/// branch rests on something the app can see (history, last sync, battery).
+MissingNightReason missingNightReasonFor({
+  required SleepNightStatus status,
+  required RingHistory history,
+  required bool pending,
+  DateTime? lastSyncedAt,
+  int? batteryPercent,
+  DateTime? now,
+}) {
+  if (status == SleepNightStatus.complete) return MissingNightReason.recorded;
+  if (pending) return MissingNightReason.pending;
+
+  final today = now ?? DateTime.now();
+  final window = overnightWindowFor(today);
+  final flat = batteryPercent != null && batteryPercent <= kFlatBatteryPercent;
+
+  if (status == SleepNightStatus.incomplete) {
+    // A night that stops dead with a flat battery explains itself.
+    return flat
+        ? MissingNightReason.batteryDied
+        : MissingNightReason.stoppedEarly;
+  }
+
+  if (history.totalRecords == 0 || lastSyncedAt == null) {
+    return MissingNightReason.neverSynced;
+  }
+  // The night can only be on this phone if a sync ran after it ended.
+  if (lastSyncedAt.isBefore(window.end)) return MissingNightReason.notSynced;
+  if (!ringMeasuredBetween(history, window.start, window.end)) {
+    return flat ? MissingNightReason.batteryDied : MissingNightReason.notWorn;
+  }
+  return MissingNightReason.notWorn;
+}
+
 /// The single readiness computation, so Home's score and the Metrics chart
 /// can never disagree about the same day.
 ///

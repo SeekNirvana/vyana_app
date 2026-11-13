@@ -44,6 +44,7 @@ class RingController extends ChangeNotifier {
   int _tonightSleepRetries = 0;
   Timer? _tonightSleepRetryTimer;
   bool _awaitingTonightSleep = false;
+  DateTime? _tonightSleepGaveUpAt;
   DateTime? _lastConnectionConfirmedAt;
   DateTime? _lastBatteryPoll;
   DateTime? _lastPeriodicSync;
@@ -251,10 +252,50 @@ class RingController extends ChangeNotifier {
     return sleepNightForToday(nights) != null;
   }
 
-  /// True while last night is still expected: a sync is running or a retry is
-  /// pending, and the ring has not produced today's night yet. Home shows
-  /// "Getting last night from your ring…" rather than yesterday's numbers.
-  bool get isAwaitingTonightSleep => _awaitingTonightSleep && !hasTonightSleep;
+  /// True while last night is still expected, so Home shows "Reading last
+  /// night…" rather than a score built on no night at all.
+  ///
+  /// Bug 36: this used to begin only when a sync started. At launch the app
+  /// is still reconnecting, so for the first minutes of every morning the
+  /// flag was false and Home showed the HRV-only score — with a quality word
+  /// like "Depleted" — while the ring was still handing the night over. A
+  /// paired ring before noon is reason enough to wait; the retries in
+  /// [_evaluateTonightSleep] decide when waiting stops.
+  bool get isAwaitingTonightSleep {
+    if (hasTonightSleep) return false;
+    if (DateTime.now().hour >= kTonightSleepGiveUpHour) return false;
+    if (_gaveUpOnTonightSleepToday) return false;
+    if (_awaitingTonightSleep) return true;
+    if (_pairedRing == null) return false;
+    // Only while the ring might still answer. Once a reconnect has actually
+    // failed there is nothing to wait for, and the stale/offline banner —
+    // not a pending score — is the honest state.
+    return _isConnected || _isConnecting || _isSyncing ||
+        !_reconnectFailedThisLaunch;
+  }
+
+  /// Whether the retries for today's night are spent. Keyed to the day so
+  /// tomorrow morning starts waiting again.
+  bool get _gaveUpOnTonightSleepToday {
+    final at = _tonightSleepGaveUpAt;
+    if (at == null) return false;
+    final now = DateTime.now();
+    return DateTime(at.year, at.month, at.day) ==
+        DateTime(now.year, now.month, now.day);
+  }
+
+  /// Why last night is missing or partial, for Home and for Nova (item 51).
+  MissingNightReason get missingNightReason {
+    final nights = sleepDaySummaries(_history.sleep);
+    final night = sleepNightForToday(nights);
+    return missingNightReasonFor(
+      status: sleepNightStatus(night, history: _history),
+      history: _history,
+      pending: isAwaitingTonightSleep,
+      lastSyncedAt: lastSyncedAt,
+      batteryPercent: batteryPercent,
+    );
+  }
 
   /// How many of the scheduled catch-up retries have run.
   int get tonightSleepRetries => _tonightSleepRetries;
@@ -485,13 +526,19 @@ class RingController extends ChangeNotifier {
     if (hasTonightSleep) {
       _tonightSleepRetries = 0;
       _awaitingTonightSleep = false;
+      _tonightSleepGaveUpAt = null;
       _logEvent('tonight_sleep_present');
       return;
     }
     if (DateTime.now().hour >= kTonightSleepGiveUpHour ||
         _tonightSleepRetries >= kTonightSleepRetryDelays.length) {
       _awaitingTonightSleep = false;
-      _logEvent('tonight_sleep_absent_gave_up');
+      // Bug 36: waiting now stops for the rest of the day, so the HRV-only
+      // score (and its "sleep not recorded" line) can take over.
+      _tonightSleepGaveUpAt = DateTime.now();
+      _logEvent(
+        'tonight_sleep_absent_gave_up_${missingNightReason.name}',
+      );
       return;
     }
 
@@ -1133,7 +1180,12 @@ class RingController extends ChangeNotifier {
     final wantsTonight = !hasTonightSleep &&
         DateTime.now().hour < kTonightSleepGiveUpHour;
     _set(() {
-      if (wantsTonight) _awaitingTonightSleep = true;
+      if (wantsTonight) {
+        _awaitingTonightSleep = true;
+        // Bug 36: a fresh attempt is a fresh wait, even if the retries for
+        // today were already spent.
+        _tonightSleepGaveUpAt = null;
+      }
       _isSyncing = true;
       _status = _historyHydratedFromCache
           ? 'Updating ring data…'

@@ -46,7 +46,11 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       moment,
     );
     final suggested = activityById(suggestedId) ?? activityById('breathwork')!;
-    final look = scoreLook(dashboard.readinessScore, t);
+    final look = scoreLook(
+      dashboard.readinessScore,
+      t,
+      hrvOnly: dashboard.readinessIsHrvOnly,
+    );
     final noPins = pins.isEmpty;
     if (noPins && _editing) _editing = false;
 

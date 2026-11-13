@@ -779,13 +779,27 @@ class PatternCard extends StatelessWidget {
 /// Quality colour + state word for a readiness score: Ready · Balanced ·
 /// Depleted. Words deliberately diverge from the intent chips (no "Steady"
 /// beside "Settle").
+///
+/// Bug 36: [hrvOnly] is a score built from HRV with no night behind it. It is
+/// half a reading, so it never earns a verdict — grey with the number is as
+/// far as it goes, and "Depleted" in particular must never come from a
+/// missing night.
 ({Color hue, Color soft, String word, String state}) scoreLook(
   int? score,
-  VyanaColors t,
-) {
+  VyanaColors t, {
+  bool hrvOnly = false,
+}) {
   if (score == null) {
     // No score is not a verdict: neutral grey, not the amber band.
     return (hue: t.mutedInk, soft: t.mutedInk, word: '—', state: 'No read yet');
+  }
+  if (hrvOnly) {
+    return (
+      hue: t.mutedInk,
+      soft: t.mutedInk,
+      word: 'HRV',
+      state: 'Partial read',
+    );
   }
   if (score >= 70) {
     return (hue: t.qGood, soft: t.qGoodSoft, word: 'READY', state: 'Ready');

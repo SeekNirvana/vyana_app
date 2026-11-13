@@ -170,6 +170,12 @@ String readSentenceFor(
   HomeDashboard dashboard,
 ) {
   final score = dashboard.readinessScore;
+  // Bug 36: before last night has arrived nothing is known about today, so
+  // any sentence about capacity would be a guess dressed as a read.
+  if (dashboard.syncPending) {
+    return 'Your ring is still handing over last night. Today\'s read '
+        'settles in shortly.';
+  }
   final hasData = state.hasData || score != null;
   if (!hasData) {
     return 'Sync your ring and today\'s read settles in here.';

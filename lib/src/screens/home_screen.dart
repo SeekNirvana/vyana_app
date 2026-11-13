@@ -316,7 +316,8 @@ class _ReadinessRead extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final score = dashboard.readinessScore;
-    final look = scoreLook(score, t);
+    final pending = dashboard.syncPending;
+    final look = scoreLook(score, t, hrvOnly: dashboard.readinessIsHrvOnly);
     final series = readinessSeries(controller.history, 30);
     final avg = series.isEmpty
         ? null
@@ -327,12 +328,14 @@ class _ReadinessRead extends StatelessWidget {
     // Bug 14/17: when readiness came from HRV alone, the score line has to
     // say so — otherwise a number built on no sleep data reads as a full one.
     final sourceNote = dashboard.readinessSourceNote;
-    if (stale) {
+    // Bug 36: pending comes before stale. In the first minutes of a morning
+    // the ring is often both — and "reading last night" is the true one.
+    if (pending) {
+      note = 'READING LAST NIGHT…';
+      noteColor = t.gold;
+    } else if (stale) {
       note = 'LAST READING';
       noteColor = t.textMuted;
-    } else if (dashboard.syncPending) {
-      note = 'GETTING LAST NIGHT';
-      noteColor = t.gold;
     } else if (sourceNote != null && score != null) {
       note = sourceNote.toUpperCase();
       noteColor = t.mutedInk;
@@ -386,19 +389,23 @@ class _ReadinessRead extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    look.state,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: VyanaType.serif,
-                      fontSize: 31,
-                      fontWeight: FontWeight.w600,
-                      height: 1,
-                      color: look.hue,
+                  // Bug 36: no score, so no word. A verdict here would be
+                  // about a night the ring has not handed over yet.
+                  if (!pending) ...[
+                    Text(
+                      look.state,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: VyanaType.serif,
+                        fontSize: 31,
+                        fontWeight: FontWeight.w600,
+                        height: 1,
+                        color: look.hue,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
+                    const SizedBox(height: 6),
+                  ],
                   MonoEyebrow(note, size: 9.5, spacing: 0.8, color: noteColor),
                 ],
               ),

@@ -208,7 +208,7 @@ class _ReadinessBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final score = dashboard.readinessScore;
-    final look = scoreLook(score, t);
+    final look = scoreLook(score, t, hrvOnly: dashboard.readinessIsHrvOnly);
     final series = readinessSeries(controller.history, range.days);
     final values = series.map((e) => e.score).toList();
     final avg = values.isEmpty
