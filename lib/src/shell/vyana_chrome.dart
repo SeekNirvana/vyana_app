@@ -237,8 +237,15 @@ class NovaPill extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.vyana;
     final manager = ref.watch(guideModelManagerProvider);
-    final ready = manager.modelReady;
+    final ai = ref.watch(aiBackendProvider);
     final downloading = manager.downloadingState;
+    // Nova is ready when the backend the user picked is ready — not when
+    // the on-device model happens to be installed. Someone running their
+    // own endpoint should never be told to download a 3.1 GB model they
+    // have no use for.
+    final ready = ai.backend == AiBackend.cloud
+        ? ai.cloudReady
+        : manager.modelReady;
     final tint = t.mutedInk;
     final bright = t.heading;
 
@@ -247,9 +254,9 @@ class NovaPill extends ConsumerWidget {
     final String trailing;
     if (ready) {
       line = 'Ask Nova';
-      glyph = 'brain';
+      glyph = ai.backend == AiBackend.cloud ? 'cloud' : 'brain';
       trailing = 'chevR';
-    } else if (downloading != null) {
+    } else if (ai.backend == AiBackend.local && downloading != null) {
       final pct = (downloading.progress * 100).clamp(0, 100).round();
       line = downloading.status == GuideModelStatus.verifying
           ? 'Verifying your private guide'
@@ -257,9 +264,11 @@ class NovaPill extends ConsumerWidget {
       glyph = 'download';
       trailing = 'refresh';
     } else {
-      line = 'Install private AI guide · $kGuideModelSizeLabel';
-      glyph = 'download';
-      trailing = 'download';
+      // Not "install a model": the choice comes first, and one of the two
+      // answers involves no download at all.
+      line = 'Configure your AI';
+      glyph = 'brain';
+      trailing = 'chevR';
     }
 
     return Align(
@@ -267,7 +276,7 @@ class NovaPill extends ConsumerWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => ready ? openGuideChat(context) : openGuideStore(context),
+          onTap: () => ready ? openGuideChat(context) : openAiSetup(context),
           borderRadius: BorderRadius.circular(100),
           child: Container(
             padding: const EdgeInsets.fromLTRB(14, 9, 12, 10),

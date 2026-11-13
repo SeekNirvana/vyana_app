@@ -165,7 +165,9 @@ void main() {
     expect(shell, isNot(contains('GuidesScreen()')));
 
     final chrome = readLib('src/shell/vyana_chrome.dart');
-    expect(chrome, contains('Install private AI guide'));
+    // v1.1.5: the pill offers the choice, not one of the answers —
+    // someone running their own endpoint needs no download.
+    expect(chrome, contains('Configure your AI'));
     expect(chrome, contains("'Ask Nova'"));
     expect(chrome, contains('class PatternCard'));
     expect(chrome, contains('DashedPillPainter'));

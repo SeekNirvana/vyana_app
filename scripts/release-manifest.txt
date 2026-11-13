@@ -68,7 +68,7 @@ Today's read
 READINESS TODAY
 SUGGESTED TODAY
 See all & test
-Install private AI guide
+Configure your AI
 Ask Nova
 NOVA FOUND A PATTERN
 PATTERN WEAKENING
@@ -197,3 +197,6 @@ Nova's voice is not available in this build yet. Replies
 Needs Nova's voice installed
 355 MB
 AudioRouteService
+Your own endpoint
+On this phone
+Test and save
