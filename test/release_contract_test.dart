@@ -205,7 +205,7 @@ void main() {
     final manifest = File('scripts/release-manifest.txt').readAsStringSync();
     expect(manifest, contains('NOVA FOUND A PATTERN'));
     expect(manifest, contains('Search entries'));
-    expect(manifest, contains('3.1 GB'));
+    expect(manifest, contains('3.2 GB'));
   });
 
   test('v1.1.1 ring state you can act on', () {

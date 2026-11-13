@@ -267,7 +267,7 @@ class _PlannedDayRow extends ConsumerWidget {
                     child: const SizedBox(
                       width: 44,
                       height: 36,
-                      child: Center(child: VyanaIcon('close', size: 15)),
+                      child: Center(child: VyanaIcon('x', size: 15)),
                     ),
                   ),
                 ],
