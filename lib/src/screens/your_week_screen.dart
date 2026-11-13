@@ -31,13 +31,16 @@ class PracticePeriod {
   PracticePeriod? get later =>
       offset == 0 ? null : PracticePeriod(month: month, offset: offset - 1);
 
+  /// Bug 50: the week was Monday-anchored, so on a Tuesday the card was
+  /// nearly empty and everything done over the weekend had vanished from it
+  /// overnight. A week is now the last seven days ending today — the same
+  /// window as the 7D range on Metrics. The month is still a calendar month.
   DateTime start(DateTime now) {
     if (month) {
       return DateTime(now.year, now.month - offset, 1);
     }
     final today = DateTime(now.year, now.month, now.day);
-    final monday = today.subtract(Duration(days: today.weekday - 1));
-    return monday.subtract(Duration(days: 7 * offset));
+    return today.subtract(Duration(days: 6 + 7 * offset));
   }
 
   /// Exclusive end.
@@ -53,11 +56,25 @@ class PracticePeriod {
   String label(DateTime now) {
     final from = start(now);
     if (month) return '${_monthNames[from.month - 1]} ${from.year}';
-    if (offset == 0) return 'This week';
-    if (offset == 1) return 'Last week';
+    if (offset == 0) return 'Last 7 days';
+    // Every earlier period is a seven-day window, not "last week", so it is
+    // named by its dates: "21–27 Oct", or "28 Sep – 4 Oct" across a month.
     final to = from.add(const Duration(days: 6));
+    if (from.month == to.month) {
+      return '${from.day}–${to.day} ${_monthNames[to.month - 1]}';
+    }
     return '${from.day} ${_monthNames[from.month - 1]} – '
         '${to.day} ${_monthNames[to.month - 1]}';
+  }
+
+  /// One letter per day, taken from the dates rather than a fixed M–S list:
+  /// oldest on the left, today on the right (bug 50).
+  List<String> dayLabels(DateTime now) {
+    final from = start(now);
+    return [
+      for (var i = 0; i < 7; i++)
+        kShortWeekdays[from.add(Duration(days: i)).weekday - 1][0],
+    ];
   }
 }
 
@@ -230,7 +247,6 @@ class ThisWeekCard extends ConsumerWidget {
     const period = PracticePeriod(month: false, offset: 0);
     final now = DateTime.now();
     final summary = PeriodSummary.of(finished, period, now: now);
-    final todayIndex = now.weekday - 1;
 
     return Padding(
       padding: const EdgeInsets.only(top: 18),
@@ -242,14 +258,16 @@ class ThisWeekCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Expanded(child: MonoEyebrow('THIS WEEK', size: 10.5)),
+                // Bug 50: the window is the last seven days, so the eyebrow
+                // says so rather than naming a calendar week.
+                Expanded(child: MonoEyebrow('LAST 7 DAYS', size: 10.5)),
                 VyanaIcon('chevR', size: 16, color: t.mutedInk),
               ],
             ),
             const SizedBox(height: 7),
             Text(
               summary.isEmpty
-                  ? 'No sessions yet this week'
+                  ? 'No sessions in the last 7 days'
                   : '${summary.sessions} '
                         '${summary.sessions == 1 ? 'session' : 'sessions'} · '
                         '${practiceTimeLabel(summary.minutes)}',
@@ -267,11 +285,12 @@ class ThisWeekCard extends ConsumerWidget {
             // stacked colours stopped reading as a chart at all.
             _StackedBars(
               buckets: summary.buckets,
-              labels: const ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
+              // Bug 50: the letters come from the dates, so the row always
+              // ends on today — and there are no future days in it to grey
+              // out any more.
+              labels: period.dayLabels(now),
               pins: pins,
-              // Days that have not happened yet stay empty rather than
-              // reading as days with nothing done.
-              futureFrom: todayIndex + 1,
+              boldIndex: 6,
               barHeight: 30,
               labelSize: 9,
             ),
@@ -329,7 +348,9 @@ class _YourWeekScreenState extends ConsumerState<YourWeekScreen> {
                   const SizedBox(width: 11),
                   Expanded(
                     child: Text(
-                      _period.month ? 'Your month' : 'Your week',
+                      // Bug 50: one title. "Your week" named a calendar week
+                      // that no longer exists here.
+                      'Your practice',
                       style: VyanaType.appBarSerif.copyWith(color: t.text),
                     ),
                   ),
@@ -373,9 +394,11 @@ class _YourWeekScreenState extends ConsumerState<YourWeekScreen> {
               const SizedBox(height: 18),
               if (summary.isEmpty)
                 Text(
-                  _period.offset == 0
-                      ? 'No sessions yet this ${_period.month ? 'month' : 'week'}.'
-                      : 'No sessions in this period.',
+                  _period.offset != 0
+                      ? 'No sessions in this period.'
+                      : _period.month
+                          ? 'No sessions yet this month.'
+                          : 'No sessions in the last 7 days.',
                   style: VyanaType.caption.copyWith(
                     color: t.textSec,
                     height: 1.45,
@@ -389,6 +412,9 @@ class _YourWeekScreenState extends ConsumerState<YourWeekScreen> {
                     labels: _bucketLabels(_period, now),
                     pins: pins,
                     futureFrom: _futureFrom(_period, now),
+                    // Bug 50: in the 7-day view the right-hand bar is today.
+                    boldIndex:
+                        !_period.month && _period.offset == 0 ? 6 : -1,
                     showScale: true,
                   ),
                 ),
@@ -424,7 +450,8 @@ class _YourWeekScreenState extends ConsumerState<YourWeekScreen> {
   }
 
   List<String> _bucketLabels(PracticePeriod period, DateTime now) {
-    if (!period.month) return const ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    // Bug 50: the seven letters follow the dates, so the row ends on today.
+    if (!period.month) return period.dayLabels(now);
     final weeks = (period.dayCount(now) + 6) ~/ 7;
     return [for (var i = 1; i <= weeks; i++) 'W$i'];
   }
@@ -432,13 +459,14 @@ class _YourWeekScreenState extends ConsumerState<YourWeekScreen> {
   /// Index of the first bucket that has not happened yet, or -1 when the
   /// whole period is in the past.
   int _futureFrom(PracticePeriod period, DateTime now) {
-    if (period.offset != 0) return -1;
+    // Bug 50: the 7-day window ends today, so it never contains a future day.
+    if (!period.month || period.offset != 0) return -1;
     final elapsed = DateTime(
       now.year,
       now.month,
       now.day,
     ).difference(period.start(now)).inDays;
-    return period.month ? (elapsed ~/ 7) + 1 : elapsed + 1;
+    return (elapsed ~/ 7) + 1;
   }
 }
 
@@ -481,7 +509,8 @@ class _PeriodSwitch extends StatelessWidget {
 
     return Row(
       children: [
-        option('Week', false),
+        // Bug 50: the switch names the window, not a calendar week.
+        option('7 days', false),
         const SizedBox(width: 8),
         option('Month', true),
       ],
@@ -566,6 +595,7 @@ class _StackedBars extends StatelessWidget {
     required this.labels,
     required this.pins,
     this.futureFrom = -1,
+    this.boldIndex = -1,
     this.showScale = false,
     this.barHeight,
     this.labelSize = 11.5,
@@ -577,6 +607,10 @@ class _StackedBars extends StatelessWidget {
 
   /// Buckets from this index on have not happened yet.
   final int futureFrom;
+
+  /// The bucket whose label is today's (bug 50) — bold, so the right-hand
+  /// end of the row is obviously now.
+  final int boldIndex;
   final bool showScale;
 
   /// Fixed height for the bar row. Null fills the parent, which needs a
@@ -626,9 +660,13 @@ class _StackedBars extends StatelessWidget {
                     labels[i],
                     style: VyanaType.mono10.copyWith(
                       fontSize: labelSize,
-                      color: futureFrom >= 0 && i >= futureFrom
-                          ? t.textMuted
-                          : t.mutedInk,
+                      fontWeight:
+                          i == boldIndex ? FontWeight.w700 : FontWeight.w400,
+                      color: i == boldIndex
+                          ? t.text
+                          : (futureFrom >= 0 && i >= futureFrom
+                              ? t.textMuted
+                              : t.mutedInk),
                     ),
                   ),
                 ),

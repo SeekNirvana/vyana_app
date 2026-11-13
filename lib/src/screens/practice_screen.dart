@@ -200,7 +200,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
         // §5 / mock 12c: the last session, openable. One line, because the
         // point is to be able to get back to it, not to re-report it.
         _RecentLine(sessions: sessions),
-        // §5: THIS WEEK sits under Recent and opens Your week. Hidden until
+        // §5: LAST 7 DAYS sits under Recent and opens Your practice. Hidden until
         // the first session ever — an empty chart is not an invitation.
         const ThisWeekCard(),
         const SizedBox(height: 20),

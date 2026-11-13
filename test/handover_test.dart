@@ -444,6 +444,50 @@ void main() {
     });
   });
 
+  group('the last 7 days, not this week (bug 50)', () {
+    // A Wednesday. The Monday-anchored week would be 19–25 Oct; the rolling
+    // window is 15–21 Oct.
+    final now = DateTime(2026, 10, 21, 18);
+    const week = PracticePeriod(month: false, offset: 0);
+
+    test('the window ends today and is seven days long', () {
+      expect(week.start(now), DateTime(2026, 10, 15));
+      expect(week.end(now), DateTime(2026, 10, 22));
+      expect(week.dayCount(now), 7);
+      // Going back steps seven days, not to a calendar week.
+      expect(week.earlier.start(now), DateTime(2026, 10, 8));
+      expect(week.earlier.end(now), DateTime(2026, 10, 15));
+    });
+
+    test('the labels follow the dates, ending on today', () {
+      // 15 Oct 2026 is a Thursday, so the row runs T F S S M T W.
+      expect(week.dayLabels(now), ['T', 'F', 'S', 'S', 'M', 'T', 'W']);
+    });
+
+    test('the period is named, then dated', () {
+      expect(week.label(now), 'Last 7 days');
+      expect(week.earlier.label(now), '8–14 Oct');
+      // Across a month boundary both months are named.
+      expect(
+        const PracticePeriod(month: false, offset: 0)
+            .label(DateTime(2026, 10, 4, 9)),
+        'Last 7 days',
+      );
+      expect(
+        const PracticePeriod(month: false, offset: 1)
+            .label(DateTime(2026, 10, 11, 9)),
+        '28 Sep – 4 Oct',
+      );
+    });
+
+    test('the month is still a calendar month', () {
+      const month = PracticePeriod(month: true, offset: 0);
+      expect(month.start(now), DateTime(2026, 10, 1));
+      expect(month.end(now), DateTime(2026, 11, 1));
+      expect(month.label(now), 'Oct 2026');
+    });
+  });
+
   group('your week / month (bug 29)', () {
     SessionRow session({
       required String id,

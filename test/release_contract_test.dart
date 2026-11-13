@@ -346,7 +346,8 @@ void main() {
     );
     final week = readLib('src/screens/your_week_screen.dart');
     expect(week, contains('class PeriodSummary'));
-    expect(week, contains('THIS WEEK'));
+    // Bug 50: the card's window is the last seven days, not a calendar week.
+    expect(week, contains('LAST 7 DAYS'));
 
     // §11: Perform is orange, and gold stays a brand colour.
     final colors = readLib('src/theme/app_colors.dart');

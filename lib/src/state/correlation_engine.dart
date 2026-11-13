@@ -29,6 +29,10 @@ class CorrelationEngine {
   CorrelationEngine._();
 
   /// Reduces this week's sessions (Mon-anchored) into [WeeklyComputed].
+  ///
+  /// Bug 50 deliberately left this alone: the Practice card and Your practice
+  /// moved to a rolling seven days, but this engine's week is a different
+  /// thing — a calendar week it compares against other calendar weeks.
   static WeeklyComputed weekly(List<SessionRow> sessions) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
