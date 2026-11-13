@@ -122,144 +122,417 @@ bool ringIsOffline(RingController c) {
   return DateTime.now().difference(confirmed) > kRingOfflineAfter;
 }
 
-/// Watches the ring and fires the push-worthy alerts, each at most once per
-/// episode. Copy names the consequence, not the event.
+/// Everything the ring alerts need, flattened so it can be written by the
+/// main isolate and read by the foreground-service isolate (bug 44).
+///
+/// The service isolate has no Riverpod container and no BLE connection, so it
+/// cannot build a [RingController]. Alerts used to be evaluated only on the
+/// main isolate, reached through `sendDataToMain` — and while the app was
+/// closed the main isolate is suspended, so those ticks were queued and ran
+/// on resume. That is exactly the reported symptom: the low-battery alert for
+/// a ring that died overnight arrived when the app was opened.
+class RingAlertSnapshot {
+  const RingAlertSnapshot({
+    required this.at,
+    required this.hasRingContext,
+    required this.paired,
+    required this.connected,
+    required this.batteryPercent,
+    required this.batteryReadAt,
+    required this.lastSyncedAt,
+    required this.lastConnectionConfirmedAt,
+    required this.restingHr,
+    required this.spo2,
+    required this.hrBandLow,
+    required this.hrBandHigh,
+  });
+
+  factory RingAlertSnapshot.from(RingController c, {TrainingFrequency? band}) {
+    final hrBand = restingHrBand(band);
+    return RingAlertSnapshot(
+      at: DateTime.now(),
+      hasRingContext: c.hasRingContext,
+      paired: c.pairedRing != null,
+      connected: c.isConnected,
+      batteryPercent: c.batteryPercent,
+      batteryReadAt: c.batteryReadAt,
+      lastSyncedAt: ringLastSyncedAt(c),
+      lastConnectionConfirmedAt: c.lastConnectionConfirmedAt,
+      restingHr: HomeDashboard.from(c).restingHr,
+      spo2: c.vitals.bloodOxygen,
+      hrBandLow: hrBand.low,
+      hrBandHigh: hrBand.high,
+    );
+  }
+
+  final DateTime at;
+  final bool hasRingContext;
+  final bool paired;
+  final bool connected;
+  final int? batteryPercent;
+  final DateTime? batteryReadAt;
+  final DateTime? lastSyncedAt;
+  final DateTime? lastConnectionConfirmedAt;
+  final int? restingHr;
+  final int? spo2;
+  final double hrBandLow;
+  final double hrBandHigh;
+
+  /// Bug 44 (3): a cached percentage from hours ago is not a reading. It can
+  /// neither raise the alert nor clear one that is already standing.
+  bool get batteryIsCurrent {
+    final read = batteryReadAt;
+    if (read == null) return false;
+    return DateTime.now().difference(read) <= kBatteryFreshFor;
+  }
+
+  /// Stale = not synced within [kRingStaleAfter], or a paired ring that has
+  /// never handed data over at all. Mirrors [ringIsStale] on the snapshot.
+  bool get isStale {
+    if (!hasRingContext) return false;
+    final at = lastSyncedAt;
+    if (at == null) return paired;
+    return DateTime.now().difference(at) > kRingStaleAfter;
+  }
+
+  Map<String, Object?> toJson() => {
+        'at': at.millisecondsSinceEpoch,
+        'hasRingContext': hasRingContext,
+        'paired': paired,
+        'connected': connected,
+        'batteryPercent': batteryPercent,
+        'batteryReadAt': batteryReadAt?.millisecondsSinceEpoch,
+        'lastSyncedAt': lastSyncedAt?.millisecondsSinceEpoch,
+        'lastConnectionConfirmedAt':
+            lastConnectionConfirmedAt?.millisecondsSinceEpoch,
+        'restingHr': restingHr,
+        'spo2': spo2,
+        'hrBandLow': hrBandLow,
+        'hrBandHigh': hrBandHigh,
+      };
+
+  static RingAlertSnapshot? fromJson(Map<String, Object?> json) {
+    DateTime? time(Object? v) => v is int
+        ? DateTime.fromMillisecondsSinceEpoch(v)
+        : null;
+    final at = time(json['at']);
+    if (at == null) return null;
+    return RingAlertSnapshot(
+      at: at,
+      hasRingContext: json['hasRingContext'] == true,
+      paired: json['paired'] == true,
+      connected: json['connected'] == true,
+      batteryPercent: json['batteryPercent'] as int?,
+      batteryReadAt: time(json['batteryReadAt']),
+      lastSyncedAt: time(json['lastSyncedAt']),
+      lastConnectionConfirmedAt: time(json['lastConnectionConfirmedAt']),
+      restingHr: json['restingHr'] as int?,
+      spo2: json['spo2'] as int?,
+      hrBandLow: (json['hrBandLow'] as num?)?.toDouble() ?? 50,
+      hrBandHigh: (json['hrBandHigh'] as num?)?.toDouble() ?? 80,
+    );
+  }
+
+  static const _key = 'vyana.ring.alert.snapshot';
+
+  Future<void> save() async {
+    try {
+      final store = await SharedPreferences.getInstance();
+      await store.setString(_key, jsonEncode(toJson()));
+    } on Object catch (error) {
+      debugPrint('Ring alert snapshot save failed: $error');
+    }
+  }
+
+  /// Reads the snapshot the main isolate last wrote. Safe in either isolate.
+  static Future<RingAlertSnapshot?> load() async {
+    try {
+      final store = await SharedPreferences.getInstance();
+      final raw = store.getString(_key);
+      if (raw == null) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return fromJson(decoded.cast<String, Object?>());
+    } on Object catch (error) {
+      debugPrint('Ring alert snapshot load failed: $error');
+      return null;
+    }
+  }
+}
+
+/// A battery reading older than this says nothing about the ring now.
+const Duration kBatteryFreshFor = Duration(minutes: 30);
+
+/// Bug 44 (4): the evening check. Below this at bedtime the ring will not
+/// survive the night, so there is still time to do something about it.
+///
+/// A night costs roughly 10–15%; 30% leaves margin. Replace it with the
+/// measured overnight drain once logged battery-at-bedtime / battery-on-waking
+/// pairs from real rings say what it actually is.
+const int kOvernightBatteryMin = 30;
+
+/// When "charge it before tonight" is worth saying — late enough that the
+/// reading reflects the day, early enough to act on.
+const int kEveningBatteryCheckFromHour = 19;
+const int kEveningBatteryCheckToHour = 22;
+
+/// The flat-battery floor, kept as a fallback outside the evening window.
+const int kLowBatteryPercent = 15;
+
+/// Above this a low-battery episode is over and the alert may fire again.
+const int kBatteryRecoveredPercent = 30;
+
+/// Alert state that must outlive the process: the app is restarted far more
+/// often than a ring stays offline for two hours, and an alert that resets on
+/// every launch never fires. Shared by both isolates, so neither can fire an
+/// alert the other has already sent.
+class _AlertKeys {
+  static const offlineSince = 'vyana.ring.alert.offlineSince';
+  static const offlineFired = 'vyana.ring.alert.offlineFired';
+  static const lowBatteryFiredAt = 'vyana.ring.alert.lowBatteryFiredAt';
+  static const overnightBatteryFiredOn =
+      'vyana.ring.alert.overnightBatteryFiredOn';
+  static const staleFired = 'vyana.ring.alert.staleFired';
+  static const healthFiredAt = 'vyana.ring.alert.healthFiredAt';
+}
+
+/// Out of reach this long before the offline alert fires.
+const Duration kOfflineAlertAfter = Duration(hours: 2);
+
+/// Low-battery alert repeats at most this often while the ring stays low.
+const Duration kLowBatteryRepeatAfter = Duration(hours: 12);
+
+/// Health alerts are at most this often, whatever the readings do.
+const Duration kHealthAlertRepeatAfter = Duration(hours: 6);
+
+int _dayStamp(DateTime at) => at.year * 10000 + at.month * 100 + at.day;
+
+/// Fires the push-worthy alerts for [snapshot], at most once per episode.
+/// Copy names the consequence, not the event.
+///
+/// Bug 44 (2): deliberately free of Riverpod, the ring controller and the
+/// BLE stack, so the foreground-service isolate can run it on every heartbeat
+/// without waking the UI isolate. It needs SharedPreferences and the
+/// notifications plugin, both of which work in a background isolate.
+Future<void> evaluateRingAlerts({
+  required RingAlertSnapshot snapshot,
+  required NotificationPrefs prefs,
+  required SharedPreferences store,
+  required VitalsNotificationService notify,
+  DateTime? now,
+}) async {
+  if (!snapshot.hasRingContext) return;
+  final at = now ?? DateTime.now();
+  // Both isolates evaluate and both write the "already fired" flags, and
+  // SharedPreferences caches per isolate. Without this reload each isolate
+  // would work from its own stale copy and send the same alert twice.
+  try {
+    await store.reload();
+  } on Object catch (_) {
+    // A failed reload only risks a duplicate alert, never a missing one.
+  }
+
+  if (prefs.ringAndData) {
+    await _evaluateBattery(snapshot, store, notify, at);
+    await _evaluateStaleSync(snapshot, store, notify);
+    await _evaluateOffline(snapshot, store, notify, at);
+  }
+
+  if (prefs.healthAlerts) {
+    await _evaluateHealth(snapshot, store, notify, at);
+  }
+}
+
+Future<void> _evaluateBattery(
+  RingAlertSnapshot s,
+  SharedPreferences store,
+  VitalsNotificationService notify,
+  DateTime at,
+) async {
+  final battery = s.batteryPercent;
+  // Bug 44 (3): no current reading, no decision — neither fire nor clear.
+  if (battery == null || battery <= 0 || !s.batteryIsCurrent) return;
+
+  if (battery > kBatteryRecoveredPercent) {
+    await store.remove(_AlertKeys.lowBatteryFiredAt);
+    await store.remove(_AlertKeys.overnightBatteryFiredOn);
+    return;
+  }
+
+  final inEvening = at.hour >= kEveningBatteryCheckFromHour &&
+      at.hour < kEveningBatteryCheckToHour;
+  if (inEvening) {
+    // Once a night: the point is to catch it while there is time to charge.
+    if (battery >= kOvernightBatteryMin) return;
+    if (store.getInt(_AlertKeys.overnightBatteryFiredOn) == _dayStamp(at)) {
+      return;
+    }
+    await store.setInt(_AlertKeys.overnightBatteryFiredOn, _dayStamp(at));
+    await notify.showAlert(
+      id: 4301,
+      title: 'Your ring is at $battery%',
+      body: 'That will not last the night. Charge it before bed or there '
+          'will be no sleep data in the morning.',
+    );
+    return;
+  }
+
+  // Outside the evening window the flat-battery floor still matters — but
+  // nothing is said after 22:00, when there is nothing to be done about it.
+  if (at.hour >= kEveningBatteryCheckToHour) return;
+  if (battery > kLowBatteryPercent) return;
+  final firedAtMs = store.getInt(_AlertKeys.lowBatteryFiredAt);
+  final firedAt = firedAtMs == null
+      ? null
+      : DateTime.fromMillisecondsSinceEpoch(firedAtMs);
+  if (firedAt != null && at.difference(firedAt) <= kLowBatteryRepeatAfter) {
+    return;
+  }
+  await store.setInt(_AlertKeys.lowBatteryFiredAt, at.millisecondsSinceEpoch);
+  await notify.showAlert(
+    id: 4301,
+    title: 'Your ring is at $battery%',
+    // Deliberately not "before tonight": this one can fire at any hour of
+    // the day, and a message about tonight at 09:00 reads as a mistake.
+    body: 'Charge it soon — this low it stops recording.',
+  );
+}
+
+Future<void> _evaluateStaleSync(
+  RingAlertSnapshot s,
+  SharedPreferences store,
+  VitalsNotificationService notify,
+) async {
+  final lastSync = s.lastSyncedAt;
+  // A ring that has never synced here gets the SYNC pill and banner, not a
+  // push — there is no "since when" to report.
+  if (!s.isStale || lastSync == null) {
+    await store.remove(_AlertKeys.staleFired);
+    return;
+  }
+  if (store.getBool(_AlertKeys.staleFired) ?? false) return;
+  await store.setBool(_AlertKeys.staleFired, true);
+  await notify.showAlert(
+    id: 4302,
+    title: 'Your ring has not synced since ${_sinceLabel(lastSync)}',
+    body: "Today's readiness is missing. Open Vyana with the ring "
+        'nearby to catch up.',
+  );
+}
+
+Future<void> _evaluateOffline(
+  RingAlertSnapshot s,
+  SharedPreferences store,
+  VitalsNotificationService notify,
+  DateTime at,
+) async {
+  if (s.connected) {
+    await store.remove(_AlertKeys.offlineSince);
+    await store.remove(_AlertKeys.offlineFired);
+    return;
+  }
+  if (!s.paired) return;
+  final sinceMs = store.getInt(_AlertKeys.offlineSince);
+  if (sinceMs == null) {
+    // Start the clock from the last confirmed connection when we know it,
+    // else from now.
+    final start = s.lastConnectionConfirmedAt ?? at;
+    await store.setInt(_AlertKeys.offlineSince, start.millisecondsSinceEpoch);
+    return;
+  }
+  if (store.getBool(_AlertKeys.offlineFired) ?? false) return;
+  final since = DateTime.fromMillisecondsSinceEpoch(sinceMs);
+  if (at.difference(since) <= kOfflineAlertAfter) return;
+  await store.setBool(_AlertKeys.offlineFired, true);
+  await notify.showAlert(
+    id: 4303,
+    title: 'Nothing is reading you right now',
+    body: 'Your ring has been out of reach for two hours — the '
+        'readings it takes now are not reaching your phone.',
+  );
+}
+
+Future<void> _evaluateHealth(
+  RingAlertSnapshot s,
+  SharedPreferences store,
+  VitalsNotificationService notify,
+  DateTime at,
+) async {
+  final firedMs = store.getInt(_AlertKeys.healthFiredAt);
+  if (firedMs != null) {
+    final fired = DateTime.fromMillisecondsSinceEpoch(firedMs);
+    if (at.difference(fired) <= kHealthAlertRepeatAfter) return;
+  }
+  // Bug 11: this used to read `vitals.heartRate`, the newest live value, so
+  // the alert fired after any workout — "Resting heart rate is 101 bpm"
+  // about a heart rate that was not resting. It reads the day's resting HR,
+  // which is the only thing the band applies to.
+  final hr = s.restingHr;
+  final spo2 = s.spo2;
+  if (hr != null && hr > 0 && hr > s.hrBandHigh + kSafetyRestingHrMargin) {
+    await store.setInt(_AlertKeys.healthFiredAt, at.millisecondsSinceEpoch);
+    await notify.showAlert(
+      id: 4304,
+      title: 'Resting heart rate is $hr bpm',
+      body: 'That is well above your ${s.hrBandLow.round()}–'
+          '${s.hrBandHigh.round()} band. If you are at rest, it is worth '
+          'a moment to sit and breathe.',
+    );
+  } else if (spo2 != null && spo2 > 0 && spo2 < 92) {
+    await store.setInt(_AlertKeys.healthFiredAt, at.millisecondsSinceEpoch);
+    await notify.showAlert(
+      id: 4305,
+      title: 'Blood oxygen read $spo2%',
+      body: 'Lower than usual. Re-seat the ring and take another '
+          'reading; if it stays low, do not ignore it.',
+    );
+  }
+}
+
+String _sinceLabel(DateTime at) {
+  final diff = DateTime.now().difference(at);
+  if (diff.inDays >= 1) {
+    const days = [
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+      'Sunday',
+    ];
+    return days[at.weekday - 1];
+  }
+  return '${diff.inHours} hours ago';
+}
+
+/// Reads the notification switches straight from storage, for the isolate
+/// that has no provider container.
+Future<NotificationPrefs> loadNotificationPrefs(
+  SharedPreferences store,
+) async =>
+    NotificationPrefs(
+      ringAndData: store.getBool(NotificationPrefsController._kRing) ?? true,
+      healthAlerts: store.getBool(NotificationPrefsController._kHealth) ?? true,
+      nudges: store.getBool(NotificationPrefsController._kNudges) ?? false,
+    );
+
+/// Main-isolate entry point: builds the snapshot from the live controller,
+/// stores it for the service isolate, and evaluates right away.
 class RingAlertService {
   RingAlertService(this._ref);
 
   final Ref _ref;
-  bool _staleFired = false;
-  DateTime? _lastHealthAlert;
-
-  // Offline and low-battery episodes are tracked in prefs, not memory: the
-  // app is restarted far more often than a ring stays offline for two hours,
-  // and an alert that resets on every launch never fires.
-  static const _offlineSinceKey = 'vyana.ring.alert.offlineSince';
-  static const _offlineFiredKey = 'vyana.ring.alert.offlineFired';
-  static const _lowBatteryFiredAtKey = 'vyana.ring.alert.lowBatteryFiredAt';
-
-  /// Out of reach this long before the offline alert fires.
-  static const Duration offlineAlertAfter = Duration(hours: 2);
-
-  /// Low-battery alert repeats at most this often while the ring stays low.
-  static const Duration lowBatteryRepeatAfter = Duration(hours: 12);
 
   Future<void> evaluate(RingController c) async {
     if (!c.hasRingContext) return;
-    final prefs = _ref.read(notificationPrefsProvider);
-    final notify = VitalsNotificationService.instance;
-    final store = await SharedPreferences.getInstance();
-
-    if (prefs.ringAndData) {
-      final battery = c.batteryPercent;
-      if (battery != null && battery > 0 && battery <= 15) {
-        final firedAtMs = store.getInt(_lowBatteryFiredAtKey);
-        final firedAt = firedAtMs == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(firedAtMs);
-        if (firedAt == null ||
-            DateTime.now().difference(firedAt) > lowBatteryRepeatAfter) {
-          await store.setInt(
-            _lowBatteryFiredAtKey,
-            DateTime.now().millisecondsSinceEpoch,
-          );
-          await notify.showAlert(
-            id: 4301,
-            title: 'Your ring is at $battery%',
-            body: 'Charge it before tonight or there will be no sleep data '
-                'in the morning.',
-          );
-        }
-      } else if (battery != null && battery > 30) {
-        await store.remove(_lowBatteryFiredAtKey);
-      }
-
-      final lastSync = ringLastSyncedAt(c);
-      // A ring that has never synced here gets the SYNC pill and banner, not a
-      // push — there is no "since when" to report.
-      if (ringIsStale(c) && lastSync != null) {
-        if (!_staleFired) {
-          _staleFired = true;
-          await notify.showAlert(
-            id: 4302,
-            title: 'Your ring has not synced since ${_sinceLabel(lastSync)}',
-            body: "Today's readiness is missing. Open Vyana with the ring "
-                'nearby to catch up.',
-          );
-        }
-      } else {
-        _staleFired = false;
-      }
-
-      if (!c.isConnected && c.pairedRing != null) {
-        final sinceMs = store.getInt(_offlineSinceKey);
-        final since = sinceMs == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(sinceMs);
-        if (since == null) {
-          // Start the clock from the last confirmed connection when we know
-          // it, else from now.
-          final start = c.lastConnectionConfirmedAt ?? DateTime.now();
-          await store.setInt(_offlineSinceKey, start.millisecondsSinceEpoch);
-        } else if (!(store.getBool(_offlineFiredKey) ?? false) &&
-            DateTime.now().difference(since) > offlineAlertAfter) {
-          await store.setBool(_offlineFiredKey, true);
-          await notify.showAlert(
-            id: 4303,
-            title: 'Nothing is reading you right now',
-            body: 'Your ring has been out of reach for two hours — the '
-                'readings it takes now are not reaching your phone.',
-          );
-        }
-      } else if (c.isConnected) {
-        await store.remove(_offlineSinceKey);
-        await store.remove(_offlineFiredKey);
-      }
-    }
-
-    if (prefs.healthAlerts) {
-      final since = _lastHealthAlert;
-      if (since == null ||
-          DateTime.now().difference(since) > const Duration(hours: 6)) {
-        final profile = _ref.read(userProfileProvider).valueOrNull;
-        final band = restingHrBand(
-          TrainingFrequencyX.fromName(profile?.trainingFrequency),
-        );
-        // Bug 11: this used to read `vitals.heartRate`, the newest live
-        // value, so the alert fired after any workout — "Resting heart rate
-        // is 101 bpm" about a heart rate that was not resting. It reads the
-        // day's resting HR, which is the only thing the band applies to.
-        final hr = HomeDashboard.from(c).restingHr;
-        final spo2 = c.vitals.bloodOxygen;
-        if (hr != null && hr > 0 && hr > band.high + kSafetyRestingHrMargin) {
-          _lastHealthAlert = DateTime.now();
-          await notify.showAlert(
-            id: 4304,
-            title: 'Resting heart rate is $hr bpm',
-            body: 'That is well above your ${band.low.round()}–'
-                '${band.high.round()} band. If you are at rest, it is worth '
-                'a moment to sit and breathe.',
-          );
-        } else if (spo2 != null && spo2 > 0 && spo2 < 92) {
-          _lastHealthAlert = DateTime.now();
-          await notify.showAlert(
-            id: 4305,
-            title: 'Blood oxygen read $spo2%',
-            body: 'Lower than usual. Re-seat the ring and take another '
-                'reading; if it stays low, do not ignore it.',
-          );
-        }
-      }
-    }
-  }
-
-  static String _sinceLabel(DateTime at) {
-    final diff = DateTime.now().difference(at);
-    if (diff.inDays >= 1) {
-      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-      return days[at.weekday - 1];
-    }
-    return '${diff.inHours} hours ago';
+    final profile = _ref.read(userProfileProvider).valueOrNull;
+    final snapshot = RingAlertSnapshot.from(
+      c,
+      band: TrainingFrequencyX.fromName(profile?.trainingFrequency),
+    );
+    await snapshot.save();
+    await evaluateRingAlerts(
+      snapshot: snapshot,
+      prefs: _ref.read(notificationPrefsProvider),
+      store: await SharedPreferences.getInstance(),
+      notify: VitalsNotificationService.instance,
+    );
   }
 }
 

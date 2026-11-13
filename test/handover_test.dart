@@ -577,6 +577,67 @@ void main() {
     });
   });
 
+  group('background ring alerts (bug 44)', () {
+    RingAlertSnapshot snap({
+      int? battery,
+      Duration batteryAge = Duration.zero,
+      bool connected = true,
+    }) =>
+        RingAlertSnapshot(
+          at: DateTime.now(),
+          hasRingContext: true,
+          paired: true,
+          connected: connected,
+          batteryPercent: battery,
+          batteryReadAt:
+              battery == null ? null : DateTime.now().subtract(batteryAge),
+          lastSyncedAt: DateTime.now(),
+          lastConnectionConfirmedAt: DateTime.now(),
+          restingHr: null,
+          spo2: null,
+          hrBandLow: 50,
+          hrBandHigh: 80,
+        );
+
+    test('a battery reading older than 30 minutes is not a reading', () {
+      expect(snap(battery: 12).batteryIsCurrent, isTrue);
+      expect(
+        snap(battery: 12, batteryAge: const Duration(minutes: 29))
+            .batteryIsCurrent,
+        isTrue,
+      );
+      expect(
+        snap(battery: 12, batteryAge: const Duration(minutes: 31))
+            .batteryIsCurrent,
+        isFalse,
+      );
+      // No reading at all can never stand in for a current one.
+      expect(snap().batteryIsCurrent, isFalse);
+    });
+
+    test('the snapshot survives a round trip through storage', () {
+      final original = snap(battery: 23, connected: false);
+      final restored = RingAlertSnapshot.fromJson(original.toJson())!;
+      expect(restored.batteryPercent, 23);
+      expect(restored.connected, isFalse);
+      expect(restored.paired, isTrue);
+      expect(restored.hrBandHigh, 80);
+      expect(
+        restored.batteryReadAt!.millisecondsSinceEpoch,
+        original.batteryReadAt!.millisecondsSinceEpoch,
+      );
+    });
+
+    test('the evening check leaves margin for the night', () {
+      // About 10–15% goes overnight, so the floor is well above the old 15%.
+      expect(kOvernightBatteryMin, greaterThan(kLowBatteryPercent));
+      expect(kOvernightBatteryMin, 30);
+      expect(kEveningBatteryCheckFromHour, 19);
+      expect(kEveningBatteryCheckToHour, 22);
+      expect(kBatteryFreshFor, const Duration(minutes: 30));
+    });
+  });
+
   group('a reading from another day (bug 40)', () {
     final today = DateTime(2026, 10, 14); // a Wednesday
 

@@ -47,6 +47,7 @@ class RingController extends ChangeNotifier {
   DateTime? _tonightSleepGaveUpAt;
   DateTime? _lastConnectionConfirmedAt;
   DateTime? _lastBatteryPoll;
+  DateTime? _batteryReadAt;
   DateTime? _lastPeriodicSync;
   bool _isBatteryPolling = false;
   int? _ecgPreStartRemainingSeconds;
@@ -321,6 +322,13 @@ class RingController extends ChangeNotifier {
     return b != null && b > 0 ? b : null;
   }
 
+  /// When the ring last actually reported its battery, as opposed to when the
+  /// cached value was last read back. Bug 44 (3): a percentage from hours ago
+  /// must not raise the low-battery alert, nor clear one that is standing.
+  DateTime? get batteryReadAt => _batteryReadAt;
+
+  void _markBatteryRead() => _batteryReadAt = DateTime.now();
+
   bool get supportsFactoryReset =>
       _features?.supports('isSupportFactorySettings') ?? false;
 
@@ -499,6 +507,8 @@ class RingController extends ChangeNotifier {
       final basicInfo = await _repo.probeConnectedBasicInfo();
       if (_disposed || basicInfo == null) return;
       final battery = basicInfo.batteryPower;
+      // The ring answered, so the percentage is current even when unchanged.
+      if (battery != null && battery > 0) _markBatteryRead();
       if (_basicInfo?.batteryPower == battery &&
           _vitals.battery == battery &&
           _basicInfo != null) {
@@ -879,6 +889,7 @@ class RingController extends ChangeNotifier {
 
     final basicInfo = await _repo.probeConnectedBasicInfo();
     if (basicInfo == null || _disposed) return false;
+    if ((basicInfo.batteryPower ?? 0) > 0) _markBatteryRead();
 
     final device = _selectedDevice ?? pairedRing.toDeviceMap();
     _set(() {
@@ -1219,6 +1230,7 @@ class RingController extends ChangeNotifier {
         recordCount: result.history.totalRecords,
         logSaved: logError == null,
       );
+      if ((result.basicInfo?.batteryPower ?? 0) > 0) _markBatteryRead();
       _set(() {
         _lastConnectionConfirmedAt = DateTime.now();
         _basicInfo = result.basicInfo;

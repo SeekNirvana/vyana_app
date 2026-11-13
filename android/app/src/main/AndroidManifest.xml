@@ -23,8 +23,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <!-- Bug 44(a): the ring watch is a connectedDevice service. It used to be
+         dataSync, which Android 15 stops after six hours in any twenty-four —
+         so it could never survive a night, which is the whole point of it.
+         remoteMessaging and dataSync are gone with it; nothing declares them. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <!-- On-device AI guides: voice prompts (mic), keep awake during model
          downloads, and download-complete notifications. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -83,10 +86,13 @@
             android:name="com.realsil.sdk.dfu.DfuService"
             android:exported="false" />
 
-        <!-- Foreground service for continuous ring vitals tracking. -->
+        <!-- Foreground service for continuous ring vitals tracking. Typed
+             connectedDevice (bug 44(a)): a BLE wearable connection, with no
+             six-hour cap. Location stays on Geolocator's own service, which
+             is what records an outdoor session. -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="dataSync|remoteMessaging|location"
+            android:foregroundServiceType="connectedDevice"
             android:exported="false" />
 
         <!-- Home-screen widgets: live "state of being" tile + one-tap

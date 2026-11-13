@@ -1251,6 +1251,8 @@ class _BatterySettingsLineState extends ConsumerState<BatterySettingsLine> {
 
   Duration? _gap;
   bool _checked = false;
+  bool _exempt = true;
+  OemBackgroundSteps? _oem;
 
   @override
   void initState() {
@@ -1269,12 +1271,25 @@ class _BatterySettingsLineState extends ConsumerState<BatterySettingsLine> {
         !controller.foregroundServiceEnabled) {
       return;
     }
-    if (await RingForegroundService.isExemptFromBatteryOptimisation()) return;
+    // Bug 44 (b): the gap is the evidence, so it decides whether the card
+    // shows. This used to return early whenever the battery exemption was
+    // granted — but on a Honor 200 Pro the exemption was granted and MagicOS
+    // stopped the service anyway, which is the whole reported failure.
     final gap = await RingForegroundService.missedWatchGap(
       intervalMinutes: controller.periodicSyncIntervalMinutes,
     );
-    if (!mounted || gap == null) return;
-    setState(() => _gap = gap);
+    if (gap == null) return;
+    final exempt =
+        await RingForegroundService.isExemptFromBatteryOptimisation();
+    final oem = OemBackgroundSteps.forManufacturer(
+      await DeviceCapabilityService.instance.manufacturer(),
+    );
+    if (!mounted) return;
+    setState(() {
+      _gap = gap;
+      _exempt = exempt;
+      _oem = oem;
+    });
   }
 
   Future<void> _dismissForever() async {
@@ -1306,7 +1321,7 @@ class _BatterySettingsLineState extends ConsumerState<BatterySettingsLine> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Your phone's battery settings closed Vyana at $clock, so "
+            "Your phone stopped Vyana at $clock, so "
             '${hours < 1 ? 'some time' : '$hours ${hours == 1 ? 'hour' : 'hours'}'} '
             'are missing. Let it keep running?',
             style: VyanaType.caption.copyWith(
@@ -1315,18 +1330,46 @@ class _BatterySettingsLineState extends ConsumerState<BatterySettingsLine> {
               height: 1.45,
             ),
           ),
+          // Bug 44 (b): on some phones the battery exemption is not enough —
+          // the OEM's own launch manager closes the app regardless. Android
+          // offers no API for those switches, so the steps are spelled out.
+          if (_oem case final oem?) ...[
+            const SizedBox(height: 10),
+            Text(
+              oem.heading,
+              style: VyanaType.caption.copyWith(
+                color: t.heading,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            for (final step in oem.steps)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text(
+                  '· $step',
+                  style: VyanaType.caption.copyWith(
+                    color: t.textSec,
+                    fontSize: 12.5,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+          ],
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              BorderedPill(
-                label: 'Allow',
-                onTap: () async {
-                  await RingForegroundService.requestBatteryExemption();
-                  await _dismissForever();
-                },
-              ),
+              if (!_exempt)
+                BorderedPill(
+                  label: 'Allow',
+                  onTap: () async {
+                    await RingForegroundService.requestBatteryExemption();
+                    await _dismissForever();
+                  },
+                ),
               BorderedPill(
                 label: 'Not now',
                 onTap: () => unawaited(_dismissForever()),

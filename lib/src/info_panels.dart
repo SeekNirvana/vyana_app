@@ -181,6 +181,37 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
                 title: 'Ring capabilities',
               ),
               FeaturePanel(features: widget.features),
+              const SizedBox(height: 22),
+              const SectionHead(
+                eyebrow: 'For testers',
+                title: 'Diagnostics',
+              ),
+              Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Every background heartbeat, with the gaps. A gap much '
+                      'larger than the sync interval means your phone stopped '
+                      'Vyana when it should have been watching the ring.',
+                      style: VyanaType.bodySm.copyWith(
+                        color: t.textSec,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Cta(
+                      label: 'Open Diagnostics',
+                      icon: 'arrowR',
+                      onTap: () => Navigator.of(context).push<void>(
+                        MaterialPageRoute(
+                          builder: (_) => const RingDiagnosticsScreen(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 18),
               FutureBuilder<PackageInfo>(
                 future: _packageInfo,
@@ -260,6 +291,239 @@ class _EthosPillar extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Bug 44 (1): the heartbeat log, so a tester can see with their own eyes
+/// whether the foreground service ran all night or was stopped by the OS.
+/// Nothing here is a setting — it is evidence.
+class RingDiagnosticsScreen extends ConsumerStatefulWidget {
+  const RingDiagnosticsScreen({super.key});
+
+  @override
+  ConsumerState<RingDiagnosticsScreen> createState() =>
+      _RingDiagnosticsScreenState();
+}
+
+class _RingDiagnosticsScreenState
+    extends ConsumerState<RingDiagnosticsScreen> {
+  List<DateTime> _beats = const [];
+  bool _serviceRunning = false;
+  bool _exempt = true;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final beats = await RingForegroundService.heartbeatLog();
+    final running = await RingForegroundService.isServiceRunning();
+    final exempt = await RingForegroundService.isExemptFromBatteryOptimisation();
+    if (!mounted) return;
+    setState(() {
+      _beats = beats.reversed.toList();
+      _serviceRunning = running;
+      _exempt = exempt;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final c = ref.watch(ringControllerProvider);
+    final interval = c.periodicSyncIntervalMinutes;
+    final tolerance = Duration(minutes: interval * 2);
+
+    return Scaffold(
+      body: DecoratedBox(
+        decoration: BoxDecoration(gradient: t.bgGradient),
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 32),
+            children: [
+              const _InfoScreenHeader(
+                eyebrow: 'For testers',
+                title: 'Diagnostics',
+              ),
+              const SizedBox(height: 14),
+              Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _DiagLine(
+                      label: 'Background service',
+                      value: _serviceRunning ? 'Running' : 'Not running',
+                      good: _serviceRunning,
+                    ),
+                    _DiagLine(
+                      label: 'Heartbeat every',
+                      value: '$interval min',
+                    ),
+                    _DiagLine(
+                      label: 'Battery exemption',
+                      value: _exempt ? 'Granted' : 'Not granted',
+                      good: _exempt,
+                    ),
+                    _DiagLine(
+                      label: 'Ring paired',
+                      value: c.pairedRing == null ? 'No' : 'Yes',
+                    ),
+                    _DiagLine(
+                      label: 'Last sync',
+                      value: c.lastSyncedAt == null
+                          ? 'Never'
+                          : timeLabel(c.lastSyncedAt!),
+                    ),
+                    _DiagLine(
+                      label: 'Battery read',
+                      value: c.batteryReadAt == null
+                          ? 'Never'
+                          : '${c.batteryPercent ?? '—'}% at '
+                              '${timeOfDayLabel(c.batteryReadAt!)}',
+                    ),
+                    // Bug 36: the reason a night is missing, in the same words
+                    // Nova is given.
+                    _DiagLine(
+                      label: 'Last night',
+                      value: c.missingNightReason.phrase,
+                    ),
+
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              const SectionHead(
+                eyebrow: 'Heartbeats',
+                title: 'Did it keep watching?',
+              ),
+              Panel(
+                child: _loading
+                    ? Text(
+                        'Reading the log…',
+                        style: VyanaType.bodySm.copyWith(color: t.textSec),
+                      )
+                    : _beats.isEmpty
+                        ? Text(
+                            'No heartbeats recorded yet. They start once the '
+                            'background service runs with a paired ring.',
+                            style: VyanaType.bodySm.copyWith(
+                              color: t.textSec,
+                              height: 1.5,
+                            ),
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              for (var i = 0; i < _beats.length; i++)
+                                _HeartbeatLine(
+                                  at: _beats[i],
+                                  // The log is newest first, so the previous
+                                  // beat in time is the next one along.
+                                  gap: i + 1 < _beats.length
+                                      ? _beats[i]
+                                          .difference(_beats[i + 1])
+                                      : null,
+                                  tolerance: tolerance,
+                                ),
+                            ],
+                          ),
+              ),
+              const SizedBox(height: 14),
+              Cta(
+                label: 'Refresh',
+                icon: 'refresh',
+                onTap: () => unawaited(_load()),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DiagLine extends StatelessWidget {
+  const _DiagLine({required this.label, required this.value, this.good});
+
+  final String label;
+  final String value;
+  final bool? good;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final ink = good == null ? t.text : (good! ? t.qGood : t.qPoor);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: VyanaType.bodySm.copyWith(color: t.textSec),
+            ),
+          ),
+          Text(
+            value,
+            style: VyanaType.caption.copyWith(
+              color: ink,
+              fontFamily: VyanaType.mono,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeartbeatLine extends StatelessWidget {
+  const _HeartbeatLine({
+    required this.at,
+    required this.gap,
+    required this.tolerance,
+  });
+
+  final DateTime at;
+  final Duration? gap;
+  final Duration tolerance;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final missed = gap != null && gap! > tolerance;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              timeLabel(at),
+              style: VyanaType.caption.copyWith(
+                color: t.text,
+                fontFamily: VyanaType.mono,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          if (gap != null)
+            Text(
+              missed
+                  ? '+${gap!.inMinutes} min — gap'
+                  : '+${gap!.inMinutes} min',
+              style: VyanaType.caption.copyWith(
+                color: missed ? t.qPoor : t.mutedInk,
+                fontFamily: VyanaType.mono,
+                fontSize: 12,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
