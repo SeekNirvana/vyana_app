@@ -1152,6 +1152,13 @@ class RingController extends ChangeNotifier {
   }
 
   void _applyUnpairedRingState({required String status}) {
+    // Ring setup belongs to the ring, not to the phone. This flag used to
+    // survive unpairing, so pairing a *different* ring skipped naming it and
+    // setting its monitoring interval — and there was no way back to that
+    // screen. onFirstConnected is already gated on "no ring paired", so the
+    // per-ring intent was there; only the flag outlived it.
+    _ringOnboardingCompleted = false;
+    unawaited(_persistRingOnboarding());
     _set(() {
       _pairedRing = null;
       _selectedDevice = null;
