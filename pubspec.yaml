@@ -68,6 +68,13 @@ dependencies:
   whisper_ggml_plus: ^1.5.2       # Offline speech-to-text (whisper.cpp)
   whisper_ggml_plus_ffmpeg: ^1.0.0 # WAV->whisper audio conversion
   path: ^1.9.1                    # Model/voice storage path joins
+  # Bug 42: Nova's own voice. Kokoro (Apache 2.0) runs on the phone through
+  # sherpa-onnx (Apache 2.0); the generated PCM is written to a WAV and played
+  # back locally. Nothing is synthesised off the device — see
+  # lib/src/services/nova_voice_assets.dart.
+  sherpa_onnx: ^2.0.1             # Offline neural TTS runtime (Kokoro)
+  audioplayers: ^6.8.1            # Plays Kokoro's generated audio
+  crypto: ^3.0.6                  # SHA-256 pinning for downloaded voice files
   image_picker: ^1.2.2
   url_launcher: ^6.3.1
 

@@ -217,7 +217,12 @@ class _GuideModelCard extends ConsumerWidget {
             Cta(
               label: failed ? 'Retry download' : 'Download Nova',
               icon: 'download',
-              onTap: () => manager.downloadModel(kind),
+              onTap: () async {
+                await manager.downloadModel(kind);
+                // Bug 42: the voice arrived in the same step, so pick it up
+                // now rather than waiting for a restart.
+                await ref.read(guideVoiceServiceProvider).refreshNovaVoice();
+              },
             ),
             if (failed && manager.stateFor(kind).errorMessage != null) ...[
               const SizedBox(height: 10),
@@ -390,7 +395,7 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
                     Text('Vani Voice',
                         style: VyanaType.label.copyWith(
                             color: t.text, fontSize: 15)),
-                    Text('Offline STT (Whisper) + device TTS voices',
+                    Text('Offline STT (Whisper) + Nova\'s own voice',
                         style: VyanaType.mono10.copyWith(color: t.textMuted)),
                   ],
                 ),
@@ -399,9 +404,11 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
           ),
           const SizedBox(height: 10),
           Text(
+            // Bug 42: Nova has her own voice now; the system voices are the
+            // alternative, not the default.
             'Talk with Nova, fully offline — Whisper transcribes your mic '
-            'input on-device. Replies can be spoken with your phone\'s built-in '
-            'text-to-speech voices.',
+            'input on this phone, and Nova answers in her own voice, also '
+            'generated here. You can switch to a system voice below.',
             style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
           ),
           const SizedBox(height: 12),
@@ -526,12 +533,25 @@ class _GuideVoicePicker extends StatelessWidget {
       );
     }
 
-    final sorted = [...voices]
-      ..sort((a, b) {
-        final localeCmp = a.locale.toLowerCase().compareTo(b.locale.toLowerCase());
-        if (localeCmp != 0) return localeCmp;
-        return a.label.toLowerCase().compareTo(b.label.toLowerCase());
-      });
+    // Bug 42: Nova's own voice first, then the system voices by locale. The
+    // picker can still switch to a system voice — that is the whole point of
+    // leaving it here.
+    final nova = [
+      for (final v in voices)
+        if (v.isNovaVoice) v,
+    ];
+    final sorted = [
+      ...nova,
+      ...[
+        for (final v in voices)
+          if (!v.isNovaVoice) v,
+      ]..sort((a, b) {
+          final localeCmp =
+              a.locale.toLowerCase().compareTo(b.locale.toLowerCase());
+          if (localeCmp != 0) return localeCmp;
+          return a.label.toLowerCase().compareTo(b.label.toLowerCase());
+        }),
+    ];
     final selectedOption = selected == null
         ? null
         : sorted.cast<GuideVoiceOption?>().firstWhere(

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyana/main.dart';
 import 'package:vyana/src/data/db.dart';
+import 'package:vyana/src/services/guide_voice_service.dart';
+import 'package:vyana/src/services/nova_voice_assets.dart';
 import 'package:vyana/src/wellness/wellness_state.dart';
 import 'package:vyana_sdk/vyana_sdk.dart';
 
@@ -617,6 +619,77 @@ void main() {
           reason: 'no recorded night opens with an awake stage',
         );
         expect(n.sleepOnset, n.windowStart);
+      }
+    });
+  });
+
+  group("Nova's own voice (bug 42)", () {
+    GuideVoiceOption v(String name, {String? quality, String locale = 'en-US',
+        String? network}) =>
+        GuideVoiceOption(
+          raw: {
+            'name': name,
+            'locale': locale,
+            if (network != null) 'network_required': network,
+          },
+          name: name,
+          locale: locale,
+          identifier: name,
+          quality: quality,
+        );
+
+    test('the best offline system voice, not the first one listed', () {
+      final voices = [
+        v('alpha'),
+        v('beta', quality: 'enhanced'),
+        v('gamma', quality: 'premium'),
+      ];
+      expect(
+        GuideVoiceService.bestOfflineSystemVoice(voices)?.name,
+        'gamma',
+      );
+    });
+
+    test('a network voice is never the fallback', () {
+      // Every reply would leave the phone, which breaks the promise the
+      // whole guide rests on.
+      final voices = [
+        v('cloud', quality: 'premium', network: 'true'),
+        v('local', quality: 'enhanced'),
+      ];
+      expect(
+        GuideVoiceService.bestOfflineSystemVoice(voices)?.name,
+        'local',
+      );
+    });
+
+    test("Android's numeric quality is ranked too", () {
+      final voices = [v('low', quality: '300'), v('high', quality: '400')];
+      expect(GuideVoiceService.bestOfflineSystemVoice(voices)?.name, 'high');
+    });
+
+    test('English is preferred, but something is always returned', () {
+      final voices = [v('de', locale: 'de-DE', quality: 'premium'), v('en')];
+      expect(GuideVoiceService.bestOfflineSystemVoice(voices)?.name, 'en');
+      expect(GuideVoiceService.bestOfflineSystemVoice(const []), isNull);
+    });
+
+    test('Nova\'s voice is not a system voice', () {
+      expect(GuideVoiceOption.nova.isNovaVoice, isTrue);
+      expect(v('alpha').isNovaVoice, isFalse);
+    });
+
+    test('the voice is only fetched from our own host, by digest', () {
+      // Until the Kokoro release is mirrored and pinned, nothing is fetched
+      // and Nova falls back to a system voice.
+      expect(kNovaVoiceHost, 'cdn.seeknirvana.app');
+      expect(novaVoiceConfigured, kNovaVoiceFiles.isNotEmpty);
+      for (final asset in kNovaVoiceFiles) {
+        final uri = Uri.parse(asset.url);
+        expect(uri.scheme, 'https');
+        expect(uri.host, kNovaVoiceHost);
+        expect(asset.sha256, matches(RegExp(r'^[0-9a-f]{64}$')));
+        expect(asset.bytes, greaterThan(0));
       }
     });
   });

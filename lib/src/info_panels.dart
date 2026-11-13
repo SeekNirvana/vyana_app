@@ -183,6 +183,59 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
               FeaturePanel(features: widget.features),
               const SizedBox(height: 22),
               const SectionHead(
+                eyebrow: 'Open source',
+                title: 'Licences',
+              ),
+              Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Nova speaks with an open neural voice that runs on this '
+                      'phone. Their notices travel with the binaries.',
+                      style: VyanaType.bodySm.copyWith(
+                        color: t.textSec,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    for (final notice in kNovaVoiceLicences)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${notice.name} — ${notice.licence}',
+                              style: VyanaType.label.copyWith(
+                                color: t.text,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              notice.url,
+                              style: VyanaType.caption.copyWith(
+                                color: t.textMuted,
+                                fontFamily: VyanaType.mono,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    BorderedPill(
+                      label: 'All open-source licences',
+                      onTap: () => showLicensePage(
+                        context: context,
+                        applicationName: 'Vyana',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 22),
+              const SectionHead(
                 eyebrow: 'For testers',
                 title: 'Diagnostics',
               ),
@@ -397,6 +450,14 @@ class _RingDiagnosticsScreenState
                     _DiagLine(
                       label: 'SDK device type',
                       value: c.pairedRing?.rawDeviceType ?? '—',
+                    ),
+                    // Bug 42: which voice build is installed, and whether it
+                    // verified — a tester should not have to dig in storage.
+                    _DiagLine(
+                      label: "Nova's voice",
+                      value: ref.watch(guideVoiceServiceProvider).novaVoiceReady
+                          ? kNovaVoiceVersion
+                          : novaVoiceFingerprint(),
                     ),
 
                   ],

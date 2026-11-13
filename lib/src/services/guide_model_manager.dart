@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_startup_service.dart';
+import 'nova_voice_assets.dart';
 import 'vyana_storage_service.dart';
 
 /// On-device guide personas. Each maps to a string id used by the Vyana guide
@@ -84,10 +85,15 @@ class GuidePersonaDefinition {
 // every guide usable.
 const String _kSharedModelLabel = 'Gemma E2B · on-device';
 
-/// Approximate download size of the shared bundle, shown wherever the app
-/// asks the user to install Nova. One constant so the pill, the store and
-/// You never disagree.
-const String kGuideModelSizeLabel = '3.1 GB';
+/// Approximate download size of the shared bundle **plus Nova's voice**,
+/// shown wherever the app asks the user to install Nova. One constant so the
+/// pill, the store and You never disagree.
+///
+/// Bug 42: the Kokoro voice (~90 MB quantised) downloads in the same install
+/// step, so this is the combined figure. Confirm it against the real files on
+/// a device once the voice is packaged — [kNovaVoiceApproxBytes] is the
+/// estimate it rests on.
+const String kGuideModelSizeLabel = '3.2 GB';
 const String _kSharedRepoId = 'google/gemma-4-e2b-it';
 const ModelType _kSharedModelType = ModelType.gemmaIt;
 const ModelFileType _kSharedFileType = ModelFileType.litertlm;
@@ -623,17 +629,40 @@ class GuideModelManager extends ChangeNotifier {
     debugPrint('Starting download for ${definition.name}');
     debugPrint('URL: ${definition.modelDownloadUrl}');
 
+    // Bug 42: Nova's voice installs with Nova, in the same step. The voice is
+    // a rounding error beside the model, so the bar stays on the model and
+    // the voice takes the last sliver.
+    const voiceShare = 0.03;
     try {
       await downloadGuideModelFile(
         definition,
         onProgress: (value) {
+          final scaled = value * (1 - voiceShare);
           for (final related in sharing) {
-            _states[related]!.progress = value;
+            _states[related]!.progress = scaled;
           }
-          onProgress?.call(value);
+          onProgress?.call(scaled);
           notifyListeners();
         },
       );
+
+      // Hosted by us, pinned by SHA-256 and verified before it is ever
+      // loaded. A failure here never fails the install: Nova falls back to
+      // the best offline system voice (see NovaVoiceService).
+      try {
+        await downloadNovaVoice(
+          onProgress: (value) {
+            final scaled = (1 - voiceShare) + value * voiceShare;
+            for (final related in sharing) {
+              _states[related]!.progress = scaled;
+            }
+            onProgress?.call(scaled);
+            notifyListeners();
+          },
+        );
+      } on Object catch (error) {
+        debugPrint('[GuideModel] Nova voice download failed: $error');
+      }
 
       for (final related in sharing) {
         _states[related]!.status = GuideModelStatus.verifying;
@@ -707,6 +736,11 @@ class GuideModelManager extends ChangeNotifier {
       if (await modelFile.exists()) {
         await modelFile.delete();
       }
+
+      // Bug 42: deleting Nova deletes her voice. It lives in app-private
+      // storage beside the model, and leaving ~90 MB behind for a guide the
+      // user has removed is not a kindness.
+      await deleteNovaVoice();
 
       for (final relatedKind in guideKindsSharingBundle(state.definition)) {
         final relatedState = _states[relatedKind]!;

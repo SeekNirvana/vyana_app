@@ -26,6 +26,7 @@ import 'src/services/guide_model_manager.dart';
 import 'src/services/guide_runtime_service.dart';
 import 'src/services/app_tts_service.dart';
 import 'src/services/guide_voice_service.dart';
+import 'src/services/nova_voice_assets.dart';
 import 'src/services/guide_persona_prefs_service.dart';
 import 'src/services/meal_photo_service.dart';
 import 'src/services/ring_order_pricing.dart';

@@ -136,3 +136,31 @@ flutter test
 Signed APK → [publish.solanamobile.com](https://publish.solanamobile.com)
 
 Docs: [Build and sign an APK](https://docs.solanamobile.com/dapp-store/build-and-sign-an-apk)
+## Packaging Nova's voice (bug 42)
+
+Nova speaks with [Kokoro](https://github.com/hexgrad/kokoro) (Apache 2.0),
+run on the phone through [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)
+(Apache 2.0). The app never fetches the model from a third-party mirror at
+runtime, so the release has to be mirrored on our own host first.
+
+`lib/src/services/nova_voice_assets.dart` holds an empty `kNovaVoiceFiles`
+until that is done. While it is empty nothing is downloaded and Nova falls
+back to the best offline *system* voice — never a cloud voice.
+
+For each file of the Kokoro release (`model.int8.onnx`, `voices.bin`,
+`tokens.txt`, `espeak-ng-data.tar`):
+
+1. Download it from Kokoro's official release and check it against the
+   checksum published with that release. Do this once, at packaging time.
+2. Upload that exact file to
+   `https://cdn.seeknirvana.app/voices/kokoro/<version>/<file>` over HTTPS.
+3. Record its URL, `sha256sum` output and byte size as a `PinnedAsset` in
+   `kNovaVoiceFiles`, and set `kNovaVoiceVersion` to that release.
+
+The app then verifies every file against its pinned digest after download and
+again before first load, deleting and retrying once on a mismatch. A second
+mismatch raises `NovaVoiceIntegrityException` and nothing is loaded.
+
+Confirm `kGuideModelSizeLabel` against the real combined download on a device
+once the files exist — it is currently the Gemma bundle plus an estimated
+90 MB for the quantised voice.
