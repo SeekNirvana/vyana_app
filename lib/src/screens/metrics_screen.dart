@@ -104,6 +104,12 @@ class _MetricsScreenState extends ConsumerState<MetricsScreen> {
             ),
           const SizedBox(height: 24),
           _MovementBlock(controller: c, dashboard: dashboard, range: range),
+          // Bug 41: Cycle used to sit after All vitals and ECG, so logging a
+          // period meant scrolling past everything else on the screen. It
+          // still renders only for female + opted in, and carries its own
+          // 24 px gap so that for everyone else nothing changes at all
+          // (mock 7a and 13b).
+          const CycleBlock(topGap: 24),
           const SizedBox(height: 26),
           _AllVitalsBlock(
             controller: c,
@@ -118,8 +124,6 @@ class _MetricsScreenState extends ConsumerState<MetricsScreen> {
           ),
           const SizedBox(height: 26),
           _EcgBlock(controller: c),
-          const SizedBox(height: 26),
-          const CycleBlock(),
           const SizedBox(height: 22),
           _ExportLine(
             onTap: () => openExports(context, ref, section: ExportSection.health),

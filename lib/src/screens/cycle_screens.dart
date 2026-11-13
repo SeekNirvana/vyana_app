@@ -182,16 +182,23 @@ Future<void> _askLastPeriodStart(BuildContext context, WidgetRef ref) async {
 // ── 13b · The Cycle section on Metrics ───────────────────────────────────
 
 class CycleBlock extends ConsumerWidget {
-  const CycleBlock({super.key});
+  const CycleBlock({this.topGap = 0, super.key});
+
+  /// Space above the block, owned here so the gap disappears with the block
+  /// (bug 41) — this sits between two sections on Metrics and must leave no
+  /// hole for anyone the Cycle section does not apply to.
+  final double topGap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(userProfileProvider).valueOrNull;
     if (profile == null || !profile.showsCycle) return const SizedBox.shrink();
-    if (profile.cycleMode == CycleMode.pregnant) {
-      return _PregnancyCard(profile: profile);
-    }
-    return const _CycleCard();
+    return Padding(
+      padding: EdgeInsets.only(top: topGap),
+      child: profile.cycleMode == CycleMode.pregnant
+          ? _PregnancyCard(profile: profile)
+          : const _CycleCard(),
+    );
   }
 }
 
