@@ -24,9 +24,14 @@ Future<void> openScanner(BuildContext context, RingController c) {
         lastSyncedAt: c.lastSyncedAt,
         // Bug 26: rename moved onto the ring screen, beside the name.
         onRename: c.renameRing,
-        onFirstConnected: c.pairedRing == null
-            ? () => unawaited(openRingOnboarding(navigator.context, c))
-            : null,
+        // Setup is remembered per ring, so the decision can only be made
+        // once the connection has told us which ring this is. Re-pairing a
+        // ring you already set up goes straight back to You; a ring this
+        // phone has not seen gets its own setup.
+        onFirstConnected: () {
+          if (!c.currentRingNeedsOnboarding) return;
+          unawaited(openRingOnboarding(navigator.context, c));
+        },
       ),
     ),
   );

@@ -105,6 +105,7 @@ class RingController extends ChangeNotifier {
   static const _healthMonitoringAckKey = 'health_monitoring_ring_ack_v1';
   static const _periodicSyncIntervalMinutesKey = 'ring_sync_interval_minutes_v1';
   static const _ringOnboardingCompletedKey = 'ring_onboarding_completed_v1';
+  static const _onboardedRingIdsKey = 'ring_onboarding_done_ids_v1';
   static const _foregroundServiceEnabledKey = 'foreground_service_enabled_v1';
   static const _foregroundServiceAllowedKey = 'foreground_service_allowed_v1';
 
@@ -121,6 +122,11 @@ class RingController extends ChangeNotifier {
   bool _healthMonitoringApplying = false;
   int _periodicSyncIntervalMinutes = kPeriodicSyncDefaultIntervalMinutes;
   bool _ringOnboardingCompleted = false;
+
+  /// Rings whose setup has been done, by [SavedPranaRing.identityKey]. Setup
+  /// belongs to the ring, so this survives unpairing: pair the same ring
+  /// again and it is not asked for again.
+  Set<String> _onboardedRingIds = <String>{};
   bool _foregroundServiceEnabled = false;
   bool _foregroundServiceAllowed = true;
 
@@ -398,6 +404,23 @@ class RingController extends ChangeNotifier {
   int get periodicSyncIntervalMinutes => _periodicSyncIntervalMinutes;
 
   bool get ringOnboardingCompleted => _ringOnboardingCompleted;
+
+  /// Whether the ring now paired still needs its setup run.
+  ///
+  /// Unpairing used to clear a single phone-wide flag, which got both cases
+  /// wrong in turn: before, a *different* ring skipped setup; after, the
+  /// *same* ring was dragged back through it. Keyed by the ring itself,
+  /// both cases come out right.
+  ///
+  /// A ring the SDK gives no durable identity for falls back to asking —
+  /// setup twice is a nuisance, a ring that never gets named is a bug.
+  bool get currentRingNeedsOnboarding {
+    final ring = _pairedRing;
+    if (ring == null) return false;
+    final id = ring.identityKey;
+    if (id == null) return !_ringOnboardingCompleted;
+    return !_onboardedRingIds.contains(id);
+  }
 
   bool get foregroundServiceEnabled => _foregroundServiceEnabled;
 
@@ -1152,11 +1175,12 @@ class RingController extends ChangeNotifier {
   }
 
   void _applyUnpairedRingState({required String status}) {
-    // Ring setup belongs to the ring, not to the phone. This flag used to
-    // survive unpairing, so pairing a *different* ring skipped naming it and
-    // setting its monitoring interval — and there was no way back to that
-    // screen. onFirstConnected is already gated on "no ring paired", so the
-    // per-ring intent was there; only the flag outlived it.
+    // Ring setup belongs to the ring, not to the phone. The phone-wide flag
+    // used to survive unpairing, so pairing a *different* ring skipped
+    // naming it with no way back to that screen; clearing it instead sent
+    // the *same* ring back through setup it had already done. Neither is
+    // right, so the answer is not a flag: _onboardedRingIds remembers which
+    // ring was set up and is deliberately left alone here.
     _ringOnboardingCompleted = false;
     unawaited(_persistRingOnboarding());
     _set(() {
@@ -1425,6 +1449,21 @@ class RingController extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final onboardingCompleted =
         prefs.getBool(_ringOnboardingCompletedKey) ?? false;
+    final onboardedIds =
+        (prefs.getStringList(_onboardedRingIdsKey) ?? const <String>[])
+            .where((id) => id.isNotEmpty)
+            .toSet();
+    // Anyone who finished setup before v1.1.5 has the old phone-wide flag
+    // and no id list. Credit the ring they have paired now, so updating does
+    // not send them back through setup on the next reconnect.
+    if (onboardingCompleted && onboardedIds.isEmpty) {
+      final saved = await PranaRingStore.load();
+      final id = saved?.identityKey;
+      if (id != null) {
+        onboardedIds.add(id);
+        await prefs.setStringList(_onboardedRingIdsKey, onboardedIds.toList());
+      }
+    }
     // Bug 18 (1): on by default whenever a ring is paired. Without the
     // service Android suspends the app, the reconnect timer stops, and
     // nothing tries again until the user opens Vyana — which is the failure
@@ -1452,6 +1491,7 @@ class RingController extends ChangeNotifier {
     if (_disposed) return;
     _set(() {
       _ringOnboardingCompleted = onboardingCompleted;
+      _onboardedRingIds = onboardedIds;
       _foregroundServiceEnabled = foregroundEnabled;
       _foregroundServiceAllowed = foregroundAllowed;
     });
@@ -1472,6 +1512,15 @@ class RingController extends ChangeNotifier {
     _ringOnboardingCompleted = true;
     _foregroundServiceEnabled = enableForegroundService;
     _foregroundServiceAllowed = enableForegroundService;
+    final id = _pairedRing?.identityKey;
+    if (id != null) {
+      _onboardedRingIds = {..._onboardedRingIds, id};
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+        _onboardedRingIdsKey,
+        _onboardedRingIds.toList(),
+      );
+    }
     await _persistRingOnboarding();
     _set(() {});
     _syncForegroundService();

@@ -1435,4 +1435,61 @@ void main() {
       );
     });
   });
+
+  group('ring setup is remembered per ring, not per phone', () {
+    SavedPranaRing ring({
+      String? mac,
+      String? deviceId,
+      String? identifier,
+      String? address,
+    }) =>
+        SavedPranaRing(
+          name: 'PRANA',
+          address: address,
+          macAddress: mac,
+          deviceIdentifier: identifier,
+          deviceId: deviceId,
+          deviceType: null,
+          rssi: null,
+          batteryPower: null,
+          batteryStatus: null,
+          firmwareVersion: null,
+          lastSeenAt: null,
+          lastConnectedAt: null,
+        );
+
+    test('the same ring keys the same however the MAC is punctuated', () {
+      expect(
+        ring(mac: 'AA:BB:CC:DD:0C:4A').identityKey,
+        ring(mac: 'aabbccdd0c4a').identityKey,
+      );
+    });
+
+    test('two rings never share a key', () {
+      expect(
+        ring(mac: 'AA:BB:CC:DD:0C:4A').identityKey,
+        isNot(ring(mac: 'AA:BB:CC:DD:1F:9E').identityKey),
+      );
+    });
+
+    test('the MAC wins over the per-session address', () {
+      // iOS hands out a fresh `address` each pairing; keying on it would
+      // treat one ring as a new ring every time.
+      final first = ring(mac: 'AABBCCDD0C4A', address: 'session-1');
+      final second = ring(mac: 'AABBCCDD0C4A', address: 'session-2');
+      expect(first.identityKey, second.identityKey);
+    });
+
+    test('a ring with no durable identity has no key', () {
+      // Callers must then fall back to asking rather than assume.
+      expect(ring().identityKey, isNull);
+      expect(ring(mac: '  ').identityKey, isNull);
+    });
+
+    test('identity falls back through the fields the SDK may fill', () {
+      expect(ring(deviceId: 'DEV-7').identityKey, 'DEV7');
+      expect(ring(identifier: 'id-9').identityKey, 'ID9');
+      expect(ring(address: 'addr-3').identityKey, 'ADDR3');
+    });
+  });
 }

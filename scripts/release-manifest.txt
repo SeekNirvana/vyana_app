@@ -180,3 +180,4 @@ How often the ring measures you
 How often Vyana collects it
 Two intervals, two batteries. The ring measures you on its own;
 Keep collecting in the background
+currentRingNeedsOnboarding

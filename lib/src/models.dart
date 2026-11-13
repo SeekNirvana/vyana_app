@@ -655,6 +655,24 @@ class SavedPranaRing {
       _cleanText(deviceId) ??
       'Unknown address';
 
+  /// A stable key for *this* ring across pairings — the MAC first, since the
+  /// scanner's `address` is a per-session handle on iOS. Null when the SDK
+  /// gave us nothing durable, in which case callers must not assume two
+  /// pairings are the same ring.
+  ///
+  /// Setup is remembered against this, not against the phone: re-pairing the
+  /// ring you already named should not walk you through naming it again,
+  /// while a *different* ring must still get its own setup.
+  String? get identityKey {
+    final raw = _cleanText(macAddress) ??
+        _cleanText(deviceId) ??
+        _cleanText(deviceIdentifier) ??
+        _cleanText(address);
+    if (raw == null) return null;
+    final clean = raw.toUpperCase().replaceAll(RegExp('[^0-9A-Z]'), '');
+    return clean.isEmpty ? null : clean;
+  }
+
   factory SavedPranaRing.fromDevice(
     dynamic device, {
     DeviceBasicSnapshot? basicInfo,
