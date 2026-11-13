@@ -131,6 +131,56 @@ flutter analyze
 flutter test
 ```
 
+## Releases from CI
+
+`.github/workflows/release.yml` publishes a GitHub Release when a `v*` tag is
+pushed:
+
+```bash
+# pubspec.yaml must already say 1.1.5, and CHANGELOG.md must have a
+# "## v1.1.5" section — the workflow fails on either mismatch.
+git tag v1.1.5 && git push origin v1.1.5
+```
+
+It attaches two APKs, their `SHA256SUMS.txt` and the R8 mapping files:
+
+| Artifact | Flavor | Signing |
+|---|---|---|
+| `vyana-<version>-generic-unsigned.apk` | `googlePlay` | none — sign it yourself before installing |
+| `vyana-<version>-solana-dappstore.apk` | `dappStore` | the dApp Store key, when the secrets below are set |
+
+Running the workflow by hand (**Actions → Release → Run workflow**) publishes a
+**prerelease** instead, so a dry run is never served as the current version.
+
+### Repository secrets for dApp Store signing
+
+Four, under **Settings → Secrets and variables → Actions → New repository
+secret**. Without them the workflow still runs and publishes, but the dApp
+Store APK comes out unsigned and says so in the release body.
+
+| Secret | Value |
+|---|---|
+| `DAPPSTORE_KEYSTORE_BASE64` | The keystore file, base64-encoded (see below) |
+| `DAPPSTORE_STORE_PASSWORD` | `dappStoreStorePassword` from `android/key.properties` |
+| `DAPPSTORE_KEY_PASSWORD` | `dappStoreKeyPassword` |
+| `DAPPSTORE_KEY_ALIAS` | `dappStoreKeyAlias` (e.g. `vyana-dappstore`) |
+
+Encode the keystore as one line, with no trailing newline:
+
+```bash
+base64 -i android/keystores/vyana-dappstore.keystore | tr -d '\n' | pbcopy
+```
+
+CI writes an `android/key.properties` holding **only** the `dappStore*` entries
+and deletes it afterwards. That is what makes the two builds differ:
+`app/build.gradle.kts` creates a signing config only for a flavor whose entries
+are filled in, so `googlePlay` has none and comes out unsigned. No build-file
+change is needed to tell them apart.
+
+> Keep this key. The dApp Store, like Play, identifies the app by its signing
+> certificate — losing it means publishing a new listing rather than an update.
+> It must stay separate from the Play upload key.
+
 ## Submit to Solana dApp Store
 
 Signed APK → [publish.solanamobile.com](https://publish.solanamobile.com)
