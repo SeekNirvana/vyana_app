@@ -623,6 +623,171 @@ void main() {
     });
   });
 
+  group('my week, the optional plan (item 46)', () {
+    SessionRow did(String activity, DateTime at, {int minutes = 30}) =>
+        SessionRow(
+          id: '$activity-${at.millisecondsSinceEpoch}',
+          category: activityById(activity)?.cat ?? 'mind',
+          vyanaActivityType: activity,
+          ringSportType: 0,
+          startedAt: at,
+          endedAt: at.add(Duration(minutes: minutes)),
+          phoneLocationEnabled: false,
+        );
+
+    // A Tuesday.
+    final tuesday = DateTime(2026, 11, 10, 14);
+    WeeklyPlan planOn(int weekday, List<String> ids) => WeeklyPlan({
+          weekday: PlannedDay(weekday: weekday, activityIds: ids),
+        });
+
+    HomeSuggestion suggestion({
+      required WeeklyPlan plan,
+      DateTime? now,
+      int? readiness = 70,
+      List<SessionRow> today = const [],
+      List<SessionRow> history = const [],
+      List<String> pins = const [],
+    }) =>
+        homeSuggestionFor(
+          intent: DayIntent.perform,
+          state: WellnessState.empty(),
+          readiness: readiness,
+          moment: homeMomentAt(now ?? tuesday),
+          now: now ?? tuesday,
+          pins: pins,
+          history: history,
+          todaysFinished: today,
+          plan: plan,
+        );
+
+    test('no plan changes nothing', () {
+      expect(WeeklyPlan.empty.isEmpty, isTrue);
+      final s = suggestion(plan: WeeklyPlan.empty);
+      expect(s.heading, 'Suggested activity');
+    });
+
+    test('a planned day shows the first one not yet done', () {
+      final plan = planOn(2, ['yogaFlow', 'outdoorRun', 'stretching']);
+      final s = suggestion(plan: plan);
+      expect(s.heading, 'Planned today');
+      expect(s.activityId, 'yogaFlow');
+      expect(s.meta, startsWith('PLANNED · 1 OF 3'));
+      expect(s.setsTarget, isFalse);
+
+      // Done the first: the next one shows.
+      final next = suggestion(
+        plan: plan,
+        today: [did('yogaFlow', tuesday.subtract(const Duration(hours: 2)))],
+      );
+      expect(next.activityId, 'outdoorRun');
+      expect(next.meta, startsWith('PLANNED · 2 OF 3'));
+    });
+
+    test('no "1 OF 1" when only one is planned', () {
+      final s = suggestion(plan: planOn(2, ['yogaFlow']));
+      expect(s.meta, isNot(contains('OF')));
+      expect(s.meta, startsWith('PLANNED · YOUR USUAL'));
+    });
+
+    test('unplanned practices do not count against the plan', () {
+      final s = suggestion(
+        plan: planOn(2, ['yogaFlow']),
+        today: [did('swimming', tuesday.subtract(const Duration(hours: 1)))],
+      );
+      expect(s.activityId, 'yogaFlow');
+    });
+
+    test('a planned practice stays until done or 22:00', () {
+      final plan = planOn(2, ['yogaFlow']);
+      expect(
+        suggestion(plan: plan, now: DateTime(2026, 11, 10, 21, 59)).heading,
+        'Planned today',
+      );
+      // After 22:00 the evening wind-down takes over.
+      final late = suggestion(plan: plan, now: DateTime(2026, 11, 10, 22, 1));
+      expect(late.heading, 'Wind down');
+    });
+
+    test('an early trainer sees the plan from 05:00 instead', () {
+      final plan = planOn(2, ['outdoorRun']);
+      final morning = DateTime(2026, 11, 10, 7);
+      // No history: the morning keeps its short practice.
+      expect(suggestion(plan: plan, now: morning).heading,
+          'Suggested practice');
+      // Usually runs at 06:30 → the plan replaces it.
+      final history = [
+        for (var w = 1; w <= 3; w++)
+          did('outdoorRun', DateTime(2026, 11, 10 - 7 * w, 6, 30)),
+      ];
+      final s =
+          suggestion(plan: plan, now: morning, history: history);
+      expect(s.heading, 'Planned today');
+      expect(s.activityId, 'outdoorRun');
+    });
+
+    test('low readiness offers an alternative, never a silent swap', () {
+      final s = suggestion(
+        plan: planOn(2, ['outdoorRun']),
+        readiness: 41,
+        pins: const ['walk'],
+      );
+      // The plan still stands.
+      expect(s.activityId, 'outdoorRun');
+      expect(s.lowReadinessAlternative, 'walk');
+    });
+
+    test('a planned sport day pre-sets Perform', () {
+      expect(
+        plannedIntentFor(planOn(2, ['outdoorRun']), tuesday),
+        DayIntent.perform,
+      );
+      // A gentle day leaves the weekday-history rule alone.
+      expect(plannedIntentFor(planOn(2, ['bodyScan']), tuesday), isNull);
+      expect(plannedIntentFor(WeeklyPlan.empty, tuesday), isNull);
+    });
+
+    test('the reminder fires at the usual start time, 18:00 if never done',
+        () {
+      final history = [
+        for (final h in [7, 19, 18])
+          did('outdoorRun', DateTime(2026, 11, 3, h)),
+      ];
+      expect(
+        planReminderTimeFor(
+          activityId: 'outdoorRun',
+          day: DateTime(2026, 11, 10),
+          history: history,
+        ),
+        DateTime(2026, 11, 10, 18),
+      );
+      expect(
+        planReminderTimeFor(
+          activityId: 'swimming',
+          day: DateTime(2026, 11, 10),
+          history: const [],
+        ),
+        DateTime(2026, 11, 10, kPlanReminderDefaultHour),
+      );
+    });
+
+    test('at most three a day are planned; doing more is never blocked', () {
+      expect(kWeeklyPlanMaxPerDay, 3);
+      final rows = [
+        for (var i = 1; i <= 5; i++)
+          WeeklyPlanRow(
+            weekday: 2,
+            position: i,
+            activityId: 'walk',
+            createdAt: DateTime(2026, 11, 10),
+          ),
+      ];
+      // The table's primary key keeps positions unique; the limit is applied
+      // when writing a day (setWeeklyPlanDay) and read back as-is here.
+      expect(WeeklyPlan.fromRows(rows).forWeekday(2).activityIds.length, 5);
+    });
+  });
+
   group('the suggestion changes through the day (bug 45)', () {
     SessionRow did(String activity, DateTime at, {int minutes = 30}) =>
         SessionRow(

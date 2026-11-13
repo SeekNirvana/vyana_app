@@ -98,6 +98,18 @@ class DayIntentController extends StateNotifier<DayIntentState> {
       final ring = _ref.read(ringControllerProvider);
       final wellness = ring.currentWellnessState();
       final readiness = HomeDashboard.from(ring).readinessScore;
+      // Item 46: a planned sport or strength day opens on Perform — still
+      // dashed until the user confirms it. Otherwise the weekday rule stands.
+      final planned = plannedIntentFor(
+        _ref.read(weeklyPlanProvider),
+        DateTime.now(),
+      );
+      if (planned != null) {
+        if (mounted && !state.confirmed && state.intent != planned) {
+          state = DayIntentState(planned, confirmed: false);
+        }
+        return;
+      }
       final intent = presetIntent(
         now: DateTime.now(),
         sessionStarts: [
@@ -382,6 +394,23 @@ String windDownFor(DateTime now) {
   return kWindDownRotation[day % kWindDownRotation.length];
 }
 
+/// A gentler practice to offer beside a planned one on a low-readiness day
+/// (item 46). Uses the same gentle rule as the day slot.
+String? _gentleAlternativeFor(
+  DayIntent intent,
+  List<String> pins,
+  List<SessionRow> todaysFinished,
+) {
+  final done = {for (final s in todaysFinished) s.vyanaActivityType};
+  for (final id in pins) {
+    if (kGentlePracticeIds.contains(id) && !done.contains(id)) return id;
+  }
+  for (final id in kGentlePracticeIds) {
+    if (!done.contains(id)) return id;
+  }
+  return null;
+}
+
 /// The whole rule behind the one suggestion card (bug 45), pure so Home, the
 /// Practice tab and the tests all read the same answer.
 ///
@@ -396,7 +425,34 @@ HomeSuggestion homeSuggestionFor({
   List<String> pins = const [],
   List<SessionRow> history = const [],
   List<SessionRow> todaysFinished = const [],
+  WeeklyPlan plan = WeeklyPlan.empty,
 }) {
+  // Item 46: a planned day replaces the day suggestion, and the morning's
+  // short practice too when the user usually trains before noon. Each stays
+  // until it is done or 22:00 — after that the evening wind-down takes over.
+  final planned = plannedStateFor(
+    plan: plan,
+    now: now,
+    todaysFinished: todaysFinished,
+    history: history,
+  );
+  if (planned != null) {
+    final usual = usualMinutesFor(planned.activityId, history);
+    final gentle = readiness != null && readiness < kGentleOnlyReadiness
+        ? _gentleAlternativeFor(intent, pins, todaysFinished)
+        : null;
+    return HomeSuggestion(
+      activityId: planned.activityId,
+      heading: 'Planned today',
+      reason: suggestedReasonFor(intent, readiness),
+      minutes: usual,
+      meta: planned.meta(usual),
+      setsTarget: false,
+      // Never swapped silently: the plan stands, with one line underneath.
+      lowReadinessAlternative: gentle,
+    );
+  }
+
   switch (moment) {
     case HomeMoment.morning:
       // Unchanged: the short practice, four minutes or less.

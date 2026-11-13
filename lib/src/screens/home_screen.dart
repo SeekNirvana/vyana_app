@@ -1090,6 +1090,7 @@ class _SuggestedPractice extends ConsumerWidget {
           if (s.endedAt != null) s,
       ],
       todaysFinished: today,
+      plan: ref.watch(weeklyPlanProvider),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1103,6 +1104,7 @@ class _SuggestedPractice extends ConsumerWidget {
           meta: suggestion.meta,
           offerPin: suggestion.offerPin,
           setsTarget: suggestion.setsTarget,
+          footnote: _LowReadinessAlternative(suggestion: suggestion),
           onPin: () => unawaited(
             ref
                 .read(pinnedPracticesProvider.notifier)
@@ -1113,6 +1115,40 @@ class _SuggestedPractice extends ConsumerWidget {
         ),
         DoneTodayLine(sessions: today),
       ],
+    );
+  }
+}
+
+/// Item 46: one line under a planned practice on a low-readiness day. The
+/// plan is never swapped silently — it is offered, and the user decides.
+class _LowReadinessAlternative extends StatelessWidget {
+  const _LowReadinessAlternative({required this.suggestion});
+
+  final HomeSuggestion suggestion;
+
+  @override
+  Widget build(BuildContext context) {
+    final id = suggestion.lowReadinessAlternative;
+    final alternative = id == null ? null : activityById(id);
+    if (alternative == null) return const SizedBox.shrink();
+    final t = context.vyana;
+    return InkWell(
+      onTap: () => openActivityDetail(context, alternative),
+      borderRadius: BorderRadius.circular(8),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 36),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Low readiness. Try ${alternative.name} instead?',
+            style: VyanaType.caption.copyWith(
+              color: t.textSec,
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -3,6 +3,329 @@
 part of 'db.dart';
 
 // ignore_for_file: type=lint
+class $WeeklyPlansTable extends WeeklyPlans
+    with TableInfo<$WeeklyPlansTable, WeeklyPlanRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $WeeklyPlansTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _weekdayMeta = const VerificationMeta(
+    'weekday',
+  );
+  @override
+  late final GeneratedColumn<int> weekday = GeneratedColumn<int>(
+    'weekday',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _positionMeta = const VerificationMeta(
+    'position',
+  );
+  @override
+  late final GeneratedColumn<int> position = GeneratedColumn<int>(
+    'position',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _activityIdMeta = const VerificationMeta(
+    'activityId',
+  );
+  @override
+  late final GeneratedColumn<String> activityId = GeneratedColumn<String>(
+    'activity_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    weekday,
+    position,
+    activityId,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'weekly_plans';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<WeeklyPlanRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('weekday')) {
+      context.handle(
+        _weekdayMeta,
+        weekday.isAcceptableOrUnknown(data['weekday']!, _weekdayMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_weekdayMeta);
+    }
+    if (data.containsKey('position')) {
+      context.handle(
+        _positionMeta,
+        position.isAcceptableOrUnknown(data['position']!, _positionMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_positionMeta);
+    }
+    if (data.containsKey('activity_id')) {
+      context.handle(
+        _activityIdMeta,
+        activityId.isAcceptableOrUnknown(data['activity_id']!, _activityIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_activityIdMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {weekday, position};
+  @override
+  WeeklyPlanRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return WeeklyPlanRow(
+      weekday: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}weekday'],
+      )!,
+      position: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}position'],
+      )!,
+      activityId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}activity_id'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $WeeklyPlansTable createAlias(String alias) {
+    return $WeeklyPlansTable(attachedDatabase, alias);
+  }
+}
+
+class WeeklyPlanRow extends DataClass implements Insertable<WeeklyPlanRow> {
+  /// 1 = Monday … 7 = Sunday, matching [DateTime.weekday].
+  final int weekday;
+
+  /// 1–3, the user's own order within the day.
+  final int position;
+  final String activityId;
+  final DateTime createdAt;
+  const WeeklyPlanRow({
+    required this.weekday,
+    required this.position,
+    required this.activityId,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['weekday'] = Variable<int>(weekday);
+    map['position'] = Variable<int>(position);
+    map['activity_id'] = Variable<String>(activityId);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  WeeklyPlansCompanion toCompanion(bool nullToAbsent) {
+    return WeeklyPlansCompanion(
+      weekday: Value(weekday),
+      position: Value(position),
+      activityId: Value(activityId),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory WeeklyPlanRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return WeeklyPlanRow(
+      weekday: serializer.fromJson<int>(json['weekday']),
+      position: serializer.fromJson<int>(json['position']),
+      activityId: serializer.fromJson<String>(json['activityId']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'weekday': serializer.toJson<int>(weekday),
+      'position': serializer.toJson<int>(position),
+      'activityId': serializer.toJson<String>(activityId),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  WeeklyPlanRow copyWith({
+    int? weekday,
+    int? position,
+    String? activityId,
+    DateTime? createdAt,
+  }) => WeeklyPlanRow(
+    weekday: weekday ?? this.weekday,
+    position: position ?? this.position,
+    activityId: activityId ?? this.activityId,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  WeeklyPlanRow copyWithCompanion(WeeklyPlansCompanion data) {
+    return WeeklyPlanRow(
+      weekday: data.weekday.present ? data.weekday.value : this.weekday,
+      position: data.position.present ? data.position.value : this.position,
+      activityId: data.activityId.present
+          ? data.activityId.value
+          : this.activityId,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WeeklyPlanRow(')
+          ..write('weekday: $weekday, ')
+          ..write('position: $position, ')
+          ..write('activityId: $activityId, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(weekday, position, activityId, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is WeeklyPlanRow &&
+          other.weekday == this.weekday &&
+          other.position == this.position &&
+          other.activityId == this.activityId &&
+          other.createdAt == this.createdAt);
+}
+
+class WeeklyPlansCompanion extends UpdateCompanion<WeeklyPlanRow> {
+  final Value<int> weekday;
+  final Value<int> position;
+  final Value<String> activityId;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const WeeklyPlansCompanion({
+    this.weekday = const Value.absent(),
+    this.position = const Value.absent(),
+    this.activityId = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  WeeklyPlansCompanion.insert({
+    required int weekday,
+    required int position,
+    required String activityId,
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : weekday = Value(weekday),
+       position = Value(position),
+       activityId = Value(activityId);
+  static Insertable<WeeklyPlanRow> custom({
+    Expression<int>? weekday,
+    Expression<int>? position,
+    Expression<String>? activityId,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (weekday != null) 'weekday': weekday,
+      if (position != null) 'position': position,
+      if (activityId != null) 'activity_id': activityId,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  WeeklyPlansCompanion copyWith({
+    Value<int>? weekday,
+    Value<int>? position,
+    Value<String>? activityId,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return WeeklyPlansCompanion(
+      weekday: weekday ?? this.weekday,
+      position: position ?? this.position,
+      activityId: activityId ?? this.activityId,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (weekday.present) {
+      map['weekday'] = Variable<int>(weekday.value);
+    }
+    if (position.present) {
+      map['position'] = Variable<int>(position.value);
+    }
+    if (activityId.present) {
+      map['activity_id'] = Variable<String>(activityId.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WeeklyPlansCompanion(')
+          ..write('weekday: $weekday, ')
+          ..write('position: $position, ')
+          ..write('activityId: $activityId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $ActivitySessionsTable extends ActivitySessions
     with TableInfo<$ActivitySessionsTable, SessionRow> {
   @override
@@ -8523,6 +8846,7 @@ class PracticeTargetsCompanion extends UpdateCompanion<PracticeTargetRow> {
 abstract class _$VyanaDatabase extends GeneratedDatabase {
   _$VyanaDatabase(QueryExecutor e) : super(e);
   $VyanaDatabaseManager get managers => $VyanaDatabaseManager(this);
+  late final $WeeklyPlansTable weeklyPlans = $WeeklyPlansTable(this);
   late final $ActivitySessionsTable activitySessions = $ActivitySessionsTable(
     this,
   );
@@ -8551,6 +8875,7 @@ abstract class _$VyanaDatabase extends GeneratedDatabase {
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [
+    weeklyPlans,
     activitySessions,
     samples,
     routePoints,
@@ -8593,6 +8918,189 @@ abstract class _$VyanaDatabase extends GeneratedDatabase {
   ]);
 }
 
+typedef $$WeeklyPlansTableCreateCompanionBuilder =
+    WeeklyPlansCompanion Function({
+      required int weekday,
+      required int position,
+      required String activityId,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+typedef $$WeeklyPlansTableUpdateCompanionBuilder =
+    WeeklyPlansCompanion Function({
+      Value<int> weekday,
+      Value<int> position,
+      Value<String> activityId,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$WeeklyPlansTableFilterComposer
+    extends Composer<_$VyanaDatabase, $WeeklyPlansTable> {
+  $$WeeklyPlansTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get weekday => $composableBuilder(
+    column: $table.weekday,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get position => $composableBuilder(
+    column: $table.position,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get activityId => $composableBuilder(
+    column: $table.activityId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$WeeklyPlansTableOrderingComposer
+    extends Composer<_$VyanaDatabase, $WeeklyPlansTable> {
+  $$WeeklyPlansTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get weekday => $composableBuilder(
+    column: $table.weekday,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get position => $composableBuilder(
+    column: $table.position,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get activityId => $composableBuilder(
+    column: $table.activityId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$WeeklyPlansTableAnnotationComposer
+    extends Composer<_$VyanaDatabase, $WeeklyPlansTable> {
+  $$WeeklyPlansTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get weekday =>
+      $composableBuilder(column: $table.weekday, builder: (column) => column);
+
+  GeneratedColumn<int> get position =>
+      $composableBuilder(column: $table.position, builder: (column) => column);
+
+  GeneratedColumn<String> get activityId => $composableBuilder(
+    column: $table.activityId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$WeeklyPlansTableTableManager
+    extends
+        RootTableManager<
+          _$VyanaDatabase,
+          $WeeklyPlansTable,
+          WeeklyPlanRow,
+          $$WeeklyPlansTableFilterComposer,
+          $$WeeklyPlansTableOrderingComposer,
+          $$WeeklyPlansTableAnnotationComposer,
+          $$WeeklyPlansTableCreateCompanionBuilder,
+          $$WeeklyPlansTableUpdateCompanionBuilder,
+          (
+            WeeklyPlanRow,
+            BaseReferences<_$VyanaDatabase, $WeeklyPlansTable, WeeklyPlanRow>,
+          ),
+          WeeklyPlanRow,
+          PrefetchHooks Function()
+        > {
+  $$WeeklyPlansTableTableManager(_$VyanaDatabase db, $WeeklyPlansTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$WeeklyPlansTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$WeeklyPlansTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$WeeklyPlansTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> weekday = const Value.absent(),
+                Value<int> position = const Value.absent(),
+                Value<String> activityId = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => WeeklyPlansCompanion(
+                weekday: weekday,
+                position: position,
+                activityId: activityId,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required int weekday,
+                required int position,
+                required String activityId,
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => WeeklyPlansCompanion.insert(
+                weekday: weekday,
+                position: position,
+                activityId: activityId,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$WeeklyPlansTableProcessedTableManager =
+    ProcessedTableManager<
+      _$VyanaDatabase,
+      $WeeklyPlansTable,
+      WeeklyPlanRow,
+      $$WeeklyPlansTableFilterComposer,
+      $$WeeklyPlansTableOrderingComposer,
+      $$WeeklyPlansTableAnnotationComposer,
+      $$WeeklyPlansTableCreateCompanionBuilder,
+      $$WeeklyPlansTableUpdateCompanionBuilder,
+      (
+        WeeklyPlanRow,
+        BaseReferences<_$VyanaDatabase, $WeeklyPlansTable, WeeklyPlanRow>,
+      ),
+      WeeklyPlanRow,
+      PrefetchHooks Function()
+    >;
 typedef $$ActivitySessionsTableCreateCompanionBuilder =
     ActivitySessionsCompanion Function({
       required String id,
@@ -13478,6 +13986,8 @@ typedef $$PracticeTargetsTableProcessedTableManager =
 class $VyanaDatabaseManager {
   final _$VyanaDatabase _db;
   $VyanaDatabaseManager(this._db);
+  $$WeeklyPlansTableTableManager get weeklyPlans =>
+      $$WeeklyPlansTableTableManager(_db, _db.weeklyPlans);
   $$ActivitySessionsTableTableManager get activitySessions =>
       $$ActivitySessionsTableTableManager(_db, _db.activitySessions);
   $$SamplesTableTableManager get samples =>

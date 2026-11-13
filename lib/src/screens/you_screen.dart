@@ -461,6 +461,24 @@ class YouScreen extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 18),
+        // ── Practice · the weekly plan (item 46) ──────────────────────────
+        const _YouHeading('Practice', 'My week'),
+        _SettingsGroup(
+          rows: [
+            _SettingsRow(
+              icon: 'calendar',
+              iconColor: t.heading,
+              label: 'My week',
+              subtitle: weeklyPlanSubtitle(ref.watch(weeklyPlanProvider)),
+              trailing: Text(
+                ref.watch(weeklyPlanProvider).isEmpty ? 'OFF' : 'ON',
+                style: VyanaType.mono10.copyWith(color: t.textMuted),
+              ),
+              onTap: () => openMyWeek(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
         // ── About you · baselines ──────────────────────────────────────────
         const _YouHeading('About you', 'Baselines'),
         _SettingsGroup(

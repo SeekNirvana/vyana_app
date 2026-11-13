@@ -26,6 +26,7 @@ class VitalsNotificationService {
   static const _staleRingId = 4302;
   static const _ringOfflineId = 4303;
   static const _overnightBatteryId = 4306;
+  static const _planReminderId = 4307;
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -176,6 +177,29 @@ class VitalsNotificationService {
       body: 'Your ring has been out of reach for two hours — the readings it '
           'takes now are not reaching your phone.',
     );
+  }
+
+  /// Item 46: the plan reminder — one notification on a planned day at the
+  /// user's usual start time, and only while the practice is not done.
+  /// Scheduled in advance, because on iOS there is no background timer
+  /// (bug 47) and on Android there is no reason to run one.
+  Future<void> schedulePlanReminder({
+    required DateTime at,
+    required String activityName,
+  }) async {
+    await cancelPlanReminder();
+    await _scheduleAt(
+      id: _planReminderId,
+      at: at,
+      title: '$activityName today',
+      body: "It's on your week. Twenty minutes is still a session.",
+    );
+  }
+
+  Future<void> cancelPlanReminder() async {
+    try {
+      await _plugin.cancel(_planReminderId);
+    } on Object catch (_) {}
   }
 
   Future<void> cancelRingOfflineAlert() async {

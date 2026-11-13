@@ -53,6 +53,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
           if (s.endedAt != null) s,
       ],
       todaysFinished: todaysFinishedSessions(sessions),
+      plan: ref.watch(weeklyPlanProvider),
     );
     final suggested = suggestion.activity;
     final look = scoreLook(

@@ -278,6 +278,10 @@ Activity? activityById(String id) {
   return null;
 }
 
+/// The whole catalogue, the user's own sports included. Item 46 plans from
+/// this rather than from pins.
+List<Activity> allActivities() => [...kActivities, ..._userActivities];
+
 /// Name match across all three categories, including the user's own sports
 /// (§5 "Catalogue search"). Movement grows past thirty rows, so the list
 /// needs a way in other than scrolling.
