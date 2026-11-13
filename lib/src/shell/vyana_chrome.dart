@@ -300,9 +300,21 @@ Future<void> openGuideChat(BuildContext context) {
 
 // ── Ring status ─────────────────────────────────────────────────────────────
 
-enum RingUiState { synced, syncing, stale, disconnected, charging }
+enum RingUiState {
+  synced,
+  syncing,
+  stale,
+  disconnected,
+  charging,
+
+  /// Bug 48: a reconnect the user asked for, in flight.
+  connecting,
+}
 
 RingUiState ringUiStateOf(RingController c) {
+  // Bug 48: first, so the tap on CONNECT is answered immediately rather than
+  // leaving the pill on CONNECT while the attempt runs.
+  if (c.isUserReconnecting) return RingUiState.connecting;
   if (c.isSyncing) return RingUiState.syncing;
   // Bug 43: the state existed and the mock had it, but nothing ever returned
   // it, so a charging ring showed a plain percentage. The SDK reports the
@@ -334,6 +346,9 @@ String _agoLabel(DateTime at) {
   }
   final last = c.lastSyncedAt;
   switch (ringUiStateOf(c)) {
+    case RingUiState.connecting:
+      // Bug 48: gold, because reaching the ring is a ring-sync state.
+      return (text: 'CONNECTING TO YOUR RING…', color: t.gold, pulse: true);
     case RingUiState.syncing:
       return (text: 'SYNCING YOUR RING', color: t.gold, pulse: true);
     case RingUiState.disconnected:
@@ -437,6 +452,91 @@ class _RingStatusDotState extends State<RingStatusDot>
   }
 }
 
+/// A reconnect in progress, in the banner's own slot. Bug 48: the banner used
+/// to keep saying "Nothing is reading you right now · Reconnect" throughout
+/// the attempt, so there was nothing to tell a running attempt from an
+/// ignored tap.
+class _ReachingRingBanner extends StatelessWidget {
+  const _ReachingRingBanner({required this.margin});
+
+  final EdgeInsets margin;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Container(
+      margin: margin,
+      padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
+      decoration: BoxDecoration(
+        color: t.gold.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.gold.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const SpinningIcon(icon: 'refresh', size: 16),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Reaching your ring…',
+              style: VyanaType.caption.copyWith(
+                color: t.text,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// An icon turning once a second — a ring-sync state in motion. Gold by
+/// default, because that is what reaching or syncing a ring looks like.
+class SpinningIcon extends StatefulWidget {
+  const SpinningIcon({
+    required this.icon,
+    required this.size,
+    this.color,
+    super.key,
+  });
+
+  final String icon;
+  final double size;
+  final Color? color;
+
+  @override
+  State<SpinningIcon> createState() => _SpinningIconState();
+}
+
+class _SpinningIconState extends State<SpinningIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return RotationTransition(
+      turns: _c,
+      child: VyanaIcon(
+        widget.icon,
+        size: widget.size,
+        color: widget.color ?? t.gold,
+      ),
+    );
+  }
+}
+
 /// Stale / disconnected banner with the fix inline — Sync now / Reconnect —
 /// so the user can act where they noticed the problem. Shown on Home (above
 /// the nav) and on Metrics (under the header).
@@ -457,6 +557,11 @@ class RingStaleBanner extends StatelessWidget {
     final t = context.vyana;
     final c = controller;
     final state = ringUiStateOf(c);
+    // Bug 48: the banner is the other place a reconnect starts, so it shows
+    // the attempt too instead of looking untouched.
+    if (state == RingUiState.connecting) {
+      return _ReachingRingBanner(margin: margin);
+    }
     if (state != RingUiState.stale && state != RingUiState.disconnected) {
       return const SizedBox.shrink();
     }
@@ -520,8 +625,10 @@ class RingStaleBanner extends StatelessWidget {
             InkWell(
               onTap: busy
                   ? null
+                  // Bug 48: the same feedback path as Sync, so a failed
+                  // reconnect says so instead of doing nothing.
                   : () => error
-                        ? unawaited(c.reconnectSavedRing(force: true))
+                        ? unawaited(reconnectWithFeedback(context, c))
                         : unawaited(syncRingWithFeedback(context, c)),
               borderRadius: BorderRadius.circular(8),
               child: Padding(

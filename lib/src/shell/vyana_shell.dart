@@ -146,10 +146,16 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
     final sessionRecording = ref.watch(sessionControllerProvider).active;
     // On Home the stale banner takes the pill's place above the nav, so the
     // user can fix the ring where they noticed it; elsewhere Nova stays.
+    // Bug 48: the connecting state keeps the banner's slot, so the attempt
+    // started from the banner stays visible while it runs rather than
+    // snapping back to the Nova pill.
     final showHomeBanner =
         index == homeTab &&
-        (ringUiStateOf(ring) == RingUiState.stale ||
-            ringUiStateOf(ring) == RingUiState.disconnected);
+        const {
+          RingUiState.stale,
+          RingUiState.disconnected,
+          RingUiState.connecting,
+        }.contains(ringUiStateOf(ring));
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {

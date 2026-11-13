@@ -26,6 +26,7 @@ class RingController extends ChangeNotifier {
   bool _isReady = false;
   bool _isConnecting = false;
   bool _isAutoReconnecting = false;
+  bool _isUserReconnecting = false;
   bool _isSyncing = false;
   bool _isMeasuring = false;
   bool _isConnected = false;
@@ -233,6 +234,11 @@ class RingController extends ChangeNotifier {
   /// out of reach" — the UI must not show a battery pill for a ring it has
   /// not actually spoken to.
   bool get reconnectFailedThisLaunch => _reconnectFailedThisLaunch;
+
+  /// Bug 48: a reconnect the user asked for is running. Tapping CONNECT used
+  /// to fire [reconnectSavedRing] with `unawaited` and change nothing on
+  /// screen, so a ring out of reach failed silently.
+  bool get isUserReconnecting => _isUserReconnecting;
 
   /// The outcome of the most recent one-shot measurement, kept after it ends
   /// so the detail screen can show success or failure instead of dropping
@@ -860,7 +866,13 @@ class RingController extends ChangeNotifier {
     // cycle is noisy; only user-driven reconnects narrate progress.
     _set(() {
       _isAutoReconnecting = true;
-      if (force) _status = 'Checking paired PRANA ring';
+      // Bug 48: a user-driven attempt has to be visible. The pill, the
+      // eyebrow and the banner all read this, so tapping CONNECT changes
+      // something the moment it is tapped.
+      if (force) {
+        _isUserReconnecting = true;
+        _status = 'Checking paired PRANA ring';
+      }
     });
 
     try {
@@ -913,7 +925,10 @@ class RingController extends ChangeNotifier {
       return false;
     } finally {
       if (!_disposed) {
-        _set(() => _isAutoReconnecting = false);
+        _set(() {
+          _isAutoReconnecting = false;
+          _isUserReconnecting = false;
+        });
       }
     }
   }

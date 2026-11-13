@@ -201,11 +201,14 @@ class _HomeHeader extends ConsumerWidget {
               live: c.isConnected,
               onTap: () => switch (uiState) {
                 RingUiState.disconnected => unawaited(
-                  c.reconnectSavedRing(force: true),
+                  reconnectWithFeedback(context, c),
                 ),
                 RingUiState.stale => unawaited(
                   syncRingWithFeedback(context, c),
                 ),
+                // Bug 48: taps are ignored while an attempt runs, rather
+                // than opening the ring screen on top of it.
+                RingUiState.connecting => null,
                 _ => openScanner(context, c),
               },
             ),
@@ -245,6 +248,9 @@ class _RingPill extends StatelessWidget {
         false,
         'refresh',
       ),
+      // Bug 48: the tap is answered on the pill itself — gold, because
+      // reaching the ring is a ring-sync state, with the icon turning.
+      RingUiState.connecting => ('CONNECTING…', t.gold, true, 'refresh'),
       // Bug 43: charging is neither a sync state nor a verdict, so it is
       // grey — never the gold of a sync or the green of a good reading.
       RingUiState.charging => (
@@ -281,7 +287,10 @@ class _RingPill extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (icon != null) ...[
-                VyanaIcon(icon, size: 13, color: tone),
+                if (state == RingUiState.connecting)
+                  SpinningIcon(icon: icon, size: 13, color: tone)
+                else
+                  VyanaIcon(icon, size: 13, color: tone),
                 const SizedBox(width: 5),
               ] else ...[
                 RingStatusDot(color: live ? t.qGood : t.mutedInk, pulse: live),

@@ -47,6 +47,52 @@ Future<void> openMeasurements(BuildContext context, RingController c) {
   );
 }
 
+/// How long a user-driven reconnect is given before it is called a failure.
+/// A direct connect, a six-second scan and a connect fit inside this.
+const Duration kReconnectTimeout = Duration(seconds: 20);
+
+/// Bug 48: tapping CONNECT used to call `reconnectSavedRing(force: true)`
+/// with `unawaited` and nothing else — no change on the pill, no message, and
+/// a silent failure when the ring was out of reach. This is the reconnect
+/// equivalent of [syncRingWithFeedback], and every Reconnect action uses it.
+///
+/// The pill, the eyebrow and the banner switch to "connecting" on their own,
+/// from [RingController.isUserReconnecting]; this adds the ending — a sync on
+/// success, a snackbar with a way forward on failure.
+Future<void> reconnectWithFeedback(
+  BuildContext context,
+  RingController c,
+) async {
+  // Ignore taps while an attempt is already running.
+  if (c.isUserReconnecting || c.isConnected) return;
+
+  var connected = false;
+  try {
+    connected = await c
+        .reconnectSavedRing(force: true)
+        .timeout(kReconnectTimeout, onTimeout: () => c.isConnected);
+  } on Object catch (error) {
+    debugPrint('Reconnect with feedback failed: $error');
+  }
+  if (!context.mounted) return;
+
+  if (connected) {
+    // A fresh connection starts its own sync; this makes it the narrated one.
+    await syncRingWithFeedback(context, c);
+    return;
+  }
+  showVyanaSnackBar(
+    context,
+    message: "Couldn't reach your ring. Keep it close and try again.",
+    success: false,
+    duration: const Duration(seconds: 6),
+    action: SnackBarAction(
+      label: 'Ring screen',
+      onPressed: () => unawaited(openScanner(context, c)),
+    ),
+  );
+}
+
 Future<void> syncRingWithFeedback(
   BuildContext context,
   RingController c,
@@ -234,11 +280,12 @@ class YouScreen extends ConsumerWidget {
                     : (lastSync == null
                         ? 'Not synced yet'
                         : 'Last synced ${_clockLabel(lastSync)}'),
-                onTap: !c.isReady || c.isSyncing
+                onTap: !c.isReady || c.isSyncing || c.isUserReconnecting
                     ? null
                     : () => c.isConnected
                         ? unawaited(syncRingWithFeedback(context, c))
-                        : unawaited(c.reconnectSavedRing(force: true)),
+                        // Bug 48: same feedback path everywhere.
+                        : unawaited(reconnectWithFeedback(context, c)),
               ),
               _SettingsRow(
                 icon: 'ring',
