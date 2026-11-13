@@ -407,8 +407,9 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
                           style: VyanaType.eyebrow.copyWith(color: t.gold),
                         ),
                         Text(
+                          // Bug 49 (2): Vyana is the app; the ring is PRANA.
                           _pairedRing == null
-                              ? 'Vyana rings'
+                              ? 'PRANA rings'
                               : '${_pairedRing!.modelName} ring',
                           style: VyanaType.appBarSerif.copyWith(color: t.text),
                         ),

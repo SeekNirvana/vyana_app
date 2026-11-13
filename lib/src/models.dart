@@ -582,6 +582,13 @@ String _firmwareFromParts(dynamic source) {
   return '$major.$sub';
 }
 
+/// The ring models Vyana ships, upper case. Bug 49: the screen title is
+/// built from this rather than from whatever the SDK puts in `deviceType` —
+/// which on this SDK is the device category "Ring", not a model. Extend it
+/// when the next model ships (Diagnostics logs the raw value, so the new
+/// one is known before then).
+const Set<String> kRingModels = {'PRANA'};
+
 class SavedPranaRing {
   const SavedPranaRing({
     required this.name,
@@ -617,15 +624,29 @@ class SavedPranaRing {
   /// ring rather than hard-coded, so a future model shows its own name. The
   /// user's own rename ("Leena 03BE") is not a model, so the first word is
   /// only used when it still looks like one.
+  ///
+  /// Bug 49: `deviceType` was trusted outright, and this SDK reports a device
+  /// *category* there — "Ring" — so the title became "Ring ring" for every
+  /// user and the fallback below was never reached. Only a value that matches
+  /// a model we actually ship is used; a raw SDK category never is.
   String get modelName {
     final type = _cleanText(deviceType);
-    if (type != null) return type;
+    if (type != null && kRingModels.contains(type.toUpperCase())) {
+      return type.toUpperCase();
+    }
     final first = _cleanText(name)?.split(' ').first;
-    if (first != null && first.toUpperCase() == first && first.length > 2) {
+    if (first != null &&
+        first.toUpperCase() == first &&
+        first.length > 2 &&
+        kRingModels.contains(first)) {
       return first;
     }
     return 'PRANA';
   }
+
+  /// The raw `deviceType` the SDK reported, for Diagnostics (bug 49 (3)) —
+  /// so the next model's value is known before it ships.
+  String? get rawDeviceType => _cleanText(deviceType);
 
   String get displayAddress =>
       _cleanText(address) ??

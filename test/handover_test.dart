@@ -577,6 +577,43 @@ void main() {
     });
   });
 
+  group('ring screen title (bug 49)', () {
+    SavedPranaRing ring({String? deviceType, String? name}) => SavedPranaRing(
+          name: name,
+          address: 'AA:BB:CC:DD:EE:FF',
+          macAddress: null,
+          deviceIdentifier: null,
+          deviceId: null,
+          deviceType: deviceType,
+          rssi: null,
+          batteryPower: 80,
+          batteryStatus: 'normal',
+          firmwareVersion: null,
+          lastSeenAt: null,
+          lastConnectedAt: null,
+        );
+
+    test('the SDK device category is never shown as a model', () {
+      // What this SDK actually reports — it made the title "Ring ring".
+      expect(ring(deviceType: 'Ring').modelName, 'PRANA');
+      expect(ring(deviceType: 'SmartRing').modelName, 'PRANA');
+      expect(ring(deviceType: null).modelName, 'PRANA');
+      // A rename is not a model either.
+      expect(ring(name: 'LEENA 03BE').modelName, 'PRANA');
+    });
+
+    test('a model we ship is used as-is', () {
+      expect(kRingModels, contains('PRANA'));
+      expect(ring(deviceType: 'PRANA').modelName, 'PRANA');
+      expect(ring(deviceType: 'prana').modelName, 'PRANA');
+    });
+
+    test('the raw type is kept for Diagnostics', () {
+      expect(ring(deviceType: 'Ring').rawDeviceType, 'Ring');
+      expect(ring(deviceType: null).rawDeviceType, isNull);
+    });
+  });
+
   group('the ring on its charger (bug 43)', () {
     test('the SDK statuses that mean charging', () {
       for (final raw in ['2', 'charging', 'charge', 'CHARGING']) {

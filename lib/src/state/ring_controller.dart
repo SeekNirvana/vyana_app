@@ -1040,6 +1040,13 @@ class RingController extends ChangeNotifier {
     );
     await PranaRingStore.save(next);
     if (_disposed) return;
+    // Bug 49 (3): record the raw SDK device type once per change, so the next
+    // model's value is on the record before it ships. Diagnostics shows the
+    // live value; this keeps the one from a ring that is later unpaired.
+    final rawType = next.rawDeviceType;
+    if (rawType != null && rawType != _pairedRing?.rawDeviceType) {
+      _logEvent('sdk_device_type=$rawType');
+    }
     _set(() {
       _pairedRing = next;
       _selectedDevice = device;

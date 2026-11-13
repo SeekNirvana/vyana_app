@@ -392,6 +392,12 @@ class _RingDiagnosticsScreenState
                       label: 'Last night',
                       value: c.missingNightReason.phrase,
                     ),
+                    // Bug 49 (3): the raw SDK value, so the next model's
+                    // device type is known before it ships.
+                    _DiagLine(
+                      label: 'SDK device type',
+                      value: c.pairedRing?.rawDeviceType ?? '—',
+                    ),
 
                   ],
                 ),
