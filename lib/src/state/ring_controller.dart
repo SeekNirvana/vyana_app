@@ -327,7 +327,33 @@ class RingController extends ChangeNotifier {
   /// must not raise the low-battery alert, nor clear one that is standing.
   DateTime? get batteryReadAt => _batteryReadAt;
 
-  void _markBatteryRead() => _batteryReadAt = DateTime.now();
+  void _markBatteryRead() {
+    _batteryReadAt = DateTime.now();
+    unawaited(_refreshScheduledBatteryAlert());
+  }
+
+  /// Bug 47: on iPhone nothing of ours runs in the background, so the evening
+  /// battery check has to be handed to the OS from the newest reading and
+  /// withdrawn as soon as the ring is charged. On Android the foreground
+  /// service evaluates it live each heartbeat (bug 44 (4)), so scheduling it
+  /// there would only duplicate it.
+  Future<void> _refreshScheduledBatteryAlert() async {
+    if (!Platform.isIOS) return;
+    final battery = batteryPercent;
+    final notify = VitalsNotificationService.instance;
+    if (battery == null ||
+        battery <= 0 ||
+        battery > kBatteryRecoveredPercent ||
+        _pairedRing == null) {
+      await notify.cancelOvernightBattery();
+      return;
+    }
+    if (battery >= kOvernightBatteryMin) return;
+    await notify.scheduleOvernightBattery(
+      battery: battery,
+      at: nextEveningBatteryCheck(DateTime.now()),
+    );
+  }
 
   bool get supportsFactoryReset =>
       _features?.supports('isSupportFactorySettings') ?? false;

@@ -279,6 +279,23 @@ const int kEveningBatteryCheckToHour = 22;
 /// The flat-battery floor, kept as a fallback outside the evening window.
 const int kLowBatteryPercent = 15;
 
+/// When the next evening battery check falls due. Bug 47: iOS gives no timer
+/// in the background, so the alert has to be handed to the OS in advance —
+/// which means knowing the moment it should land.
+DateTime nextEveningBatteryCheck(DateTime now) {
+  final today = DateTime(now.year, now.month, now.day);
+  if (now.hour < kEveningBatteryCheckFromHour) {
+    return today.add(const Duration(hours: kEveningBatteryCheckFromHour));
+  }
+  if (now.hour < kEveningBatteryCheckToHour) {
+    // Already inside the window: there is nothing to wait for.
+    return now.add(const Duration(minutes: 1));
+  }
+  return today
+      .add(const Duration(days: 1))
+      .add(const Duration(hours: kEveningBatteryCheckFromHour));
+}
+
 /// Above this a low-battery episode is over and the alert may fire again.
 const int kBatteryRecoveredPercent = 30;
 

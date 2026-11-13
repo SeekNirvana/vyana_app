@@ -25,6 +25,7 @@ class VitalsNotificationService {
   static const _practiceEndId = 4205;
   static const _staleRingId = 4302;
   static const _ringOfflineId = 4303;
+  static const _overnightBatteryId = 4306;
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -180,6 +181,33 @@ class VitalsNotificationService {
   Future<void> cancelRingOfflineAlert() async {
     try {
       await _plugin.cancel(_ringOfflineId);
+    } on Object catch (_) {}
+  }
+
+  /// Bug 47: the evening battery check, handed to the OS in advance.
+  ///
+  /// On Android the foreground service evaluates it live on each heartbeat
+  /// (bug 44 (4)). iOS has no background timer at all, so the only honest
+  /// option is to schedule it from the last percentage the ring reported and
+  /// cancel it the moment the ring is charged — which [cancelOvernightBattery]
+  /// does. Its own id, so it can never collide with the live Android alert.
+  Future<void> scheduleOvernightBattery({
+    required int battery,
+    required DateTime at,
+  }) async {
+    await cancelOvernightBattery();
+    await _scheduleAt(
+      id: _overnightBatteryId,
+      at: at,
+      title: 'Your ring was at $battery%',
+      body: 'That will not last the night. Charge it before bed or there '
+          'will be no sleep data in the morning.',
+    );
+  }
+
+  Future<void> cancelOvernightBattery() async {
+    try {
+      await _plugin.cancel(_overnightBatteryId);
     } on Object catch (_) {}
   }
 

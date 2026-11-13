@@ -67,8 +67,22 @@ class RingForegroundTaskHandler extends TaskHandler {
   }
 }
 
-/// Wrapper around the `flutter_foreground_task` plugin for Android. It is a
-/// no-op on iOS because iOS background execution will be built later.
+/// Wrapper around the `flutter_foreground_task` plugin for Android.
+///
+/// Bug 47: on iOS there is no equivalent service, and nothing here starts
+/// one. What keeps the ring alive on iPhone is instead:
+///
+/// * `bluetooth-central` in `UIBackgroundModes` (ios/Runner/Info.plist), so
+///   iOS does not tear the BLE connection down when Vyana is backgrounded;
+/// * Core Bluetooth state restoration — a restore identifier on the SDK's
+///   central manager — so iOS relaunches Vyana when the ring connects or
+///   sends data. That lives in the ring SDK, not in this repo; see
+///   docs/ios-background.md for what it needs;
+/// * the time-based alerts handed to the OS in advance as local
+///   notifications ([VitalsNotificationService.scheduleStaleRingAlert],
+///   [VitalsNotificationService.scheduleRingOfflineAlert] and
+///   [VitalsNotificationService.scheduleOvernightBattery]), because iOS gives
+///   no background timer to evaluate them with.
 class RingForegroundService {
   static bool _initialized = false;
 
