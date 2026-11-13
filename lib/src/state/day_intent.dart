@@ -52,6 +52,14 @@ class DayIntentController extends StateNotifier<DayIntentState> {
   DayIntentController(this._ref)
       : super(const DayIntentState(null, confirmed: false)) {
     unawaited(_load());
+    // Item 46: a planned sport day pre-sets Perform, but the pre-set is
+    // derived once at launch — so planning a run in You left the chip on
+    // whatever the weekday rule had already chosen. Re-derive when the plan
+    // changes; a value the user confirmed is still never overwritten.
+    _ref.listen<WeeklyPlan>(
+      weeklyPlanProvider,
+      (_, _) => unawaited(ensureToday()),
+    );
   }
 
   DayIntent? get intent => state.intent;
