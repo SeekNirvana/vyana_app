@@ -577,6 +577,18 @@ void main() {
     });
   });
 
+  group('a reading from another day (bug 40)', () {
+    final today = DateTime(2026, 10, 14); // a Wednesday
+
+    test('the weekday inside a week, the date beyond it', () {
+      expect(earlierDayLabel(DateTime(2026, 10, 13), now: today), 'Tue');
+      expect(earlierDayLabel(DateTime(2026, 10, 9), now: today), 'Fri');
+      // Seven days back is the same weekday name, so it needs the date.
+      expect(earlierDayLabel(DateTime(2026, 10, 7), now: today), '7 Oct');
+      expect(earlierDayLabel(DateTime(2026, 9, 28), now: today), '28 Sep');
+    });
+  });
+
   group('period end prompt (bug 34)', () {
     CycleDayRow day(int d, {bool confirmed = false}) => CycleDayRow(
           day: DateTime(2026, 10, d),

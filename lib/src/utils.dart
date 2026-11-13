@@ -774,3 +774,24 @@ String timeOfDayLabel(DateTime time) {
   final minute = time.minute.toString().padLeft(2, '0');
   return '$hour:$minute';
 }
+
+const List<String> kShortWeekdays = [
+  'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
+];
+
+const List<String> kShortMonths = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/// How a day older than today is named: the weekday inside a week ("Tue"),
+/// the date beyond it ("12 Oct"). Bug 40 — a value from another day always
+/// says which day it came from.
+String earlierDayLabel(DateTime day, {DateTime? now}) {
+  final today = now ?? DateTime.now();
+  final a = DateTime(day.year, day.month, day.day);
+  final b = DateTime(today.year, today.month, today.day);
+  final days = b.difference(a).inDays;
+  if (days >= 1 && days < 7) return kShortWeekdays[a.weekday - 1];
+  return '${a.day} ${kShortMonths[a.month - 1]}';
+}
