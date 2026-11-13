@@ -1083,65 +1083,43 @@ void main() {
     });
   });
 
-  group("Nova's own voice (bug 42)", () {
-    GuideVoiceOption v(String name, {String? quality, String locale = 'en-US',
-        String network = 'false'}) =>
-        GuideVoiceOption(
-          raw: {
-            'name': name,
-            'locale': locale,
-            'network_required': network,
-          },
-          name: name,
-          locale: locale,
-          identifier: name,
-          quality: quality,
-        );
-
-    test('the best offline system voice, not the first one listed', () {
-      final voices = [
-        v('alpha'),
-        v('beta', quality: 'enhanced'),
-        v('gamma', quality: 'premium'),
-      ];
-      expect(
-        GuideVoiceService.bestOfflineSystemVoice(voices)?.name,
-        'gamma',
-      );
-    });
-
-    test('a network voice is never the fallback', () {
-      // Every reply would leave the phone, which breaks the promise the
-      // whole guide rests on.
-      final voices = [
-        v('cloud', quality: 'premium', network: 'true'),
-        v('local', quality: 'enhanced'),
-      ];
-      expect(
-        GuideVoiceService.bestOfflineSystemVoice(voices)?.name,
-        'local',
-      );
-    });
-
-    test("Android's numeric quality is ranked too", () {
-      final voices = [v('low', quality: '300'), v('high', quality: '400')];
-      expect(GuideVoiceService.bestOfflineSystemVoice(voices)?.name, 'high');
-    });
-
-    test('English is preferred, but something is always returned', () {
-      final voices = [v('de', locale: 'de-DE', quality: 'premium'), v('en')];
-      expect(GuideVoiceService.bestOfflineSystemVoice(voices)?.name, 'en');
-      expect(GuideVoiceService.bestOfflineSystemVoice(const []), isNull);
-    });
-
-    test('Nova\'s voice is not a system voice', () {
+  group("Nova's own voice — the only voice", () {
+    test('the picker offers Nova, or nothing at all', () {
+      // The phone's own text-to-speech used to follow Nova in this list as
+      // a fallback. It is gone: flutter_tts is only ever as good as the
+      // engine the phone happens to have, and on a phone without Google
+      // services that is a flat screen-reader voice. The dApp Store build
+      // cannot assume otherwise.
       expect(GuideVoiceOption.nova.isNovaVoice, isTrue);
-      expect(v('alpha').isNovaVoice, isFalse);
+      expect(GuideVoiceOption.nova.identifier,
+          GuideVoiceOption.kNovaIdentifier);
+    });
+
+    test('not having the voice says what to do about it', () {
+      // Silence that explains itself, rather than a worse voice.
+      final message = GuideVoiceService.novaVoiceUnavailableMessage;
+      expect(message, isNotEmpty);
+      if (novaVoiceConfigured) {
+        expect(message, contains(novaVoiceApproxSizeLabel));
+      }
+    });
+
+    test('the pin names a build sherpa-onnx actually publishes', () {
+      // There is no kokoro-v0.19-int8 upstream: v0.19 ships fp32 only, and
+      // the int8 builds are the multi-lang packs. Naming a build that does
+      // not exist is how a packaging step gets attempted and abandoned.
+      expect(kNovaVoiceVersion, 'kokoro-en-v0_19');
+      expect(kNovaVoiceModelFile, 'model.onnx');
+    });
+
+    test('the install prompt states the real size, in MB', () {
+      // 355 MB, not the 90 MB an int8 build would have been. "0.35 GB"
+      // reads as a rounding error, so anything under a gigabyte is MB.
+      expect(kNovaVoiceApproxBytes, greaterThan(300 * 1024 * 1024));
+      expect(novaVoiceApproxSizeLabel, '355 MB');
     });
 
     test('the voice is only fetched from our own host, by digest', () {
-      // Until the Kokoro release is mirrored and pinned, nothing is fetched
-      // and Nova falls back to a system voice.
       expect(kNovaVoiceHost, 'cdn.seeknirvana.app');
       expect(novaVoiceConfigured, kNovaVoiceFiles.isNotEmpty);
       for (final asset in kNovaVoiceFiles) {

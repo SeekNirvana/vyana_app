@@ -8,23 +8,27 @@ import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 import 'nova_voice_assets.dart';
 
-/// Bug 42 — Nova's own voice, generated on the phone.
+/// Nova's own voice, generated on the phone — and the only voice she has.
 ///
 /// Nova used to speak through the phone's system text-to-speech
-/// (`flutter_tts`), which is built for screen reading and sounds flat. She now
-/// speaks with Kokoro, a neural voice run locally through sherpa-onnx.
+/// (`flutter_tts`), which is built for screen reading and sounds flat. That
+/// fallback is gone: it was only ever as good as the engine the phone
+/// happened to have, and on a phone without Google services — which the
+/// dApp Store build cannot assume — it was the screen-reader voice nobody
+/// wants guidance in. She speaks with Kokoro, run locally through
+/// sherpa-onnx, or she does not speak.
 ///
 /// Three rules hold without exception:
 ///
 /// * **Never a cloud voice.** Every reply would leave the phone, which breaks
 ///   "This conversation never leaves your phone". Nothing in this file opens
 ///   a socket; the only network access is the pinned, checksummed download in
-///   [nova_voice_assets.dart], which happens once at install.
+///   [nova_voice_assets.dart], which happens once, when the user asks for it.
 /// * **Verified before first load.** The model is re-checked against its
 ///   pinned SHA-256 before it is ever handed to sherpa-onnx.
-/// * **Quiet fallback.** If the voice is missing, still downloading or fails
-///   its check, [isReady] stays false and the caller falls back to the best
-///   offline *system* voice.
+/// * **Silence, not a worse voice.** If the voice is missing, still
+///   downloading or fails its check, [isReady] stays false, the reply stays
+///   on screen, and the UI says what is missing.
 ///
 /// Listening (Whisper, on device) is untouched.
 class NovaVoiceService {
@@ -38,8 +42,8 @@ class NovaVoiceService {
   bool _bindingsReady = false;
   String? _lastError;
 
-  /// Set when the pinned files failed to verify, so the UI can say why it is
-  /// using a system voice rather than silently sounding different.
+  /// Set when the pinned files failed to verify, so the UI can say why Nova
+  /// has gone quiet rather than leaving the reply unexplained.
   String? get lastError => _lastError;
 
   bool get isReady => _tts != null;
@@ -95,8 +99,7 @@ class NovaVoiceService {
     }
   }
 
-  /// One default voice per language; the picker can still choose a system
-  /// voice instead, which is what [GuideVoiceService] falls back to.
+  /// Which of the pack's 11 English voices Nova uses.
   static const int kDefaultSpeakerId = 0;
 
   /// Speaks [text] and completes when playback finishes.

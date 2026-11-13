@@ -356,7 +356,9 @@ class EcgRecordings extends Table {
 class GuideVoicePrefs extends Table {
   TextColumn get id => text()();
 
-  /// JSON map from flutter_tts `getVoices`, persisted for replay on launch.
+  /// The chosen voice as JSON. Once a flutter_tts `getVoices` entry; now
+  /// only ever Nova's own, since the system voices are no longer offered.
+  /// An older row holding a system voice resolves to null on load.
   TextColumn get selectedVoiceJson => text().nullable()();
 
   BoolColumn get voiceResponsesEnabled =>

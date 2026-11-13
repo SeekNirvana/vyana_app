@@ -3,15 +3,27 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
-/// Single on-device TTS engine for the whole app.
+/// The app's audio-session router. It no longer speaks.
 ///
-/// [flutter_tts] uses one platform channel. Creating multiple [FlutterTts]
-/// instances (e.g. guide replies + session voice cues) overwrites the channel
-/// handler and breaks spoken playback.
+/// Vyana used to read guidance aloud through the phone's own text-to-speech.
+/// It doesn't any more: `flutter_tts` is only ever as good as the engine the
+/// phone happens to have, and on a phone without Google services — which is
+/// every install we cannot assume, since Vyana ships through the dApp Store
+/// — that is a flat screen-reader voice. Nova speaks with Kokoro or not at
+/// all (see [NovaVoiceService]).
 ///
-/// Guide read-aloud uses the same iOS audio session as SeekNirvana mobile-app
-/// (`playback` + `voicePrompt`). Mic capture switches to `playAndRecord` only
-/// while recording — locking playAndRecord at startup silences TTS.
+/// What remains here is the one thing `flutter_tts` still does for us:
+/// setting the shared `AVAudioSession` category. That session is
+/// process-wide, so it governs Kokoro's playback through `audioplayers` and
+/// the mic capture through `record` just as it governed speech before.
+/// Playback wants `playback` + `voicePrompt`; capture switches to
+/// `playAndRecord` only while recording, because locking `playAndRecord` at
+/// startup silences playback.
+///
+/// This could be done with `audioplayers`' own `AudioContext` and the
+/// dependency dropped. It is left here deliberately: this is the routing
+/// already proven on device, and swapping it blind would risk guided
+/// sessions on a platform this machine cannot test.
 class AppTtsService {
   AppTtsService._();
 
@@ -46,7 +58,12 @@ class AppTtsService {
     rebindMethodChannel();
   }
 
-  /// Configure for guide read-aloud and session voice cues (mobile-app parity).
+  /// Route audio for playback — Kokoro's generated WAV and session cues.
+  ///
+  /// [speechRate] and the pitch/volume calls are vestigial: nothing here
+  /// speaks any more, and Kokoro's rate is passed to its own generate(). The
+  /// calls are kept because `rebindMethodChannel` plus a settled engine is
+  /// what makes the iOS category change below stick.
   Future<void> prepareGuideSpeech({double speechRate = 0.45}) async {
     rebindMethodChannel();
     await tts.awaitSpeakCompletion(true);
@@ -68,9 +85,6 @@ class AppTtsService {
       );
     }
 
-    if (Platform.isAndroid) {
-      await _preferGoogleEngine();
-    }
   }
 
   /// Switch iOS audio route for microphone capture (Whisper STT).
@@ -102,22 +116,5 @@ class AppTtsService {
   /// Back-compat alias — always re-applies the guide-speech audio route.
   Future<void> ensureReady({double speechRate = 0.45}) {
     return prepareGuideSpeech(speechRate: speechRate);
-  }
-
-  Future<void> _preferGoogleEngine() async {
-    try {
-      final engines = await tts.getEngines;
-      if (engines is! List) return;
-      final google = engines.cast<String?>().firstWhere(
-        (engine) =>
-            engine?.toLowerCase().contains('google') ?? false,
-        orElse: () => null,
-      );
-      if (google != null) {
-        await tts.setEngine(google);
-      }
-    } on Object {
-      // Best-effort — system default is fine when Google TTS is absent.
-    }
   }
 }

@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:path/path.dart' as p;
 import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,9 +36,9 @@ class GuideVoiceOption {
 
   String get stableId => identifier ?? '$name::$locale';
 
-  /// Bug 42: Nova's own Kokoro voice, as a picker entry. It is not a system
-  /// voice, so it carries a reserved identifier and is never passed to
-  /// flutter_tts.
+  /// Nova's own Kokoro voice — the only entry there is. It carries a
+  /// reserved identifier so a voice stored by an older build, which would
+  /// have been a system voice, resolves to nothing rather than to this.
   static const String kNovaIdentifier = 'vyana::nova::kokoro';
 
   static const GuideVoiceOption nova = GuideVoiceOption(
@@ -78,7 +77,6 @@ class GuideVoiceService extends ChangeNotifier {
   final VyanaDatabase _db;
   final AudioRecorder _recorder = AudioRecorder();
   final AppTtsService _ttsEngine = AppTtsService.instance;
-  FlutterTts get _tts => _ttsEngine.tts;
 
   Future<void>? _initFuture;
   Future<void>? _speakReadyFuture;
@@ -94,17 +92,16 @@ class GuideVoiceService extends ChangeNotifier {
   String? _activeRecordingPath;
   String? _lastError;
   WhisperModel _whisperModel = WhisperModel.tiny;
-  List<GuideVoiceOption> _voices = const [];
   GuideVoiceOption? _selectedVoice;
   bool _novaVoiceReady = false;
+  bool _novaVoiceDownloading = false;
+  double _novaVoiceDownloadProgress = 0;
 
   GuideVoiceService({
     required GuideModelManager modelManager,
     required VyanaDatabase db,
   })  : _modelManager = modelManager,
-        _db = db {
-    _bindSpeakHandlers();
-  }
+        _db = db;
 
   bool get voiceResponsesEnabled => _voiceResponsesEnabled;
   bool get isRecording => _isRecording;
@@ -116,11 +113,16 @@ class GuideVoiceService extends ChangeNotifier {
   bool get isBusy => _isRecording || _isTranscribing;
   String? get lastError => _lastError;
   WhisperModel get whisperModel => _whisperModel;
-  /// Bug 42: Nova's own voice heads the list when it is installed and
-  /// verified, and the system voices follow — the picker can still switch.
+  /// Nova's own voice, or nothing.
+  ///
+  /// The system voices used to follow it here as a fallback. They are gone:
+  /// `flutter_tts` is only ever as good as the engine the phone happens to
+  /// have, and on a phone without Google services — which is every install
+  /// we cannot assume, since Vyana ships through the dApp Store — that is
+  /// the flat screen-reader voice nobody wants to hear guidance in. Reading
+  /// aloud is now Kokoro or silence, and silence says why.
   List<GuideVoiceOption> get voices => [
         if (_novaVoiceReady) GuideVoiceOption.nova,
-        ..._voices,
       ];
 
   /// Whether Nova's Kokoro voice is installed, verified and loaded.
@@ -130,7 +132,6 @@ class GuideVoiceService extends ChangeNotifier {
   /// the user chose one.
   String? get novaVoiceError => NovaVoiceService.instance.lastError;
   GuideVoiceOption? get selectedVoice => _selectedVoice;
-  bool get hasVoices => _voices.isNotEmpty;
 
   Future<void> init() {
     return _initFuture ??= _initialize();
@@ -154,10 +155,6 @@ class GuideVoiceService extends ChangeNotifier {
     }
 
     await _ttsEngine.prepareGuideSpeech();
-    _bindSpeakHandlers();
-    if (_voices.isEmpty) {
-      await _refreshVoices(notify: false);
-    }
     await _ensureNovaVoice();
 
     if (_selectedVoice == null &&
@@ -184,7 +181,6 @@ class GuideVoiceService extends ChangeNotifier {
       _whisperModel = parsedModel.first;
     }
 
-    await _refreshVoices(notify: false);
     await _ensureNovaVoice();
 
     try {
@@ -246,13 +242,12 @@ class GuideVoiceService extends ChangeNotifier {
       final stableId = _stableVoiceId(rawVoice);
       // Bug 42: Nova's own voice is stored like any other choice, but it is
       // not in the system list, so it is matched first.
+      // A stored system voice from an older build resolves to nothing, so
+      // the user lands on Nova's voice — or on the prompt to install it.
       if (stableId == GuideVoiceOption.kNovaIdentifier) {
         return _novaVoiceReady ? GuideVoiceOption.nova : null;
       }
-      return _voices.cast<GuideVoiceOption?>().firstWhere(
-        (voice) => voice?.stableId == stableId,
-        orElse: () => null,
-      );
+      return null;
     } catch (_) {
       return null;
     }
@@ -260,13 +255,9 @@ class GuideVoiceService extends ChangeNotifier {
 
   Future<void> _persistVoicePrefs({bool notify = true}) async {
     final selected = _selectedVoice;
-    // Nova's own voice is a real, persistable choice even though it is not a
-    // system voice — only the "System default" placeholders are not.
-    final persistable = selected == null
-        ? null
-        : selected.isNovaVoice || !_isSyntheticVoice(selected)
-            ? jsonEncode(selected.raw)
-            : null;
+    // Nova's voice is the only one there is, so it is the only one stored.
+    final persistable =
+        selected != null && selected.isNovaVoice ? jsonEncode(selected.raw) : null;
     await _db.upsertGuideVoicePrefs(
       selectedVoiceJson: persistable,
       voiceResponsesEnabled: _voiceResponsesEnabled,
@@ -284,58 +275,6 @@ class GuideVoiceService extends ChangeNotifier {
     _ffmpegConverterRegistered = true;
   }
 
-  Future<void> refreshVoices({bool notify = true}) async {
-    await init();
-    await _refreshVoices(notify: notify);
-  }
-
-  Future<void> _refreshVoices({
-    bool notify = true,
-    int attempt = 0,
-  }) async {
-    try {
-      await _tts.getLanguages;
-      final parsed = <GuideVoiceOption>[];
-      final rawVoices = await _tts.getVoices;
-      if (rawVoices is List) {
-        parsed.addAll(
-          rawVoices
-              .whereType<Map>()
-              .map((item) => _parseVoiceOption(Map<String, dynamic>.from(item)))
-              .whereType<GuideVoiceOption>(),
-        );
-      }
-
-      if (parsed.isEmpty && attempt < 4) {
-        await Future<void>.delayed(
-          Duration(milliseconds: 200 * (attempt + 1)),
-        );
-        return await _refreshVoices(notify: notify, attempt: attempt + 1);
-      }
-
-      _voices = parsed.toSet().toList()
-        ..sort(
-          (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
-        );
-      if (_selectedVoice != null) {
-        final selectedId = _selectedVoice!.stableId;
-        _selectedVoice = _voices.cast<GuideVoiceOption?>().firstWhere(
-          (voice) => voice?.stableId == selectedId,
-          orElse: () => _defaultVoiceOption(),
-        );
-      } else {
-        _selectedVoice = _defaultVoiceOption();
-      }
-      _lastError = null;
-    } catch (error) {
-      _lastError = 'Unable to load device voices: $error';
-    }
-
-    if (notify) {
-      notifyListeners();
-    }
-  }
-
   /// Bug 42: loads Kokoro if its pinned files are present and verified. A
   /// missing, half-downloaded or failed voice simply leaves [_novaVoiceReady]
   /// false, and the best offline system voice takes over.
@@ -350,6 +289,60 @@ class GuideVoiceService extends ChangeNotifier {
       debugPrint('[GuideVoice] Nova voice unavailable: $error');
       _novaVoiceReady = false;
     }
+  }
+
+  /// Whether this build has a voice to fetch at all. False until the Kokoro
+  /// release is mirrored and pinned; the UI says so rather than offering a
+  /// download that cannot start.
+  bool get novaVoiceAvailableToInstall => novaVoiceConfigured;
+
+  bool get isDownloadingNovaVoice => _novaVoiceDownloading;
+  double get novaVoiceDownloadProgress => _novaVoiceDownloadProgress;
+
+  /// What the install prompt should say it will cost. One source, so the
+  /// button and the progress bar cannot disagree.
+  String get novaVoiceDownloadSize => novaVoiceApproxSizeLabel;
+
+  /// Fetches Nova's voice — the one opt-in download that turns reading
+  /// aloud on. Never called at launch: the user asks for it here.
+  Future<void> downloadNovaVoiceModel() async {
+    if (_novaVoiceDownloading || !novaVoiceConfigured) return;
+    _novaVoiceDownloading = true;
+    _novaVoiceDownloadProgress = 0;
+    _lastError = null;
+    notifyListeners();
+    try {
+      await downloadNovaVoice(
+        onProgress: (progress) {
+          _novaVoiceDownloadProgress = progress;
+          notifyListeners();
+        },
+      );
+      await refreshNovaVoice();
+    } on NovaVoiceIntegrityException catch (error) {
+      // The file on the host is not the file this build pinned. Say so
+      // plainly rather than retrying past a check nobody passed.
+      debugPrint('[GuideVoice] $error');
+      _lastError =
+          "Nova's voice did not match what this build expects, so it was "
+          'not installed. Try again after updating Vyana.';
+    } on Object catch (error) {
+      _lastError = "Nova's voice could not be downloaded: $error";
+    } finally {
+      _novaVoiceDownloading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Removes the voice and the space it takes. Reading aloud goes quiet
+  /// again rather than falling back to anything.
+  Future<void> deleteNovaVoiceModel() async {
+    await NovaVoiceService.instance.dispose();
+    await deleteNovaVoice();
+    _novaVoiceReady = false;
+    _selectedVoice = null;
+    _novaVoiceDownloadProgress = 0;
+    await _persistVoicePrefs();
   }
 
   /// Called after the voice finishes downloading with Nova, so the first
@@ -371,11 +364,7 @@ class GuideVoiceService extends ChangeNotifier {
 
   Future<void> setSelectedVoice(GuideVoiceOption? voice) async {
     await _ensureSpeakReady();
-    final next = voice ?? _defaultVoiceOption();
-    if (next != null && _isSyntheticVoice(next)) {
-      return;
-    }
-    _selectedVoice = next;
+    _selectedVoice = voice ?? _defaultVoiceOption();
     await _persistVoicePrefs();
   }
 
@@ -391,7 +380,6 @@ class GuideVoiceService extends ChangeNotifier {
     if (_isSpeaking) {
       await stopSpeaking();
     }
-    await _tts.stop();
     await _ttsEngine.prepareRecording();
 
     final path = await _nextRecordingPath();
@@ -484,28 +472,6 @@ class GuideVoiceService extends ChangeNotifier {
     }
   }
 
-  void _bindSpeakHandlers() {
-    _ttsEngine.bindHandlers(
-      onStart: () {
-        _isSpeaking = true;
-        notifyListeners();
-      },
-      onComplete: () {
-        _isSpeaking = false;
-        notifyListeners();
-      },
-      onCancel: () {
-        _isSpeaking = false;
-        notifyListeners();
-      },
-      onError: (message) {
-        _isSpeaking = false;
-        _lastError = message?.toString();
-        notifyListeners();
-      },
-    );
-  }
-
   Future<void> speak(String text) async {
     final normalized = text.trim();
     if (normalized.isEmpty) return;
@@ -513,83 +479,45 @@ class GuideVoiceService extends ChangeNotifier {
     _lastError = null;
     await _ensureSpeakReady();
 
-    // Bug 42: Nova's own voice when it is the selected one and loaded. On
-    // any failure we fall through to the system voice rather than leaving
-    // the reply unspoken.
-    if ((_selectedVoice?.isNovaVoice ?? false) && _novaVoiceReady) {
-      _isSpeaking = true;
+    if (!_novaVoiceReady) {
+      // Not an error the user caused, and not something to paper over with
+      // the system voice: say what is missing and leave the reply on screen.
+      _lastError = novaVoiceUnavailableMessage;
       notifyListeners();
-      try {
-        await NovaVoiceService.instance.speak(normalized);
-        return;
-      } on Object catch (error) {
-        debugPrint('[GuideVoice] Nova voice failed, using system: $error');
-        _novaVoiceReady = false;
-        _selectedVoice = bestOfflineSystemVoice(_voices);
-      } finally {
-        _isSpeaking = false;
-        notifyListeners();
-      }
-    }
-
-    if (_isSpeaking) {
-      await _tts.stop();
-    }
-
-    await _ttsEngine.preparePlayback();
-    _bindSpeakHandlers();
-    await _applySpeakVoice();
-
-    _isSpeaking = true;
-    notifyListeners();
-
-    try {
-      await _tts.speak(normalized, focus: true);
-    } catch (error) {
-      _isSpeaking = false;
-      _lastError = 'Unable to speak the response: $error';
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  bool _isSyntheticVoice(GuideVoiceOption voice) {
-    // Nova's own voice is not a flutter_tts voice either: it must never be
-    // handed to setVoice (bug 42).
-    return voice.isNovaVoice ||
-        voice.name == 'System voice' ||
-        voice.name == 'System default';
-  }
-
-  Map<String, String> _voiceMapFor(GuideVoiceOption voice) {
-    final map = <String, String>{
-      'name': voice.name,
-      'locale': voice.locale,
-    };
-    if (voice.identifier != null && voice.identifier!.isNotEmpty) {
-      map['identifier'] = voice.identifier!;
-    }
-    return map;
-  }
-
-  Future<void> _applySpeakVoice() async {
-    final selected = _selectedVoice ?? _defaultVoiceOption();
-    if (selected == null || _isSyntheticVoice(selected)) {
       return;
     }
 
-    if (selected.locale.isNotEmpty) {
-      await _tts.setLanguage(selected.locale);
+    // The audio session still has to be routed for playback — Kokoro's WAV
+    // goes out through audioplayers, and on iOS that needs the category set
+    // back after any recording.
+    await _ttsEngine.preparePlayback();
+
+    _isSpeaking = true;
+    notifyListeners();
+    try {
+      await NovaVoiceService.instance.speak(normalized);
+    } on Object catch (error) {
+      debugPrint('[GuideVoice] Nova voice failed: $error');
+      _lastError = NovaVoiceService.instance.lastError ??
+          'Nova could not speak that: $error';
+    } finally {
+      _isSpeaking = false;
+      notifyListeners();
     }
-    await _tts.setVoice(_voiceMapFor(selected));
   }
+
+  /// What the UI says when reading aloud is asked for and the voice is not
+  /// installed. One sentence, and it names the way out.
+  static String get novaVoiceUnavailableMessage => novaVoiceConfigured
+      ? "Nova's voice is not installed yet — download it in Guides › Voice "
+          '($novaVoiceApproxSizeLabel).'
+      : "Nova's voice is not available in this build yet.";
 
   Future<void> stopSpeaking() async {
     _speakQueue.clear();
     _isProcessingQueue = false;
     _isSpeaking = false;
     await NovaVoiceService.instance.stop();
-    await _tts.stop();
     notifyListeners();
   }
 
@@ -611,19 +539,27 @@ class GuideVoiceService extends ChangeNotifier {
 
     try {
       await _ensureSpeakReady();
+      if (!_novaVoiceReady) {
+        _speakQueue.clear();
+        _lastError = novaVoiceUnavailableMessage;
+        return;
+      }
       await _ttsEngine.preparePlayback();
-      _bindSpeakHandlers();
-      await _applySpeakVoice();
 
       _isSpeaking = true;
       notifyListeners();
 
+      // Kokoro generates a whole chunk before any of it plays, so a chunk is
+      // a sentence rather than a token — queueSpeak's callers already split
+      // on sentence boundaries while streaming.
       while (_speakQueue.isNotEmpty) {
         final chunk = _speakQueue.removeAt(0);
         try {
-          await _tts.speak(chunk, focus: true);
-        } catch (error) {
-          _lastError = 'Unable to speak: $error';
+          await NovaVoiceService.instance.speak(chunk);
+        } on Object catch (error) {
+          _lastError = NovaVoiceService.instance.lastError ??
+              'Unable to speak: $error';
+          _speakQueue.clear();
           break;
         }
       }
@@ -644,81 +580,13 @@ class GuideVoiceService extends ChangeNotifier {
   @override
   void dispose() {
     unawaited(_recorder.dispose());
-    unawaited(_tts.stop());
+    unawaited(NovaVoiceService.instance.stop());
     super.dispose();
   }
 
-  GuideVoiceOption? _parseVoiceOption(Map<String, dynamic> raw) {
-    final mapped = raw.map(
-      (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
-    );
-    final name = mapped['name']?.trim() ?? '';
-    final locale = [mapped['locale'], mapped['language']]
-        .map((value) => value?.trim() ?? '')
-        .firstWhere((value) => value.isNotEmpty, orElse: () => '');
-    if (name.isEmpty || locale.isEmpty) {
-      return null;
-    }
-    final identifier = _stringOrNull(mapped['identifier']);
-    final voiceMap = <String, String>{
-      'name': name,
-      'locale': locale,
-      if (identifier != null) 'identifier': identifier,
-    };
-    return GuideVoiceOption(
-      raw: voiceMap,
-      name: name,
-      locale: locale,
-      identifier: identifier,
-      gender: _stringOrNull(mapped['gender']),
-      quality: _stringOrNull(mapped['quality']),
-    );
-  }
-
-  /// The voice Nova uses when the user has not chosen one.
-  ///
-  /// Bug 42: Nova's own Kokoro voice when it is installed and verified.
-  /// Otherwise the *best offline system voice* — not simply the first one
-  /// listed, which is how Nova ended up sounding like a screen reader. Never
-  /// a network voice: every reply would leave the phone.
-  GuideVoiceOption? _defaultVoiceOption() {
-    if (_novaVoiceReady) return GuideVoiceOption.nova;
-    return bestOfflineSystemVoice(_voices);
-  }
-
-  /// iOS ranks Premium above Enhanced above Default; Android exposes a
-  /// `quality` of 300/400 and a `network_required` flag. Public and pure so
-  /// the ordering can be tested without a platform channel.
-  static GuideVoiceOption? bestOfflineSystemVoice(
-    List<GuideVoiceOption> voices,
-  ) {
-    if (voices.isEmpty) return null;
-
-    int rank(GuideVoiceOption v) {
-      final quality = (v.quality ?? '').toLowerCase();
-      // A voice that needs the network is not offline, whatever its quality.
-      final network = v.raw['network_required']?.toLowerCase();
-      if (network == 'true' || network == '1') return -1;
-      if (quality.contains('premium')) return 4;
-      if (quality.contains('enhanced')) return 3;
-      // Android reports a numeric quality; 400 is its best.
-      final numeric = int.tryParse(quality);
-      if (numeric != null) return numeric >= 400 ? 3 : 1;
-      return 0;
-    }
-
-    final english = [
-      for (final v in voices)
-        if (v.locale.toLowerCase().startsWith('en')) v,
-    ];
-    final pool = english.isNotEmpty ? english : voices;
-    final offline = [
-      for (final v in pool)
-        if (rank(v) >= 0) v,
-    ];
-    if (offline.isEmpty) return pool.first;
-    return offline.reduce((a, b) => rank(b) > rank(a) ? b : a);
-  }
+  /// The only voice there is, once it is installed and verified.
+  GuideVoiceOption? _defaultVoiceOption() =>
+      _novaVoiceReady ? GuideVoiceOption.nova : null;
 
   String _stableVoiceId(Map<String, dynamic> rawVoice) {
     final identifier = rawVoice['identifier']?.toString().trim();
@@ -728,14 +596,6 @@ class GuideVoiceService extends ChangeNotifier {
     final name = rawVoice['name']?.toString().trim() ?? '';
     final locale = rawVoice['locale']?.toString().trim() ?? '';
     return '$name::$locale';
-  }
-
-  String? _stringOrNull(String? value) {
-    final normalized = value?.trim();
-    if (normalized == null || normalized.isEmpty) {
-      return null;
-    }
-    return normalized;
   }
 
   Future<String> _voiceRootPath() async {
