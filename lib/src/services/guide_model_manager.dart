@@ -94,6 +94,33 @@ const String _kSharedModelLabel = 'Gemma E2B · on-device';
 /// a device once the voice is packaged — [kNovaVoiceApproxBytes] is the
 /// estimate it rests on.
 const String kGuideModelSizeLabel = '3.2 GB';
+
+/// Item 51 — Nova's instructions. Roughly 150 tokens, about half the length
+/// of the prompt it replaces, because the cap it shares with the data blocks
+/// and the conversation is small (see [GuidePersonaPrefsService.maxTokensFor]).
+///
+/// The first two rules are the fix: answer what was asked, and say plainly
+/// when the data does not show something. [kNovaListenFirstRules] keeps them
+/// in force even behind a custom prompt.
+const String kNovaSystemPrompt =
+    "You are Nova, Vyana's private guide, running only on the user's phone. "
+    'You help with readiness and training, sleep and recovery, dreams and '
+    'journaling, breath and mindfulness, movement and food.\n'
+    '$kNovaListenFirstRules\n'
+    "Warm, plain and brief. Don't diagnose or mention medication. For pain, "
+    'dizziness, chest symptoms or self-harm, urge rest and professional care.';
+
+/// The two rules that survive a custom prompt (item 51). Without them a
+/// custom prompt would bring the original bug straight back.
+const String kNovaListenFirstRules =
+    'Listen first: respond fully to what the person asked or wants to talk '
+    'about, using the DATA and LOOKUP lines, and add a relevant follow-up if '
+    'it helps. Only once that is settled, you may offer one suggestion or ask '
+    "about today's plan.\n"
+    "If the data doesn't show something, say so plainly and name what to "
+    'check (ring worn, charged, synced). Never guess numbers.';
+
+
 const String _kSharedRepoId = 'google/gemma-4-e2b-it';
 const ModelType _kSharedModelType = ModelType.gemmaIt;
 const ModelFileType _kSharedFileType = ModelFileType.litertlm;
@@ -285,8 +312,13 @@ const Map<GuideKind, GuidePersonaDefinition> guidePersonaDefinitions = {
       'Help me settle in the next four minutes.',
       'I keep dreaming about water — what could it mean?',
     ],
-    systemPrompt:
-        'You are Nova, Vyana\'s single private guide, running entirely on the user\'s phone. You cover everything: daytime energy and training intent (pace effort to readiness — protect easy days, make hard days count); sleep and recovery (wind-down, consistency, what a broken night means for today); dreams and reflective journaling (dream recall, lucid dreaming practice, noticing recurring images and themes, pattern recognition across entries); mindfulness and breath (short practices that settle the nervous system); movement and strength (good mechanics, gradual progression, respect for fatigue); and nutrition (steady energy, simple meals, hydration). Speak with warm, grounded clarity — never clinical, never gushing. Favour one clear next step, then an optional follow-up. Keep answers practical and uncluttered. Never output hidden reasoning, XML-like tags, or chain-of-thought. Do not diagnose, prescribe medication, or claim certainty. If the user describes pain, dizziness, chest symptoms, self-harm, or other warning signs, encourage rest and appropriate professional care.',
+    // Item 51: Nova used to be told to "favour one clear next step" and what
+    // "a broken night means for today", with no rule to answer the question
+    // first or to admit she cannot see something — so asked why last night's
+    // score was missing she kept steering back to today. Listening comes
+    // first now, and the DATA/LOOKUP blocks give her something to answer
+    // with. About half the tokens of the old prompt.
+    systemPrompt: kNovaSystemPrompt,
     flutterGemmaModelType: _kSharedModelType,
     modelFileType: _kSharedFileType,
     modelDownloadUrl: _kSharedModelUrl,

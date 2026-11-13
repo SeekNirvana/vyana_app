@@ -71,6 +71,7 @@ part 'src/state/personal_baselines.dart';
 part 'src/state/cycle_tracking.dart';
 part 'src/state/day_intent.dart';
 part 'src/state/weekly_plan.dart';
+part 'src/state/nova_context.dart';
 part 'src/state/lucid_arm.dart';
 part 'src/state/pattern_engine.dart';
 part 'src/state/pinned_practices.dart';

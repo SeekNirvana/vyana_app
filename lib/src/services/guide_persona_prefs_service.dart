@@ -63,6 +63,17 @@ class GuidePersonaPrefsService extends ChangeNotifier {
   GuidePersonaPrefsService(this._db);
 
   static const double defaultTemperature = 0.8;
+  /// The reply cap, shared by the instructions, the data blocks, the
+  /// conversation and the reply itself.
+  ///
+  /// **Item 51 developer note — do not change here.** With the shorter
+  /// instructions and the DATA block (about 150 tokens each) Android keeps
+  /// roughly 700 tokens for the reply and earlier messages, iOS only about
+  /// 180 — so on iPhone a longer chat will forget earlier messages and
+  /// replies stay short. The "Short" setting halves it again (256 on iOS).
+  /// Whether iOS should be raised to 1,024 to match Android has to be
+  /// measured for memory and speed on the oldest supported iPhones first,
+  /// and reported back before anything moves.
   static const int androidBalancedMaxTokens = 1024;
   static const int iosBalancedMaxTokens = 512;
 
@@ -99,7 +110,13 @@ class GuidePersonaPrefsService extends ChangeNotifier {
 
     return GuidePersonaEffectiveConfig(
       personaId: personaId,
-      systemPrompt: usesCustom ? customPrompt : definition.systemPrompt,
+      // Item 51: a custom prompt replaces the built-in one, but the two
+      // rules that fix the reported bug are kept — without them a custom
+      // prompt brings "let's focus on today" straight back. The data blocks
+      // are appended either way, by the caller.
+      systemPrompt: usesCustom
+          ? '$customPrompt\n$kNovaListenFirstRules'
+          : definition.systemPrompt,
       temperature: (prefs?.temperatureOverride ?? defaultTemperature)
           .clamp(0.2, 1.2),
       maxTokens: maxTokensFor(responseLength),

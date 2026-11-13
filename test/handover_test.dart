@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyana/main.dart';
 import 'package:vyana/src/data/db.dart';
+import 'package:vyana/src/services/guide_model_manager.dart';
+import 'package:vyana/src/services/guide_persona_prefs_service.dart';
 import 'package:vyana/src/services/guide_voice_service.dart';
 import 'package:vyana/src/services/nova_voice_assets.dart';
 import 'package:vyana/src/wellness/wellness_state.dart';
@@ -620,6 +622,154 @@ void main() {
         );
         expect(n.sleepOnset, n.windowStart);
       }
+    });
+  });
+
+  group('Nova listens first and can see your data (item 51)', () {
+    final now = DateTime(2026, 11, 10, 15, 20); // a Tuesday
+
+    NovaFacts facts({
+      NovaDay? lastNight,
+      MissingNightReason reason = MissingNightReason.recorded,
+      List<String> concerns = const [],
+      List<String> patterns = const [],
+      DateTime? lastSync,
+    }) =>
+        NovaFacts(
+          now: now,
+          lastNight: lastNight,
+          nightReason: reason,
+          yesterday: NovaDay(
+            day: DateTime(2026, 11, 9),
+            sleepSeconds: 6 * 3600 + 50 * 60,
+            sleepScore: 78,
+            readiness: 71,
+          ),
+          today: NovaDay(
+            day: DateTime(2026, 11, 10),
+            readiness: 62,
+            hrv: 48,
+            restingHr: 58,
+          ),
+          hrvBase: 55,
+          restingHrBase: 54,
+          intent: DayIntent.recover,
+          intentConfirmed: false,
+          hasRing: true,
+          lastSyncedAt: lastSync ?? DateTime(2026, 11, 9, 23, 10),
+          batteryPercent: 12,
+          suggestion: 'Body Scan',
+          suggestionMinutes: 15,
+          plannedActivity: 'Yoga Flow',
+          plannedDone: false,
+          patterns: patterns,
+          concerns: concerns,
+        );
+
+    test('a missing night says why, and when the ring last synced', () {
+      final block = formatNovaData(
+        facts(reason: MissingNightReason.notSynced),
+      );
+      expect(block, startsWith('DATA (from the ring and app, not the user)'));
+      expect(block, contains('last night: missing'));
+      expect(block, contains('not synced since last night'));
+      expect(block, contains('no sync since Mon 9 Nov 23:10'));
+    });
+
+    test("today's numbers carry their baselines", () {
+      final block = formatNovaData(facts());
+      expect(block, contains('today: readiness 62 · HRV 48 (base 55)'));
+      expect(block, contains('resting HR 58 (base 54)'));
+      expect(block, contains('yesterday: sleep 6h 50m · score 78'));
+    });
+
+    test("today's plan covers intent, suggestion and the planned practice",
+        () {
+      final block = formatNovaData(facts());
+      expect(
+        block,
+        contains(
+          "today's plan: intent Recover (not confirmed) · "
+          'suggested Body Scan 15 min · planned Yoga Flow (not done)',
+        ),
+      );
+    });
+
+    test('lines with nothing in them are left out', () {
+      final block = formatNovaData(facts());
+      expect(block, isNot(contains('patterns:')));
+      expect(block, isNot(contains('concerning:')));
+      final loud = formatNovaData(
+        facts(
+          patterns: ['water dreams on 3 of last 5 nights after late dinners'],
+          concerns: ['no sleep last night', 'battery low'],
+        ),
+      );
+      expect(loud, contains('patterns: water dreams on 3 of'));
+      expect(loud, contains('concerning: no sleep last night · battery low'));
+    });
+
+    test('the block stays near its size target', () {
+      final block = formatNovaData(
+        facts(
+          patterns: ['water dreams on 3 of last 5 nights after late dinners'],
+          concerns: ['no sleep last night', 'battery low'],
+        ),
+      );
+      // ~4 characters a token: a generous ceiling on the 150-token target.
+      expect(block.length, lessThan(kNovaDataTargetTokens * 6));
+    });
+
+    test('a past day or range is recognised; today alone is not', () {
+      NovaLookupRange? at(String m) => novaLookupRangeFor(m, now: now);
+      expect(at('how did I sleep on Tuesday?')?.label, 'Tue');
+      expect(at('what about yesterday?')?.label, 'yesterday');
+      expect(at('how was last week?')?.label, 'last week');
+      expect(at('show me this month')?.label, 'this month');
+      expect(at('what happened on 3 Nov?')?.from, DateTime(2026, 11, 3));
+      expect(at('is my HRV trending down?')?.label, 'last 7 days');
+      // No date, no metric over time — nothing to look up.
+      expect(at('I feel tired'), isNull);
+      expect(at('what should I do now?'), isNull);
+    });
+
+    test('a long range is summarised rather than listed', () {
+      final days = [
+        for (var i = 0; i < 20; i++)
+          NovaDay(
+            day: DateTime(2026, 10, 20 + i),
+            sleepScore: 60 + i,
+            nightMissing: i == 3,
+          ),
+      ];
+      final short = formatNovaLookup(days.take(5).toList(), label: '5 days');
+      expect(short.split('\n').length, 6); // header + 5 day lines
+      final long = formatNovaLookup(days, label: 'last 20 days');
+      expect(long, contains('20 days'));
+      expect(long, contains('average score'));
+      expect(long, contains('best 79'));
+      expect(long, contains('worst 60'));
+      expect(long, contains('1 missing night'));
+      expect(long.split('\n').length, 2);
+    });
+
+    test('the instructions say to listen first and to admit a gap', () {
+      expect(kNovaSystemPrompt, contains('Listen first'));
+      expect(kNovaSystemPrompt, contains("If the data doesn't show something"));
+      expect(kNovaSystemPrompt, contains('Never guess numbers'));
+      // Roughly half the old prompt: ~150 tokens.
+      expect(kNovaSystemPrompt.length, lessThan(1000));
+      // The two rules survive a custom prompt.
+      expect(kNovaListenFirstRules, contains('Listen first'));
+      expect(
+        kNovaListenFirstRules,
+        contains("If the data doesn't show something"),
+      );
+    });
+
+    test('the token cap is unchanged — item 51 says to measure first', () {
+      expect(GuidePersonaPrefsService.androidBalancedMaxTokens, 1024);
+      expect(GuidePersonaPrefsService.iosBalancedMaxTokens, 512);
     });
   });
 

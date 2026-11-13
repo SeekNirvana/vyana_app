@@ -60,6 +60,18 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     final prompt = (text ?? _input.text).trim();
     if (prompt.isEmpty || _sending) return;
 
+    // Item 51: the model used to be sent the typed text and nothing else, so
+    // it could not answer a question about the user's own data — and there
+    // was never a privacy reason for it, since model and data are both on
+    // this phone. The block is appended after the user's words; the user
+    // never sees or types it, and the bubble below still shows `prompt`.
+    final lookup = novaLookupBlockFor(ref, prompt);
+    final modelPrompt = [
+      prompt,
+      novaDataBlockFor(ref),
+      if (lookup.isNotEmpty) lookup,
+    ].join('\n\n');
+
     final kind = guideKindForPersona(guide);
     final runtime = ref.read(guideRuntimeServiceProvider);
     final manager = ref.read(guideModelManagerProvider);
@@ -80,7 +92,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
         var spokenUpTo = 0;
         final sentenceEnd = RegExp(r'[.!?]\s+');
         await for (final partial
-            in runtime.streamResponse(guide: kind, prompt: prompt)) {
+            in runtime.streamResponse(guide: kind, prompt: modelPrompt)) {
           if (!mounted) return;
           setState(() => _messages[replyIndex] =
               GuideMessage(fromUser: false, text: partial));
@@ -107,7 +119,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
         }
       } else {
         final reply =
-            await runtime.generateResponse(guide: kind, prompt: prompt);
+            await runtime.generateResponse(guide: kind, prompt: modelPrompt);
         if (!mounted) return;
         setState(() => _messages[replyIndex] =
             GuideMessage(fromUser: false, text: reply));
