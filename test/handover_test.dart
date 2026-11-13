@@ -623,14 +623,159 @@ void main() {
     });
   });
 
+  group('the suggestion changes through the day (bug 45)', () {
+    SessionRow did(String activity, DateTime at, {int minutes = 30}) =>
+        SessionRow(
+          id: '$activity-${at.millisecondsSinceEpoch}',
+          category: activityById(activity)?.cat ?? 'mind',
+          vyanaActivityType: activity,
+          ringSportType: 0,
+          startedAt: at,
+          endedAt: at.add(Duration(minutes: minutes)),
+          phoneLocationEnabled: false,
+        );
+
+    final morning = DateTime(2026, 11, 10, 8);
+    final afternoon = DateTime(2026, 11, 10, 14);
+    final evening = DateTime(2026, 11, 10, 19);
+    final state = WellnessState.empty();
+
+    HomeSuggestion at(
+      DateTime now, {
+      DayIntent intent = DayIntent.recover,
+      int? readiness = 70,
+      List<String> pins = const [],
+      List<SessionRow> history = const [],
+      List<SessionRow> today = const [],
+    }) =>
+        homeSuggestionFor(
+          intent: intent,
+          state: state,
+          readiness: readiness,
+          moment: homeMomentAt(now),
+          now: now,
+          pins: pins,
+          history: history,
+          todaysFinished: today,
+        );
+
+    test('the morning is unchanged: a short practice, 4 minutes or less', () {
+      final s = at(morning);
+      expect(s.heading, 'Suggested practice');
+      expect(s.minutes, lessThanOrEqualTo(kSuggestedMaxMinutes));
+      expect(s.setsTarget, isTrue);
+    });
+
+    test('the day suggests a pin that fits the intent', () {
+      final s = at(
+        afternoon,
+        intent: DayIntent.perform,
+        pins: const ['bodyScan', 'outdoorRun'],
+        history: [did('outdoorRun', afternoon.subtract(const Duration(days: 2)), minutes: 32)],
+      );
+      expect(s.heading, 'Suggested activity');
+      // Body Scan is pinned first but is not a Perform practice.
+      expect(s.activityId, 'outdoorRun');
+      expect(s.meta, 'YOUR USUAL · 32 MIN');
+      // Opens with no target set — "your usual" describes, it does not set.
+      expect(s.setsTarget, isFalse);
+      expect(s.offerPin, isFalse);
+      // No 4-minute cap outside the morning.
+      expect(s.minutes, 32);
+    });
+
+    test('low readiness means gentle only, whatever the chip says', () {
+      final s = at(
+        afternoon,
+        intent: DayIntent.perform,
+        readiness: 42,
+        pins: const ['outdoorRun', 'walk'],
+      );
+      expect(s.activityId, 'walk');
+    });
+
+    test('a practice already done today is skipped', () {
+      final s = at(
+        afternoon,
+        pins: const ['walk', 'stretching'],
+        today: [did('walk', afternoon.subtract(const Duration(hours: 3)))],
+      );
+      expect(s.activityId, 'stretching');
+    });
+
+    test('with no pin that fits, something done before — and "Pin it"', () {
+      final s = at(
+        afternoon,
+        pins: const ['outdoorRun'],
+        history: [
+          did('swimming', afternoon.subtract(const Duration(days: 1))),
+          did('mobility', afternoon.subtract(const Duration(days: 9))),
+        ],
+      );
+      expect(s.activityId, 'swimming');
+      expect(s.offerPin, isTrue);
+    });
+
+    test('with no history at all, a mindfulness practice at its own length',
+        () {
+      expect(at(afternoon, intent: DayIntent.recover).activityId, 'bodyScan');
+      expect(
+        at(afternoon, intent: DayIntent.perform).activityId,
+        'hrvBreathing',
+      );
+      expect(at(afternoon, intent: DayIntent.settle).activityId, 'walkingMed');
+      final s = at(afternoon, intent: DayIntent.settle);
+      expect(s.offerPin, isTrue);
+      expect(s.minutes, activityById('walkingMed')!.dur);
+    });
+
+    test('the evening winds down, rotating day by day', () {
+      final s = at(evening);
+      expect(s.heading, 'Wind down');
+      expect(s.reason, 'Helps your body and mind settle before sleep');
+      expect(kWindDownRotation, contains(s.activityId));
+      expect(s.minutes, activityById(s.activityId)!.dur);
+      // Three consecutive evenings are three different practices.
+      final ids = {
+        for (var d = 0; d < 3; d++)
+          windDownFor(DateTime(2026, 11, 10 + d, 19)),
+      };
+      expect(ids.length, 3);
+    });
+
+    test('after 21:00 Lucid Dreaming comes round on alternate nights', () {
+      // 2026-11-10 → 20261110, even.
+      expect(windDownFor(DateTime(2026, 11, 10, 21, 30)), kLucidDreamingId);
+      expect(
+        windDownFor(DateTime(2026, 11, 11, 21, 30)),
+        isNot(kLucidDreamingId),
+      );
+      // Before 21:00 it is never suggested — it is a pre-sleep practice.
+      expect(
+        windDownFor(DateTime(2026, 11, 10, 19)),
+        isNot(kLucidDreamingId),
+      );
+    });
+
+    test('"your usual" is the median of the last five, not the catalogue', () {
+      final history = [
+        for (final m in [20, 40, 30, 35, 25])
+          did('walk', afternoon.subtract(Duration(days: m)), minutes: m),
+      ];
+      expect(usualMinutesFor('walk', history), 30);
+      // Never done it: the catalogue length stands in.
+      expect(usualMinutesFor('walk', const []), activityById('walk')!.dur);
+    });
+  });
+
   group("Nova's own voice (bug 42)", () {
     GuideVoiceOption v(String name, {String? quality, String locale = 'en-US',
-        String? network}) =>
+        String network = 'false'}) =>
         GuideVoiceOption(
           raw: {
             'name': name,
             'locale': locale,
-            if (network != null) 'network_required': network,
+            'network_required': network,
           },
           name: name,
           locale: locale,

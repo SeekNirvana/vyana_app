@@ -39,13 +39,22 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     final activities =
         searching ? searchActivities(_query) : allActivitiesByCat(_cat);
     final moment = homeMomentAt(DateTime.now());
-    final suggestedId = suggestedPracticeFor(
-      intent,
-      state,
-      dashboard.readinessScore,
-      moment,
+    // Bug 45: the same rule as Home, so "Suggested today" here and the card
+    // on Home can never be two different practices.
+    final suggestion = homeSuggestionFor(
+      intent: intent,
+      state: state,
+      readiness: dashboard.readinessScore,
+      moment: moment,
+      now: DateTime.now(),
+      pins: pins,
+      history: [
+        for (final s in sessions)
+          if (s.endedAt != null) s,
+      ],
+      todaysFinished: todaysFinishedSessions(sessions),
     );
-    final suggested = activityById(suggestedId) ?? activityById('breathwork')!;
+    final suggested = suggestion.activity;
     final look = scoreLook(
       dashboard.readinessScore,
       t,
@@ -138,7 +147,17 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
         SuggestedPracticeBlock(
           intent: intent,
           activity: suggested,
-          reason: suggestedReasonFor(intent, dashboard.readinessScore),
+          reason: suggestion.reason,
+          heading: suggestion.heading,
+          minutes: suggestion.minutes,
+          meta: suggestion.meta,
+          offerPin: suggestion.offerPin,
+          setsTarget: suggestion.setsTarget,
+          onPin: () => unawaited(
+            ref
+                .read(pinnedPracticesProvider.notifier)
+                .pin(suggestion.activityId),
+          ),
           compact: true,
         ),
         const SizedBox(height: 24),

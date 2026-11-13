@@ -855,11 +855,40 @@ class SuggestedPracticeBlock extends StatelessWidget {
     required this.reason,
     this.compact = false,
     this.doneToday = false,
+    this.heading = 'Suggested practice',
+    this.minutes,
+    this.meta,
+    this.offerPin = false,
+    this.setsTarget = true,
+    this.footnote,
+    this.onPin,
   });
 
   final DayIntent intent;
   final Activity activity;
   final String reason;
+
+  /// Bug 45: the heading changes through the day — "Suggested practice" in
+  /// the morning, "Suggested activity" during it, "Wind down" in the evening,
+  /// "Planned today" on a planned day (item 46).
+  final String heading;
+
+  /// What the card opens with. Null keeps the morning's short dose.
+  final int? minutes;
+
+  /// The mono line in the card: "YOUR USUAL · 32 MIN", "PLANNED · 2 OF 3".
+  final String? meta;
+
+  /// Bug 45: the suggestion came from a fallback rather than a pin.
+  final bool offerPin;
+
+  /// The day slot opens the practice with no target set.
+  final bool setsTarget;
+
+  /// Item 46: one line under the card, e.g. the low-readiness alternative.
+  final Widget? footnote;
+
+  final VoidCallback? onPin;
 
   /// §3: once the suggestion itself has been done, the play button becomes a
   /// grey tick — the card stays tappable, to do it again.
@@ -874,10 +903,16 @@ class SuggestedPracticeBlock extends StatelessWidget {
     final t = context.vyana;
     final hue = intent.hue(t);
     final soft = t.isDark ? intent.soft(t) : hue;
-    final minutes = suggestedMinutesFor(intent, activity);
+    final minutes = this.minutes ?? suggestedMinutesFor(intent, activity);
     final card = HairlineCard(
       padding: const EdgeInsets.fromLTRB(12, 11, 11, 11),
-      onTap: () => openActivityDetail(context, activity, minutes: minutes),
+      // Bug 45: the day slot opens the practice with no target set — "your
+      // usual 32 min" describes what you normally do, it does not set a goal.
+      onTap: () => openActivityDetail(
+        context,
+        activity,
+        minutes: setsTarget ? minutes : null,
+      ),
       child: Row(
         children: [
           Container(
@@ -911,7 +946,7 @@ class SuggestedPracticeBlock extends StatelessWidget {
                 Row(
                   children: [
                     MonoEyebrow(
-                      '$minutes MIN',
+                      meta ?? '$minutes MIN',
                       size: 11,
                       spacing: 0.8,
                       color: t.heading,
@@ -966,12 +1001,47 @@ class SuggestedPracticeBlock extends StatelessWidget {
         ],
       ),
     );
-    if (compact) return card;
+    // Bug 45: "Pin it" on a fallback suggestion, so the next one can come
+    // from a pin instead.
+    final extras = <Widget>[
+      if (footnote case final line?) ...[const SizedBox(height: 8), line],
+      if (offerPin && onPin != null) ...[
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: onPin,
+          borderRadius: BorderRadius.circular(6),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 36),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                VyanaIcon('pin', size: 13, color: t.mutedInk),
+                const SizedBox(width: 5),
+                Text(
+                  'Pin it',
+                  style: VyanaType.caption.copyWith(
+                    color: t.textSec,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ];
+    if (compact) {
+      if (extras.isEmpty) return card;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [card, ...extras],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Suggested practice',
+          heading,
           style: VyanaType.label.copyWith(color: t.heading, fontSize: 16.5),
         ),
         const SizedBox(height: 3),
@@ -983,6 +1053,7 @@ class SuggestedPracticeBlock extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         card,
+        ...extras,
       ],
     );
   }
@@ -1003,19 +1074,42 @@ class _SuggestedPractice extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final id = suggestedPracticeFor(intent, state, readiness, moment);
-    final activity = activityById(id) ?? activityById('breathwork')!;
-    final today = todaysFinishedSessions(
-      ref.watch(recentSessionsProvider).valueOrNull ?? const [],
+    final sessions = ref.watch(recentSessionsProvider).valueOrNull ?? const [];
+    final today = todaysFinishedSessions(sessions);
+    // Bug 45: one rule, one card — the heading, the practice and its length
+    // all come from the moment of day.
+    final suggestion = homeSuggestionFor(
+      intent: intent,
+      state: state,
+      readiness: readiness,
+      moment: moment,
+      now: DateTime.now(),
+      pins: ref.watch(pinnedPracticesProvider),
+      history: [
+        for (final s in sessions)
+          if (s.endedAt != null) s,
+      ],
+      todaysFinished: today,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SuggestedPracticeBlock(
           intent: intent,
-          activity: activity,
-          reason: suggestedReasonFor(intent, readiness),
-          doneToday: today.any((s) => s.vyanaActivityType == activity.id),
+          activity: suggestion.activity,
+          reason: suggestion.reason,
+          heading: suggestion.heading,
+          minutes: suggestion.minutes,
+          meta: suggestion.meta,
+          offerPin: suggestion.offerPin,
+          setsTarget: suggestion.setsTarget,
+          onPin: () => unawaited(
+            ref
+                .read(pinnedPracticesProvider.notifier)
+                .pin(suggestion.activityId),
+          ),
+          doneToday:
+              today.any((s) => s.vyanaActivityType == suggestion.activityId),
         ),
         DoneTodayLine(sessions: today),
       ],
