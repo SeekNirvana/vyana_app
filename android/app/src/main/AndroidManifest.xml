@@ -23,8 +23,16 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Bug 44(a): the ring watch is a connectedDevice service. It used to be
+         dataSync, which Android 15 stops after six hours in any twenty-four —
+         so it could never survive a night, which is the whole point of it.
+         remoteMessaging went with it: nothing declares that type any more. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Not ours: background_downloader (pulled in by flutter_gemma for the
+         Nova model download) declares a dataSync service, and on API 34+ a
+         typed service without its permission throws at start. Checked in the
+         merged manifest, not assumed. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
     <!-- On-device AI guides: voice prompts (mic), keep awake during model
          downloads, and download-complete notifications. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -43,6 +51,21 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         tools:replace="android:label">
+        <!-- The status bar masks a small icon to its alpha and tints it, so
+             the full-colour launcher icon came out as a solid white blob.
+             These point every notification at the white-on-transparent
+             silhouette instead. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/vyana_notification_accent" />
+        <!-- Resolved by flutter_foreground_task's NotificationIcon, which
+             takes a meta-data name rather than a resource directly. -->
+        <meta-data
+            android:name="app.seeknirvana.vyana.FOREGROUND_NOTIFICATION_ICON"
+            android:resource="@drawable/ic_notification" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -83,10 +106,13 @@
             android:name="com.realsil.sdk.dfu.DfuService"
             android:exported="false" />
 
-        <!-- Foreground service for continuous ring vitals tracking. -->
+        <!-- Foreground service for continuous ring vitals tracking. Typed
+             connectedDevice (bug 44(a)): a BLE wearable connection, with no
+             six-hour cap. Location stays on Geolocator's own service, which
+             is what records an outdoor session. -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="dataSync|remoteMessaging|location"
+            android:foregroundServiceType="connectedDevice"
             android:exported="false" />
 
         <!-- Home-screen widgets: live "state of being" tile + one-tap

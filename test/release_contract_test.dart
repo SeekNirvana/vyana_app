@@ -122,14 +122,19 @@ void main() {
     expect(onboarding, contains("Let's Go!"));
     expect(onboarding, contains('completeRingOnboarding'));
 
-    final syncSettings = readLib('src/screens/sync_settings_screen.dart');
-    expect(syncSettings, contains('Sync interval saved.'));
-    expect(syncSettings, contains('applyPeriodicSyncInterval'));
+    // v1.1.5: Sync and Health monitoring merged into one "Ring data"
+    // screen — two intervals, two batteries, one place.
+    final ringData = readLib('src/screens/ring_data_screen.dart');
+    expect(ringData, contains('applyPeriodicSyncInterval'));
+    expect(ringData, contains('applyHealthMonitoring'));
     // The Android foreground toggle folded into the Sync screen in v1.1.0.
-    expect(syncSettings, contains('setForegroundServiceEnabled'));
+    expect(ringData, contains('setForegroundServiceEnabled'));
+    expect(ringData, contains('How often the ring measures you'));
+    expect(ringData, contains('How often Vyana collects it'));
 
     final youScreen = readLib('src/screens/you_screen.dart');
-    expect(youScreen, contains('Health monitoring'));
+    expect(youScreen, contains('Ring data'));
+    expect(youScreen, contains('openRingData'));
 
     final foreground = readLib('src/services/ring_foreground_service.dart');
     expect(foreground, contains('kRingForegroundSyncTick'));
@@ -160,7 +165,9 @@ void main() {
     expect(shell, isNot(contains('GuidesScreen()')));
 
     final chrome = readLib('src/shell/vyana_chrome.dart');
-    expect(chrome, contains('Install private AI guide'));
+    // v1.1.5: the pill offers the choice, not one of the answers —
+    // someone running their own endpoint needs no download.
+    expect(chrome, contains('Configure your AI'));
     expect(chrome, contains("'Ask Nova'"));
     expect(chrome, contains('class PatternCard'));
     expect(chrome, contains('DashedPillPainter'));
@@ -195,7 +202,7 @@ void main() {
 
     final db = readLib('src/data/db.dart');
     expect(db, contains('class Patterns extends Table'));
-    expect(db, contains('int get schemaVersion => 11;'));
+    expect(db, contains('int get schemaVersion => 12;'));
     expect(db, contains('class PracticeTargets extends Table'));
 
     final catalog = readLib('src/data/catalog.dart');
@@ -295,7 +302,20 @@ void main() {
     // Bug 5: the Android 12+ splash uses its own padded asset.
     final pubspec = File('pubspec.yaml').readAsStringSync();
     expect(pubspec, contains('assets/splash_logo_android12.png'));
-    expect(pubspec, contains('version: 1.1.4+12'));
+    // Not a hard-coded version — that one breaks on every release and
+    // teaches people to update the assertion without reading it. What
+    // matters is that the version shipping has an entry saying what is in
+    // it, which is also what the release workflow refuses to publish
+    // without.
+    final version = RegExp(r'^version:\s*([0-9.]+)\+(\d+)', multiLine: true)
+        .firstMatch(pubspec);
+    expect(version, isNotNull, reason: 'pubspec has no version line');
+    final changelog = File('CHANGELOG.md').readAsStringSync();
+    expect(
+      changelog,
+      contains('## v${version!.group(1)}'),
+      reason: 'CHANGELOG.md has no entry for ${version.group(1)}',
+    );
 
     final manifest = File('scripts/release-manifest.txt').readAsStringSync();
     expect(manifest, contains('judged against typical ranges'));
@@ -346,7 +366,8 @@ void main() {
     );
     final week = readLib('src/screens/your_week_screen.dart');
     expect(week, contains('class PeriodSummary'));
-    expect(week, contains('THIS WEEK'));
+    // Bug 50: the card's window is the last seven days, not a calendar week.
+    expect(week, contains('LAST 7 DAYS'));
 
     // §11: Perform is orange, and gold stays a brand colour.
     final colors = readLib('src/theme/app_colors.dart');

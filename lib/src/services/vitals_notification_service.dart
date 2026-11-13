@@ -4,7 +4,23 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
+import 'package:flutter/widgets.dart' show Color;
+
 import '../wellness/wellness_state.dart';
+
+/// The white-on-transparent silhouette every notification uses as its small
+/// icon. Android throws the colour away and tints by alpha, so this is the
+/// only shape that survives the status bar.
+const String kNotificationIcon = '@drawable/ic_notification';
+
+/// Same as `@drawable/ic_notification` without the prefix —
+/// AndroidNotificationDetails takes the bare resource name.
+const String kNotificationIconName = 'ic_notification';
+
+/// The gold from the mark. Android ≥ O tints the small icon and the app
+/// name in the shade with this, so the row reads as Vyana.
+const Color kNotificationAccent = Color(0xFFE3A448);
+
 
 /// Local notifications for the hands-off "Monitor all vitals" flow: the user
 /// taps once, sets the phone aside, and gets pinged with their state of being
@@ -25,6 +41,8 @@ class VitalsNotificationService {
   static const _practiceEndId = 4205;
   static const _staleRingId = 4302;
   static const _ringOfflineId = 4303;
+  static const _overnightBatteryId = 4306;
+  static const _planReminderId = 4307;
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -36,7 +54,11 @@ class VitalsNotificationService {
   Future<void> ensureInitialized() async {
     if (_ready) return;
     try {
-      const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+      // The status bar masks a small icon to its alpha and tints it, so
+      // @mipmap/ic_launcher — the full-colour mark — arrived as a solid
+      // white blob. ic_notification is the same mark drawn as a
+      // white-on-transparent silhouette, which is what that mask wants.
+      const android = AndroidInitializationSettings(kNotificationIcon);
       const darwin = DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
@@ -83,6 +105,8 @@ class VitalsNotificationService {
           _channelId,
           _channelName,
           channelDescription: _channelDescription,
+          icon: kNotificationIconName,
+          color: kNotificationAccent,
           importance: Importance.high,
           priority: Priority.high,
           styleInformation: BigTextStyleInformation(body),
@@ -177,9 +201,59 @@ class VitalsNotificationService {
     );
   }
 
+  /// Item 46: the plan reminder — one notification on a planned day at the
+  /// user's usual start time, and only while the practice is not done.
+  /// Scheduled in advance, because on iOS there is no background timer
+  /// (bug 47) and on Android there is no reason to run one.
+  Future<void> schedulePlanReminder({
+    required DateTime at,
+    required String activityName,
+  }) async {
+    await cancelPlanReminder();
+    await _scheduleAt(
+      id: _planReminderId,
+      at: at,
+      title: '$activityName today',
+      body: "It's on your week. Twenty minutes is still a session.",
+    );
+  }
+
+  Future<void> cancelPlanReminder() async {
+    try {
+      await _plugin.cancel(_planReminderId);
+    } on Object catch (_) {}
+  }
+
   Future<void> cancelRingOfflineAlert() async {
     try {
       await _plugin.cancel(_ringOfflineId);
+    } on Object catch (_) {}
+  }
+
+  /// Bug 47: the evening battery check, handed to the OS in advance.
+  ///
+  /// On Android the foreground service evaluates it live on each heartbeat
+  /// (bug 44 (4)). iOS has no background timer at all, so the only honest
+  /// option is to schedule it from the last percentage the ring reported and
+  /// cancel it the moment the ring is charged — which [cancelOvernightBattery]
+  /// does. Its own id, so it can never collide with the live Android alert.
+  Future<void> scheduleOvernightBattery({
+    required int battery,
+    required DateTime at,
+  }) async {
+    await cancelOvernightBattery();
+    await _scheduleAt(
+      id: _overnightBatteryId,
+      at: at,
+      title: 'Your ring was at $battery%',
+      body: 'That will not last the night. Charge it before bed or there '
+          'will be no sleep data in the morning.',
+    );
+  }
+
+  Future<void> cancelOvernightBattery() async {
+    try {
+      await _plugin.cancel(_overnightBatteryId);
     } on Object catch (_) {}
   }
 
@@ -227,6 +301,8 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        icon: kNotificationIconName,
+        color: kNotificationAccent,
         importance: Importance.low,
         priority: Priority.low,
         ongoing: true,
@@ -262,6 +338,8 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        icon: kNotificationIconName,
+        color: kNotificationAccent,
         importance: Importance.high,
         priority: Priority.high,
         styleInformation: BigTextStyleInformation(body),
@@ -281,6 +359,8 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        icon: kNotificationIconName,
+        color: kNotificationAccent,
         importance: Importance.high,
         priority: Priority.high,
         styleInformation: BigTextStyleInformation(reason),
@@ -305,6 +385,8 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        icon: kNotificationIconName,
+        color: kNotificationAccent,
         importance: Importance.high,
         priority: Priority.high,
         styleInformation: BigTextStyleInformation(body),

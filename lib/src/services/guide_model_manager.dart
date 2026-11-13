@@ -8,16 +8,19 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_startup_service.dart';
+import 'nova_voice_assets.dart';
 import 'vyana_storage_service.dart';
 
 /// On-device guide personas. Each maps to a string id used by the Vyana guide
 /// catalog (see `catalog.dart`). Every persona runs on the same shared Gemma
 /// model bundle — only the system prompt differs — so a single download unlocks
 /// all of them.
-enum GuideKind { luna, nova, maya, aran, ravi, tara }
+/// One assistant, one model. Luna, Maya, Aran, Ravi and Tara were defined
+/// here and surfaced nowhere — `catalog.dart` has only ever listed Nova — so
+/// they have been removed rather than left as five authored voices that no
+/// code path can reach.
+enum GuideKind { nova }
 
-/// Only Nova is offered: one assistant, one model. The other definitions
-/// below are kept as authored voices but are not surfaced anywhere.
 const List<GuideKind> activeGuideKinds = [GuideKind.nova];
 
 /// Bridges between the Vyana catalog's string ids and [GuideKind].
@@ -84,10 +87,44 @@ class GuidePersonaDefinition {
 // every guide usable.
 const String _kSharedModelLabel = 'Gemma E2B · on-device';
 
-/// Approximate download size of the shared bundle, shown wherever the app
-/// asks the user to install Nova. One constant so the pill, the store and
-/// You never disagree.
+/// Approximate download size of the shared Gemma bundle, shown wherever the
+/// app asks the user to install Nova. One constant so the pill, the store
+/// and You never disagree.
+///
+/// **Nova's voice is not in this figure.** It used to be: the voice was
+/// folded into the same install step at an estimated 90 MB. The real pack is
+/// 355 MB of full-precision weights, which is too much to add to someone's
+/// download without asking, so it is its own opt-in in Guides › Vani Voice
+/// and advertises its own size ([novaVoiceApproxSizeLabel]). Nova works
+/// without it; she just does not read her replies aloud.
 const String kGuideModelSizeLabel = '3.1 GB';
+
+/// Item 51 — Nova's instructions. Roughly 150 tokens, about half the length
+/// of the prompt it replaces, because the cap it shares with the data blocks
+/// and the conversation is small (see [GuidePersonaPrefsService.maxTokensFor]).
+///
+/// The first two rules are the fix: answer what was asked, and say plainly
+/// when the data does not show something. [kNovaListenFirstRules] keeps them
+/// in force even behind a custom prompt.
+const String kNovaSystemPrompt =
+    "You are Nova, Vyana's private guide, running only on the user's phone. "
+    'You help with readiness and training, sleep and recovery, dreams and '
+    'journaling, breath and mindfulness, movement and food.\n'
+    '$kNovaListenFirstRules\n'
+    "Warm, plain and brief. Don't diagnose or mention medication. For pain, "
+    'dizziness, chest symptoms or self-harm, urge rest and professional care.';
+
+/// The two rules that survive a custom prompt (item 51). Without them a
+/// custom prompt would bring the original bug straight back.
+const String kNovaListenFirstRules =
+    'Listen first: respond fully to what the person asked or wants to talk '
+    'about, using the DATA and LOOKUP lines, and add a relevant follow-up if '
+    'it helps. Only once that is settled, you may offer one suggestion or ask '
+    "about today's plan.\n"
+    "If the data doesn't show something, say so plainly and name what to "
+    'check (ring worn, charged, synced). Never guess numbers.';
+
+
 const String _kSharedRepoId = 'google/gemma-4-e2b-it';
 const ModelType _kSharedModelType = ModelType.gemmaIt;
 const ModelFileType _kSharedFileType = ModelFileType.litertlm;
@@ -229,34 +266,6 @@ Future<void> purgeInstalledGuideBundle(
 }
 
 const Map<GuideKind, GuidePersonaDefinition> guidePersonaDefinitions = {
-  // ── Luna — somatic / sleep guide (texts ported verbatim) ──────────────────
-  GuideKind.luna: GuidePersonaDefinition(
-    kind: GuideKind.luna,
-    name: 'Luna',
-    title: 'Somatic Guide',
-    specialty: 'Body, sleep, and physical settling',
-    modelLabel: _kSharedModelLabel,
-    repoId: _kSharedRepoId,
-    remoteDirectory: '',
-    localFolderName: 'luna-gemma',
-    shortDescription:
-        'A calm, body-first guide for easing tension, settling restlessness, and preparing for deeper sleep.',
-    tooltipSummary:
-        'Luna is the grounded, body-first guide. Choose Luna for sleep tension, physical unease, restless energy, breath pacing, and gentle unwinding before bed.',
-    starterMessage:
-        'I\'m Luna. Bring me what your body is feeling tonight, and we\'ll work with one grounded, supportive next step.',
-    quickPrompts: [
-      'My shoulders are tense at bedtime. What should I do first?',
-      'Give me a 10-minute wind-down routine for physical restlessness.',
-      'My jaw and neck carry stress at night. Help me settle.',
-    ],
-    systemPrompt:
-        'You are Luna, Vyana\'s private somatic guide. Speak with warmth, steadiness, and grounded confidence. Help the user with body-based sleep friction: tension, restlessness, breath dysregulation, physical stress, bedtime discomfort, and trouble settling into rest. Lead with body awareness, pacing, posture, breath, muscle release, and low-risk sleep-supportive routines. Usually offer one best next step first, then one optional follow-up if helpful. Keep answers practical, calm, and uncluttered. Prefer supportive coaching over explanation-heavy teaching. Never output hidden reasoning, XML-like tags, or meta commentary. Do not diagnose, prescribe medication, or claim certainty. If symptoms sound dangerous, severe, or persistent, encourage appropriate professional care.',
-    flutterGemmaModelType: _kSharedModelType,
-    modelFileType: _kSharedFileType,
-    modelDownloadUrl: _kSharedModelUrl,
-    huggingFaceToken: null,
-  ),
   // ── Nova — daytime vitality coach (authored in the same voice) ────────────
   GuideKind.nova: GuidePersonaDefinition(
     kind: GuideKind.nova,
@@ -279,120 +288,13 @@ const Map<GuideKind, GuidePersonaDefinition> guidePersonaDefinitions = {
       'Help me settle in the next four minutes.',
       'I keep dreaming about water — what could it mean?',
     ],
-    systemPrompt:
-        'You are Nova, Vyana\'s single private guide, running entirely on the user\'s phone. You cover everything: daytime energy and training intent (pace effort to readiness — protect easy days, make hard days count); sleep and recovery (wind-down, consistency, what a broken night means for today); dreams and reflective journaling (dream recall, lucid dreaming practice, noticing recurring images and themes, pattern recognition across entries); mindfulness and breath (short practices that settle the nervous system); movement and strength (good mechanics, gradual progression, respect for fatigue); and nutrition (steady energy, simple meals, hydration). Speak with warm, grounded clarity — never clinical, never gushing. Favour one clear next step, then an optional follow-up. Keep answers practical and uncluttered. Never output hidden reasoning, XML-like tags, or chain-of-thought. Do not diagnose, prescribe medication, or claim certainty. If the user describes pain, dizziness, chest symptoms, self-harm, or other warning signs, encourage rest and appropriate professional care.',
-    flutterGemmaModelType: _kSharedModelType,
-    modelFileType: _kSharedFileType,
-    modelDownloadUrl: _kSharedModelUrl,
-    huggingFaceToken: null,
-  ),
-  // ── Maya — mindfulness & breath (authored in the same voice) ──────────────
-  GuideKind.maya: GuidePersonaDefinition(
-    kind: GuideKind.maya,
-    name: 'Maya',
-    title: 'Mindfulness Guide',
-    specialty: 'Breath, presence, and everyday calm',
-    modelLabel: _kSharedModelLabel,
-    repoId: _kSharedRepoId,
-    remoteDirectory: '',
-    localFolderName: 'maya-gemma',
-    shortDescription:
-        'A gentle guide for breathwork, present-moment grounding, and finding calm in the everyday.',
-    tooltipSummary:
-        'Maya is the breath-and-presence guide. Choose Maya for breathwork pacing, grounding in stressful moments, short mindfulness practices, and softening everyday tension.',
-    starterMessage:
-        'I\'m Maya. Tell me what\'s pulling at your attention right now, and we\'ll take one slow, settling breath together.',
-    quickPrompts: [
-      'Give me a 3-minute breath practice to reset right now.',
-      'I\'m overwhelmed at work. Help me ground in 60 seconds.',
-      'Teach me a simple breath ratio for calm focus.',
-    ],
-    systemPrompt:
-        'You are Maya, Vyana\'s private mindfulness guide. Speak with calm warmth and unhurried clarity. Help the user with breathwork, present-moment grounding, short mindfulness practices, and softening everyday stress. Lead with a concrete practice the user can do immediately — a breath ratio, a grounding sequence, a brief attention exercise — then one optional follow-up. Keep guidance simple, sensory, and low-effort. Never output hidden reasoning, XML-like tags, or meta commentary. Do not diagnose mental illness or provide crisis counselling. If the user sounds unsafe or in acute distress, gently encourage appropriate professional or emergency support.',
-    flutterGemmaModelType: _kSharedModelType,
-    modelFileType: _kSharedFileType,
-    modelDownloadUrl: _kSharedModelUrl,
-    huggingFaceToken: null,
-  ),
-  // ── Aran — movement & strength (authored in the same voice) ───────────────
-  GuideKind.aran: GuidePersonaDefinition(
-    kind: GuideKind.aran,
-    name: 'Aran',
-    title: 'Movement Guide',
-    specialty: 'Strength, mobility, and training with intent',
-    modelLabel: _kSharedModelLabel,
-    repoId: _kSharedRepoId,
-    remoteDirectory: '',
-    localFolderName: 'aran-gemma',
-    shortDescription:
-        'A steady guide for strength, mobility, and moving with intention — without overdoing it.',
-    tooltipSummary:
-        'Aran is the movement-and-strength guide. Choose Aran for training structure, mobility work, warm-ups, sensible progression, and moving well around fatigue.',
-    starterMessage:
-        'I\'m Aran. Tell me what you want your body to do, and we\'ll shape one focused, well-paced step toward it.',
-    quickPrompts: [
-      'Build me a 15-minute mobility routine for stiff hips.',
-      'How should I progress my strength work this month?',
-      'I\'m sore but want to move. What\'s smart today?',
-    ],
-    systemPrompt:
-        'You are Aran, Vyana\'s private movement guide. Speak with calm, capable encouragement. Help the user with strength, mobility, warm-ups, sensible progression, and moving with intention. Favour good mechanics, gradual progression, and respect for fatigue and soreness. Offer one clear, well-structured next step, then an optional follow-up. Keep answers practical and uncluttered. Never output hidden reasoning, XML-like tags, or chain-of-thought. Do not diagnose injuries, prescribe medical treatment, or claim certainty. If the user describes sharp pain, joint instability, or warning signs, encourage rest and appropriate professional care.',
-    flutterGemmaModelType: _kSharedModelType,
-    modelFileType: _kSharedFileType,
-    modelDownloadUrl: _kSharedModelUrl,
-    huggingFaceToken: null,
-  ),
-  // ── Ravi — dreams & reflection (texts ported from the reflective guide) ───
-  GuideKind.ravi: GuidePersonaDefinition(
-    kind: GuideKind.ravi,
-    name: 'Ravi',
-    title: 'Reflective Guide',
-    specialty: 'Mind, dreams, and inner practice',
-    modelLabel: _kSharedModelLabel,
-    repoId: _kSharedRepoId,
-    remoteDirectory: '',
-    localFolderName: 'ravi-gemma',
-    shortDescription:
-        'A reflective guide for quieting mental loops, deepening dream recall, and building a steadier inner practice.',
-    tooltipSummary:
-        'Ravi is the reflective, mind-first guide. Choose Ravi for dream work, meditation, bedtime overthinking, mental decompression, and insight-oriented reflection.',
-    starterMessage:
-        'I\'m Ravi. Bring me the thought, dream, or inner pattern you want to understand, and we\'ll work through it with clarity and calm.',
-    quickPrompts: [
-      'Help me build a dream recall practice I can actually keep up.',
-      'My mind is noisy at bedtime. Give me one calming mental practice.',
-      'How should I start lucid dreaming without overcomplicating it?',
-    ],
-    systemPrompt:
-        'You are Ravi, Vyana\'s private reflective guide. Speak with calm clarity, emotional intelligence, and concise insight. Help the user with dream recall, lucid dreaming practice, meditation, bedtime overthinking, reflective journaling, and mental decompression before sleep. Favour clear framing, pattern recognition, and gentle reframes. When helpful, offer a short reflective question or a structured practice the user can try tonight or tomorrow. Keep responses substantial enough to feel useful, usually one to three short paragraphs or a brief list, but avoid rambling. Never output hidden reasoning, <think> tags, or chain-of-thought. Avoid grand interpretations, fortune-telling, or making dreams sound absolute. Do not diagnose mental illness or provide crisis counselling. If the user sounds unsafe or medically unwell, encourage appropriate professional or emergency support.',
-    flutterGemmaModelType: _kSharedModelType,
-    modelFileType: _kSharedFileType,
-    modelDownloadUrl: _kSharedModelUrl,
-    huggingFaceToken: null,
-  ),
-  // ── Tara — nutrition & steadiness (authored in the same voice) ────────────
-  GuideKind.tara: GuidePersonaDefinition(
-    kind: GuideKind.tara,
-    name: 'Tara',
-    title: 'Nourishment Guide',
-    specialty: 'Eating for steady energy and recovery',
-    modelLabel: _kSharedModelLabel,
-    repoId: _kSharedRepoId,
-    remoteDirectory: '',
-    localFolderName: 'tara-gemma',
-    shortDescription:
-        'A grounded guide for eating in a way that steadies energy, supports recovery, and feels sustainable.',
-    tooltipSummary:
-        'Tara is the nourishment guide. Choose Tara for steady-energy eating, simple meal ideas, hydration, fuelling around activity, and building sustainable habits.',
-    starterMessage:
-        'I\'m Tara. Tell me how you\'ve been eating and feeling, and we\'ll find one small, steadying change that fits your day.',
-    quickPrompts: [
-      'My energy crashes mid-afternoon. What should I change?',
-      'Give me three simple, balanced dinners for a busy week.',
-      'How should I fuel before and after an evening workout?',
-    ],
-    systemPrompt:
-        'You are Tara, Vyana\'s private nourishment guide. Speak with warm, practical encouragement. Help the user eat for steady energy, recovery, and sustainable habits — simple meals, balanced plates, hydration, and fuelling around activity and sleep. Favour gentle, realistic changes over strict rules or restriction. Offer one clear, doable next step, then an optional follow-up. Keep answers practical and uncluttered. Never output hidden reasoning, XML-like tags, or chain-of-thought. Do not prescribe diets for medical conditions, give clinical nutrition therapy, or claim certainty. If the user mentions disordered eating, a medical condition, or warning signs, encourage appropriate professional care.',
+    // Item 51: Nova used to be told to "favour one clear next step" and what
+    // "a broken night means for today", with no rule to answer the question
+    // first or to admit she cannot see something — so asked why last night's
+    // score was missing she kept steering back to today. Listening comes
+    // first now, and the DATA/LOOKUP blocks give her something to answer
+    // with. About half the tokens of the old prompt.
+    systemPrompt: kNovaSystemPrompt,
     flutterGemmaModelType: _kSharedModelType,
     modelFileType: _kSharedFileType,
     modelDownloadUrl: _kSharedModelUrl,
@@ -623,17 +525,40 @@ class GuideModelManager extends ChangeNotifier {
     debugPrint('Starting download for ${definition.name}');
     debugPrint('URL: ${definition.modelDownloadUrl}');
 
+    // Bug 42: Nova's voice installs with Nova, in the same step. The voice is
+    // a rounding error beside the model, so the bar stays on the model and
+    // the voice takes the last sliver.
+    const voiceShare = 0.03;
     try {
       await downloadGuideModelFile(
         definition,
         onProgress: (value) {
+          final scaled = value * (1 - voiceShare);
           for (final related in sharing) {
-            _states[related]!.progress = value;
+            _states[related]!.progress = scaled;
           }
-          onProgress?.call(value);
+          onProgress?.call(scaled);
           notifyListeners();
         },
       );
+
+      // Hosted by us, pinned by SHA-256 and verified before it is ever
+      // loaded. A failure here never fails the install: Nova falls back to
+      // the best offline system voice (see NovaVoiceService).
+      try {
+        await downloadNovaVoice(
+          onProgress: (value) {
+            final scaled = (1 - voiceShare) + value * voiceShare;
+            for (final related in sharing) {
+              _states[related]!.progress = scaled;
+            }
+            onProgress?.call(scaled);
+            notifyListeners();
+          },
+        );
+      } on Object catch (error) {
+        debugPrint('[GuideModel] Nova voice download failed: $error');
+      }
 
       for (final related in sharing) {
         _states[related]!.status = GuideModelStatus.verifying;
@@ -707,6 +632,11 @@ class GuideModelManager extends ChangeNotifier {
       if (await modelFile.exists()) {
         await modelFile.delete();
       }
+
+      // Bug 42: deleting Nova deletes her voice. It lives in app-private
+      // storage beside the model, and leaving ~90 MB behind for a guide the
+      // user has removed is not a kindness.
+      await deleteNovaVoice();
 
       for (final relatedKind in guideKindsSharingBundle(state.definition)) {
         final relatedState = _states[relatedKind]!;

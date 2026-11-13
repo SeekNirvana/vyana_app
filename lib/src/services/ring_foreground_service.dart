@@ -34,6 +34,12 @@ class RingForegroundTaskHandler extends TaskHandler {
     // the system killed it mid-watch (bug 18(5)): a gap much larger than the
     // interval means the process was not running when it should have been.
     unawaited(RingForegroundService.recordHeartbeat(timestamp));
+    // Bug 44 (2): the alerts run here, in the service isolate, not through
+    // sendDataToMain. With the app closed the main isolate is suspended, so
+    // those messages were queued and handled on resume — which is exactly
+    // why the low-battery alert for a ring that died overnight only arrived
+    // when the app was opened in the morning.
+    unawaited(RingForegroundService.evaluateAlertsInIsolate(timestamp));
     // Ask the main isolate (which owns the ring connection) to sync. It decides
     // whether a reconnect is needed and whether enough time has elapsed.
     FlutterForegroundTask.sendDataToMain(kRingForegroundSyncTick);
@@ -61,12 +67,32 @@ class RingForegroundTaskHandler extends TaskHandler {
   }
 }
 
-/// Wrapper around the `flutter_foreground_task` plugin for Android. It is a
-/// no-op on iOS because iOS background execution will be built later.
+/// Wrapper around the `flutter_foreground_task` plugin for Android.
+///
+/// Bug 47: on iOS there is no equivalent service, and nothing here starts
+/// one. What keeps the ring alive on iPhone is instead:
+///
+/// * `bluetooth-central` in `UIBackgroundModes` (ios/Runner/Info.plist), so
+///   iOS does not tear the BLE connection down when Vyana is backgrounded;
+/// * Core Bluetooth state restoration — a restore identifier on the SDK's
+///   central manager — so iOS relaunches Vyana when the ring connects or
+///   sends data. That lives in the ring SDK, not in this repo; see
+///   docs/ios-background.md for what it needs;
+/// * the time-based alerts handed to the OS in advance as local
+///   notifications ([VitalsNotificationService.scheduleStaleRingAlert],
+///   [VitalsNotificationService.scheduleRingOfflineAlert] and
+///   [VitalsNotificationService.scheduleOvernightBattery]), because iOS gives
+///   no background timer to evaluate them with.
 class RingForegroundService {
   static bool _initialized = false;
 
   static const _heartbeatKey = 'vyana.ring.service.lastHeartbeat';
+  static const _heartbeatLogKey = 'vyana.ring.service.heartbeatLog';
+
+  /// How many heartbeats the Diagnostics screen keeps. At the default
+  /// 20-minute cadence this is about two days — long enough to see whether
+  /// the service survived a night (bug 44 (1)).
+  static const int kHeartbeatLogLimit = 150;
 
   /// Stamps the time of a service heartbeat. Runs in the service isolate, so
   /// it talks to SharedPreferences directly rather than through a provider.
@@ -74,8 +100,57 @@ class RingForegroundService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_heartbeatKey, at.millisecondsSinceEpoch);
+      // Bug 44 (1): one stamp cannot show a gap. The log can, so a tester can
+      // see on the Diagnostics screen exactly when the OS stopped the service.
+      final log = prefs.getStringList(_heartbeatLogKey) ?? const <String>[];
+      final next = [...log, '${at.millisecondsSinceEpoch}'];
+      await prefs.setStringList(
+        _heartbeatLogKey,
+        next.length <= kHeartbeatLogLimit
+            ? next
+            : next.sublist(next.length - kHeartbeatLogLimit),
+      );
     } on Object catch (_) {
       // A missed stamp only costs us one data point of the gap detection.
+    }
+  }
+
+  /// Every recorded heartbeat, oldest first. Read by Diagnostics.
+  static Future<List<DateTime>> heartbeatLog() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getStringList(_heartbeatLogKey) ?? const <String>[];
+      return [
+        for (final entry in raw)
+          if (int.tryParse(entry) case final ms?)
+            DateTime.fromMillisecondsSinceEpoch(ms),
+      ];
+    } on Object catch (_) {
+      return const [];
+    }
+  }
+
+  /// Bug 44 (2): evaluates the ring alerts from inside the service isolate,
+  /// against the snapshot the main isolate last stored. Nothing here needs
+  /// Riverpod, the ring controller or the BLE stack — only SharedPreferences
+  /// and the notifications plugin, both of which work in a background isolate.
+  static Future<void> evaluateAlertsInIsolate(DateTime at) async {
+    try {
+      final snapshot = await RingAlertSnapshot.load();
+      if (snapshot == null) return;
+      final store = await SharedPreferences.getInstance();
+      // This isolate's cache was filled when the service started; the user
+      // may have changed the switches in the app since.
+      await store.reload();
+      await evaluateRingAlerts(
+        snapshot: snapshot,
+        prefs: await loadNotificationPrefs(store),
+        store: store,
+        notify: VitalsNotificationService.instance,
+        now: at,
+      );
+    } on Object catch (error) {
+      debugPrint('RING_SERVICE_ALERTS_FAILED: $error');
     }
   }
 
@@ -98,6 +173,18 @@ class RingForegroundService {
     final gap = DateTime.now().difference(last);
     final tolerance = Duration(minutes: intervalMinutes * 2);
     return gap > tolerance ? gap : null;
+  }
+
+  /// Whether the native service is alive right now. Bug 44 (1): with the app
+  /// closed this is the first thing to check — no service, no heartbeats, no
+  /// alerts.
+  static Future<bool> isServiceRunning() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await FlutterForegroundTask.isRunningService;
+    } on Object catch (_) {
+      return false;
+    }
   }
 
   static Future<bool> isExemptFromBatteryOptimisation() async {
@@ -184,12 +271,21 @@ class RingForegroundService {
     }
 
     final result = await FlutterForegroundTask.startService(
-      serviceTypes: const [
-        ForegroundServiceTypes.dataSync,
-        ForegroundServiceTypes.remoteMessaging,
-      ],
+      // Bug 44 (a): this was dataSync|remoteMessaging. From Android 15 a
+      // dataSync service is stopped after six hours in any twenty-four, so it
+      // could never last a night — the one thing it exists to do. A BLE
+      // wearable is a connectedDevice service, which has no time limit.
+      serviceTypes: const [ForegroundServiceTypes.connectedDevice],
       notificationTitle: 'Vyana is running',
       notificationText: 'Keeping your ring connected',
+      // The one notification that is always on screen, so the one most
+      // worth not being a white blob. flutter_foreground_task resolves the
+      // drawable through a manifest meta-data name rather than taking a
+      // resource directly.
+      notificationIcon: const NotificationIcon(
+        metaDataName: 'app.seeknirvana.vyana.FOREGROUND_NOTIFICATION_ICON',
+        backgroundColor: kNotificationAccent,
+      ),
       callback: ringForegroundServiceCallback,
     );
 

@@ -39,14 +39,28 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     final activities =
         searching ? searchActivities(_query) : allActivitiesByCat(_cat);
     final moment = homeMomentAt(DateTime.now());
-    final suggestedId = suggestedPracticeFor(
-      intent,
-      state,
-      dashboard.readinessScore,
-      moment,
+    // Bug 45: the same rule as Home, so "Suggested today" here and the card
+    // on Home can never be two different practices.
+    final suggestion = homeSuggestionFor(
+      intent: intent,
+      state: state,
+      readiness: dashboard.readinessScore,
+      moment: moment,
+      now: DateTime.now(),
+      pins: pins,
+      history: [
+        for (final s in sessions)
+          if (s.endedAt != null) s,
+      ],
+      todaysFinished: todaysFinishedSessions(sessions),
+      plan: ref.watch(weeklyPlanProvider),
     );
-    final suggested = activityById(suggestedId) ?? activityById('breathwork')!;
-    final look = scoreLook(dashboard.readinessScore, t);
+    final suggested = suggestion.activity;
+    final look = scoreLook(
+      dashboard.readinessScore,
+      t,
+      hrvOnly: dashboard.readinessIsHrvOnly,
+    );
     final noPins = pins.isEmpty;
     if (noPins && _editing) _editing = false;
 
@@ -134,7 +148,17 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
         SuggestedPracticeBlock(
           intent: intent,
           activity: suggested,
-          reason: suggestedReasonFor(intent, dashboard.readinessScore),
+          reason: suggestion.reason,
+          heading: suggestion.heading,
+          minutes: suggestion.minutes,
+          meta: suggestion.meta,
+          offerPin: suggestion.offerPin,
+          setsTarget: suggestion.setsTarget,
+          onPin: () => unawaited(
+            ref
+                .read(pinnedPracticesProvider.notifier)
+                .pin(suggestion.activityId),
+          ),
           compact: true,
         ),
         const SizedBox(height: 24),
@@ -196,7 +220,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
         // §5 / mock 12c: the last session, openable. One line, because the
         // point is to be able to get back to it, not to re-report it.
         _RecentLine(sessions: sessions),
-        // §5: THIS WEEK sits under Recent and opens Your week. Hidden until
+        // §5: LAST 7 DAYS sits under Recent and opens Your practice. Hidden until
         // the first session ever — an empty chart is not an invitation.
         const ThisWeekCard(),
         const SizedBox(height: 20),
@@ -1322,16 +1346,19 @@ class _RecentLine extends StatelessWidget {
         Row(
           children: [
             Expanded(child: MonoEyebrow('RECENT', size: 11.5, spacing: 0.9)),
-            BorderedPill(
-              label: 'See all',
-              onTap: () => openSessionHistory(context),
-            ),
+            // Bug 38: a plain grey text link, not a BorderedPill. The pill
+            // put a second button beside the eyebrow and competed with the
+            // practices underneath it.
+            _SeeAllLink(onTap: () => openSessionHistory(context)),
           ],
         ),
         const SizedBox(height: 8),
+        // Bug 38: plain text, 16 px apart, wrapping to a second line — not
+        // three bordered pills.
         Wrap(
-          spacing: 7,
-          runSpacing: 7,
+          spacing: 16,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             for (final row in finished)
               _RecentChip(
@@ -1353,6 +1380,9 @@ class _RecentLine extends StatelessWidget {
   }
 }
 
+/// One recent session: name then day, as text. Bug 38: this was a bordered
+/// pill, so three finished practices read as three buttons. The tap height
+/// stays at 44 px — from padding, not from a border.
 class _RecentChip extends StatelessWidget {
   const _RecentChip({required this.row, required this.onTap});
 
@@ -1365,24 +1395,63 @@ class _RecentChip extends StatelessWidget {
     final activity = activityById(row.vyanaActivityType);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(100),
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 36),
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(100),
-          border: Border.all(color: t.hairline),
-        ),
+      borderRadius: BorderRadius.circular(6),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
           children: [
             // Never truncated: the whole name stays, the row wraps instead.
             Text(
               activity?.name ?? 'Session',
-              style: VyanaType.caption.copyWith(color: t.text, fontSize: 13),
+              style: VyanaType.caption.copyWith(
+                color: t.heading,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            const SizedBox(width: 7),
-            MonoEyebrow(_recentDay(row.startedAt), size: 11.5, spacing: 0.9),
+            const SizedBox(width: 6),
+            MonoEyebrow(
+              _recentDay(row.startedAt),
+              size: 10,
+              spacing: 0.9,
+              color: t.mutedInk,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "See all ›" — a text link, used where a button would be too loud.
+class _SeeAllLink extends StatelessWidget {
+  const _SeeAllLink({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'See all',
+              style: VyanaType.caption.copyWith(
+                color: t.textSec,
+                fontSize: 12.5,
+              ),
+            ),
+            const SizedBox(width: 4),
+            VyanaIcon('chevR', size: 14, color: t.mutedInk),
           ],
         ),
       ),

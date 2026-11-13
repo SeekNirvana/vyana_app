@@ -104,6 +104,12 @@ class _MetricsScreenState extends ConsumerState<MetricsScreen> {
             ),
           const SizedBox(height: 24),
           _MovementBlock(controller: c, dashboard: dashboard, range: range),
+          // Bug 41: Cycle used to sit after All vitals and ECG, so logging a
+          // period meant scrolling past everything else on the screen. It
+          // still renders only for female + opted in, and carries its own
+          // 24 px gap so that for everyone else nothing changes at all
+          // (mock 7a and 13b).
+          const CycleBlock(topGap: 24),
           const SizedBox(height: 26),
           _AllVitalsBlock(
             controller: c,
@@ -118,8 +124,6 @@ class _MetricsScreenState extends ConsumerState<MetricsScreen> {
           ),
           const SizedBox(height: 26),
           _EcgBlock(controller: c),
-          const SizedBox(height: 26),
-          const CycleBlock(),
           const SizedBox(height: 22),
           _ExportLine(
             onTap: () => openExports(context, ref, section: ExportSection.health),
@@ -208,7 +212,7 @@ class _ReadinessBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final score = dashboard.readinessScore;
-    final look = scoreLook(score, t);
+    final look = scoreLook(score, t, hrvOnly: dashboard.readinessIsHrvOnly);
     final series = readinessSeries(controller.history, range.days);
     final values = series.map((e) => e.score).toList();
     final avg = values.isEmpty
@@ -692,6 +696,7 @@ class _VitalRowData {
     required this.caption,
     required this.badge,
     this.note,
+    this.fromEarlierDay = false,
   });
 
   final VitalsMetricKind kind;
@@ -712,6 +717,42 @@ class _VitalRowData {
   /// Plain-language line for a reading that needs explaining rather than
   /// just colouring — today, only resting HR under 40 bpm (bug 23).
   final String? note;
+
+  /// Bug 40: [value] is the last reading the ring took, not today's. Shown
+  /// in grey with the day it came from, never coloured and never badged.
+  final bool fromEarlierDay;
+}
+
+/// The newest reading taken strictly before [today], or null when the ring
+/// has never produced one. Bug 40: a row with nothing for today shows this
+/// rather than going blank.
+VitalHistoryPoint? _lastReadingBefore(
+  List<VitalHistoryPoint> points,
+  DateTime today,
+) {
+  VitalHistoryPoint? best;
+  for (final p in points) {
+    final day = DateTime(p.time.year, p.time.month, p.time.day);
+    if (!day.isBefore(today)) continue;
+    if (best == null || p.time.isAfter(best.time)) best = p;
+  }
+  return best;
+}
+
+/// The newest reading taken today, or null. Bug 40: these rows used to fall
+/// back to `points.last` whatever day it came from, so yesterday's reading
+/// was shown as today's — with today's verdict colour and peak badge on it.
+VitalHistoryPoint? _readingToday(
+  List<VitalHistoryPoint> points,
+  DateTime today,
+) {
+  VitalHistoryPoint? best;
+  for (final p in points) {
+    final day = DateTime(p.time.year, p.time.month, p.time.day);
+    if (day != today) continue;
+    if (best == null || p.time.isAfter(best.time)) best = p;
+  }
+  return best;
 }
 
 /// Baseline = mean of the window excluding today's reading.
@@ -768,6 +809,8 @@ List<_VitalRowData> _buildVitalRows(
   final history = c.history;
   final vitals = c.vitals;
   final features = c.features;
+  final today_ = DateTime.now();
+  final todayDay_ = DateTime(today_.year, today_.month, today_.day);
   bool supported(List<String> keys) =>
       features == null ? true : features.supportsAny(keys);
 
@@ -796,6 +839,20 @@ List<_VitalRowData> _buildVitalRows(
       );
     }
     if (today == null) {
+      // Bug 40: a row with no reading today used to show "—" and "No reading
+      // yet", which reads as a ring that has never measured anything. The
+      // last real value is shown instead — grey, dated, with no verdict and
+      // no peak badge, because it is not today's.
+      final last = _lastReadingBefore(points, todayDay_);
+      if (last != null) {
+        return _VitalRowData(
+          kind: kind, name: name, icon: icon, ink: ink, supported: true,
+          value: fmt(last.value), unit: unit,
+          delta: 'No reading today · last ${earlierDayLabel(last.time)}',
+          quality: 'level', caption: range_?.caption, badge: null,
+          fromEarlierDay: true,
+        );
+      }
       return _VitalRowData(
         kind: kind, name: name, icon: icon, ink: ink, supported: true,
         value: null, unit: unit, delta: 'No reading yet',
@@ -837,8 +894,6 @@ List<_VitalRowData> _buildVitalRows(
   // stay available in each vital's detail list.
   final nights = sleepDaySummaries(history.sleep);
   final tonight = sleepNightForToday(nights);
-  final today_ = DateTime.now();
-  final todayDay_ = DateTime(today_.year, today_.month, today_.day);
 
   final hrvPoints = vitalHistoryPoints(history, VitalsMetricKind.hrv);
   final hrvToday = hrvForDay(
@@ -855,7 +910,16 @@ List<_VitalRowData> _buildVitalRows(
         label: '',
       ),
   ];
-  final sleepToday = sleepPoints.isEmpty ? null : sleepPoints.last.value;
+  // Bug 40: `sleepPoints.last` is the newest night on the record whatever
+  // day it belongs to, so an older night was shown as today's — with today's
+  // verdict colour on it. Only the night that describes today counts, and
+  // only when it is a real one; anything else goes through the stale branch,
+  // which prints it in grey with the day it came from.
+  final tonightUsable = tonight != null &&
+      sleepNightStatus(tonight, history: history) ==
+          SleepNightStatus.complete;
+  final sleepToday =
+      tonightUsable ? tonight.breakdown.asleepSeconds / 3600 : null;
 
   final hrPoints = vitalHistoryPoints(history, VitalsMetricKind.heartRate);
   final hrToday = restingHrForDay(
@@ -866,21 +930,30 @@ List<_VitalRowData> _buildVitalRows(
   )?.toDouble();
 
   final stressPoints = vitalHistoryPoints(history, VitalsMetricKind.stress);
-  final stressToday = vitals.pressure ?? (stressPoints.isEmpty ? null : stressPoints.last.value);
+  final stressToday =
+      vitals.pressure ?? _readingToday(stressPoints, todayDay_)?.value;
 
   final spo2Points = vitalHistoryPoints(history, VitalsMetricKind.spo2);
   final spo2Today = vitals.bloodOxygen?.toDouble() ??
-      (spo2Points.isEmpty ? null : spo2Points.last.value);
+      _readingToday(spo2Points, todayDay_)?.value;
 
   final tempPoints = vitalHistoryPoints(history, VitalsMetricKind.temperature);
-  final tempToday = vitals.temperature ?? (tempPoints.isEmpty ? null : tempPoints.last.value);
+  final tempToday =
+      vitals.temperature ?? _readingToday(tempPoints, todayDay_)?.value;
 
+  // Bug 40: only today's pair counts as today's. An older one is printed by
+  // the stale branch, from the pair stored on that point rather than from
+  // the newest record of any day.
   final bpPoints = vitalHistoryPoints(history, VitalsMetricKind.bloodPressure);
-  final bpText = vitals.bloodPressure ?? latestPlausibleBloodPressure(history.bloodPressure);
+  String? pair(VitalHistoryPoint? p) => p?.label.replaceAll(' mmHg', '');
+  final bpText =
+      vitals.bloodPressure ?? pair(_readingToday(bpPoints, todayDay_));
+  final bpEarlier = pair(_lastReadingBefore(bpPoints, todayDay_));
   final bpSys = bpText == null ? null : double.tryParse(bpText.split('/').first.trim());
 
   final gluPoints = vitalHistoryPoints(history, VitalsMetricKind.glucose);
-  final gluToday = vitals.bloodGlucose ?? (gluPoints.isEmpty ? null : gluPoints.last.value);
+  final gluToday =
+      vitals.bloodGlucose ?? _readingToday(gluPoints, todayDay_)?.value;
 
   final stressRow = numeric(
     kind: VitalsMetricKind.stress,
@@ -976,7 +1049,7 @@ List<_VitalRowData> _buildVitalRows(
       points: bpPoints,
       unit: '',
       baseUnit: '',
-      format: (_) => bpText ?? '—',
+      format: (_) => bpText ?? bpEarlier ?? '—',
       deltaOverride: bpSys == null
           ? null
           : (() {
@@ -1186,7 +1259,9 @@ class _VitalRow extends StatelessWidget {
                 ],
               ),
               style: VyanaType.label.copyWith(
-                color: t.text,
+                // Bug 40: a value from an earlier day is grey, never the
+                // full ink of a reading taken today.
+                color: data.fromEarlierDay ? t.mutedInk : t.text,
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),

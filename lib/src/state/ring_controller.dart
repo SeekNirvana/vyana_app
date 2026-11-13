@@ -26,6 +26,8 @@ class RingController extends ChangeNotifier {
   bool _isReady = false;
   bool _isConnecting = false;
   bool _isAutoReconnecting = false;
+  bool _isUserReconnecting = false;
+  Future<bool>? _reconnectInFlight;
   bool _isSyncing = false;
   bool _isMeasuring = false;
   bool _isConnected = false;
@@ -44,8 +46,10 @@ class RingController extends ChangeNotifier {
   int _tonightSleepRetries = 0;
   Timer? _tonightSleepRetryTimer;
   bool _awaitingTonightSleep = false;
+  DateTime? _tonightSleepGaveUpAt;
   DateTime? _lastConnectionConfirmedAt;
   DateTime? _lastBatteryPoll;
+  DateTime? _batteryReadAt;
   DateTime? _lastPeriodicSync;
   bool _isBatteryPolling = false;
   int? _ecgPreStartRemainingSeconds;
@@ -101,6 +105,7 @@ class RingController extends ChangeNotifier {
   static const _healthMonitoringAckKey = 'health_monitoring_ring_ack_v1';
   static const _periodicSyncIntervalMinutesKey = 'ring_sync_interval_minutes_v1';
   static const _ringOnboardingCompletedKey = 'ring_onboarding_completed_v1';
+  static const _onboardedRingIdsKey = 'ring_onboarding_done_ids_v1';
   static const _foregroundServiceEnabledKey = 'foreground_service_enabled_v1';
   static const _foregroundServiceAllowedKey = 'foreground_service_allowed_v1';
 
@@ -117,6 +122,11 @@ class RingController extends ChangeNotifier {
   bool _healthMonitoringApplying = false;
   int _periodicSyncIntervalMinutes = kPeriodicSyncDefaultIntervalMinutes;
   bool _ringOnboardingCompleted = false;
+
+  /// Rings whose setup has been done, by [SavedPranaRing.identityKey]. Setup
+  /// belongs to the ring, so this survives unpairing: pair the same ring
+  /// again and it is not asked for again.
+  Set<String> _onboardedRingIds = <String>{};
   bool _foregroundServiceEnabled = false;
   bool _foregroundServiceAllowed = true;
 
@@ -232,6 +242,11 @@ class RingController extends ChangeNotifier {
   /// not actually spoken to.
   bool get reconnectFailedThisLaunch => _reconnectFailedThisLaunch;
 
+  /// Bug 48: a reconnect the user asked for is running. Tapping CONNECT used
+  /// to fire [reconnectSavedRing] with `unawaited` and change nothing on
+  /// screen, so a ring out of reach failed silently.
+  bool get isUserReconnecting => _isUserReconnecting;
+
   /// The outcome of the most recent one-shot measurement, kept after it ends
   /// so the detail screen can show success or failure instead of dropping
   /// back to its default subtitle (bug 15). Cleared when a new one starts.
@@ -251,10 +266,50 @@ class RingController extends ChangeNotifier {
     return sleepNightForToday(nights) != null;
   }
 
-  /// True while last night is still expected: a sync is running or a retry is
-  /// pending, and the ring has not produced today's night yet. Home shows
-  /// "Getting last night from your ring…" rather than yesterday's numbers.
-  bool get isAwaitingTonightSleep => _awaitingTonightSleep && !hasTonightSleep;
+  /// True while last night is still expected, so Home shows "Reading last
+  /// night…" rather than a score built on no night at all.
+  ///
+  /// Bug 36: this used to begin only when a sync started. At launch the app
+  /// is still reconnecting, so for the first minutes of every morning the
+  /// flag was false and Home showed the HRV-only score — with a quality word
+  /// like "Depleted" — while the ring was still handing the night over. A
+  /// paired ring before noon is reason enough to wait; the retries in
+  /// [_evaluateTonightSleep] decide when waiting stops.
+  bool get isAwaitingTonightSleep {
+    if (hasTonightSleep) return false;
+    if (DateTime.now().hour >= kTonightSleepGiveUpHour) return false;
+    if (_gaveUpOnTonightSleepToday) return false;
+    if (_awaitingTonightSleep) return true;
+    if (_pairedRing == null) return false;
+    // Only while the ring might still answer. Once a reconnect has actually
+    // failed there is nothing to wait for, and the stale/offline banner —
+    // not a pending score — is the honest state.
+    return _isConnected || _isConnecting || _isSyncing ||
+        !_reconnectFailedThisLaunch;
+  }
+
+  /// Whether the retries for today's night are spent. Keyed to the day so
+  /// tomorrow morning starts waiting again.
+  bool get _gaveUpOnTonightSleepToday {
+    final at = _tonightSleepGaveUpAt;
+    if (at == null) return false;
+    final now = DateTime.now();
+    return DateTime(at.year, at.month, at.day) ==
+        DateTime(now.year, now.month, now.day);
+  }
+
+  /// Why last night is missing or partial, for Home and for Nova (item 51).
+  MissingNightReason get missingNightReason {
+    final nights = sleepDaySummaries(_history.sleep);
+    final night = sleepNightForToday(nights);
+    return missingNightReasonFor(
+      status: sleepNightStatus(night, history: _history),
+      history: _history,
+      pending: isAwaitingTonightSleep,
+      lastSyncedAt: lastSyncedAt,
+      batteryPercent: batteryPercent,
+    );
+  }
 
   /// How many of the scheduled catch-up retries have run.
   int get tonightSleepRetries => _tonightSleepRetries;
@@ -272,12 +327,61 @@ class RingController extends ChangeNotifier {
   /// is a missing night (bug 14a takes over).
   static const int kTonightSleepGiveUpHour = 12;
 
+  /// Normalised battery status from the newest source that reported one —
+  /// `normal`, `low`, `charging`, `full` or `-`. Bug 43: the pill needs this
+  /// to show the ring on its charger rather than a bare percentage.
+  String? get batteryStatus =>
+      _basicInfo?.batteryStatus ?? _pairedRing?.batteryStatus;
+
+  /// Whether the ring is on its charger *right now* — what the pill shows.
+  bool get isCharging => _isConnected && wasChargingWhenLastSeen;
+
+  /// Whether the newest status we have says charging, connected or not. A
+  /// ring on its charger often drops out of range; it is still off the
+  /// finger on purpose, so the low-battery and out-of-reach alerts have
+  /// nothing to warn about (bug 43).
+  bool get wasChargingWhenLastSeen =>
+      normalizedBatteryStatus(batteryStatus) == 'charging';
+
   /// Battery percent from the newest source that reported one.
   int? get batteryPercent {
     final v = _vitals.battery;
     if (v != null && v > 0) return v;
     final b = _basicInfo?.batteryPower;
     return b != null && b > 0 ? b : null;
+  }
+
+  /// When the ring last actually reported its battery, as opposed to when the
+  /// cached value was last read back. Bug 44 (3): a percentage from hours ago
+  /// must not raise the low-battery alert, nor clear one that is standing.
+  DateTime? get batteryReadAt => _batteryReadAt;
+
+  void _markBatteryRead() {
+    _batteryReadAt = DateTime.now();
+    unawaited(_refreshScheduledBatteryAlert());
+  }
+
+  /// Bug 47: on iPhone nothing of ours runs in the background, so the evening
+  /// battery check has to be handed to the OS from the newest reading and
+  /// withdrawn as soon as the ring is charged. On Android the foreground
+  /// service evaluates it live each heartbeat (bug 44 (4)), so scheduling it
+  /// there would only duplicate it.
+  Future<void> _refreshScheduledBatteryAlert() async {
+    if (!Platform.isIOS) return;
+    final battery = batteryPercent;
+    final notify = VitalsNotificationService.instance;
+    if (battery == null ||
+        battery <= 0 ||
+        battery > kBatteryRecoveredPercent ||
+        _pairedRing == null) {
+      await notify.cancelOvernightBattery();
+      return;
+    }
+    if (battery >= kOvernightBatteryMin) return;
+    await notify.scheduleOvernightBattery(
+      battery: battery,
+      at: nextEveningBatteryCheck(DateTime.now()),
+    );
   }
 
   bool get supportsFactoryReset =>
@@ -300,6 +404,32 @@ class RingController extends ChangeNotifier {
   int get periodicSyncIntervalMinutes => _periodicSyncIntervalMinutes;
 
   bool get ringOnboardingCompleted => _ringOnboardingCompleted;
+
+  /// Whether the ring now paired still needs its setup run.
+  ///
+  /// Unpairing used to clear a single phone-wide flag, which got both cases
+  /// wrong in turn: before, a *different* ring skipped setup; after, the
+  /// *same* ring was dragged back through it. Keyed by the ring itself,
+  /// both cases come out right.
+  ///
+  /// A ring the SDK gives no durable identity for falls back to asking —
+  /// setup twice is a nuisance, a ring that never gets named is a bug.
+  bool get currentRingNeedsOnboarding {
+    final ring = _pairedRing;
+    if (ring == null) return false;
+    final id = ring.identityKey;
+    if (id == null) return !_ringOnboardingCompleted;
+    return !_onboardedRingIds.contains(id);
+  }
+
+  /// True when this ring has never been set up here *and* an earlier ring's
+  /// data is still in the vault — the only case where offering to start
+  /// fresh makes sense.
+  bool get isReplacingAnotherRing {
+    final id = _pairedRing?.identityKey;
+    if (id == null) return _onboardedRingIds.isNotEmpty;
+    return _onboardedRingIds.isNotEmpty && !_onboardedRingIds.contains(id);
+  }
 
   bool get foregroundServiceEnabled => _foregroundServiceEnabled;
 
@@ -458,6 +588,8 @@ class RingController extends ChangeNotifier {
       final basicInfo = await _repo.probeConnectedBasicInfo();
       if (_disposed || basicInfo == null) return;
       final battery = basicInfo.batteryPower;
+      // The ring answered, so the percentage is current even when unchanged.
+      if (battery != null && battery > 0) _markBatteryRead();
       if (_basicInfo?.batteryPower == battery &&
           _vitals.battery == battery &&
           _basicInfo != null) {
@@ -485,13 +617,19 @@ class RingController extends ChangeNotifier {
     if (hasTonightSleep) {
       _tonightSleepRetries = 0;
       _awaitingTonightSleep = false;
+      _tonightSleepGaveUpAt = null;
       _logEvent('tonight_sleep_present');
       return;
     }
     if (DateTime.now().hour >= kTonightSleepGiveUpHour ||
         _tonightSleepRetries >= kTonightSleepRetryDelays.length) {
       _awaitingTonightSleep = false;
-      _logEvent('tonight_sleep_absent_gave_up');
+      // Bug 36: waiting now stops for the rest of the day, so the HRV-only
+      // score (and its "sleep not recorded" line) can take over.
+      _tonightSleepGaveUpAt = DateTime.now();
+      _logEvent(
+        'tonight_sleep_absent_gave_up_${missingNightReason.name}',
+      );
       return;
     }
 
@@ -734,7 +872,25 @@ class RingController extends ChangeNotifier {
     _reconnectBackoff = _reconnectAttemptInterval;
   }
 
-  Future<bool> reconnectSavedRing({bool force = false}) async {
+  Future<bool> reconnectSavedRing({bool force = false}) {
+    // Bug 48: a user-driven attempt that lands while a passive retry is
+    // already running used to return false instantly — so the pill flashed
+    // straight to "couldn't reach your ring" while the ring was in fact
+    // being reached. It joins the attempt in flight instead, and the UI
+    // shows it as the user's own.
+    final inFlight = _reconnectInFlight;
+    if (inFlight != null) {
+      if (force && !_isUserReconnecting) {
+        _set(() => _isUserReconnecting = true);
+      }
+      return inFlight;
+    }
+    final attempt = _reconnectSavedRing(force: force);
+    _reconnectInFlight = attempt;
+    return attempt.whenComplete(() => _reconnectInFlight = null);
+  }
+
+  Future<bool> _reconnectSavedRing({bool force = false}) async {
     final pairedRing = _pairedRing;
     if (!_isReady ||
         pairedRing == null ||
@@ -761,7 +917,13 @@ class RingController extends ChangeNotifier {
     // cycle is noisy; only user-driven reconnects narrate progress.
     _set(() {
       _isAutoReconnecting = true;
-      if (force) _status = 'Checking paired PRANA ring';
+      // Bug 48: a user-driven attempt has to be visible. The pill, the
+      // eyebrow and the banner all read this, so tapping CONNECT changes
+      // something the moment it is tapped.
+      if (force) {
+        _isUserReconnecting = true;
+        _status = 'Checking paired PRANA ring';
+      }
     });
 
     try {
@@ -814,7 +976,10 @@ class RingController extends ChangeNotifier {
       return false;
     } finally {
       if (!_disposed) {
-        _set(() => _isAutoReconnecting = false);
+        _set(() {
+          _isAutoReconnecting = false;
+          _isUserReconnecting = false;
+        });
       }
     }
   }
@@ -832,6 +997,7 @@ class RingController extends ChangeNotifier {
 
     final basicInfo = await _repo.probeConnectedBasicInfo();
     if (basicInfo == null || _disposed) return false;
+    if ((basicInfo.batteryPower ?? 0) > 0) _markBatteryRead();
 
     final device = _selectedDevice ?? pairedRing.toDeviceMap();
     _set(() {
@@ -925,6 +1091,13 @@ class RingController extends ChangeNotifier {
     );
     await PranaRingStore.save(next);
     if (_disposed) return;
+    // Bug 49 (3): record the raw SDK device type once per change, so the next
+    // model's value is on the record before it ships. Diagnostics shows the
+    // live value; this keeps the one from a ring that is later unpaired.
+    final rawType = next.rawDeviceType;
+    if (rawType != null && rawType != _pairedRing?.rawDeviceType) {
+      _logEvent('sdk_device_type=$rawType');
+    }
     _set(() {
       _pairedRing = next;
       _selectedDevice = device;
@@ -1011,6 +1184,14 @@ class RingController extends ChangeNotifier {
   }
 
   void _applyUnpairedRingState({required String status}) {
+    // Ring setup belongs to the ring, not to the phone. The phone-wide flag
+    // used to survive unpairing, so pairing a *different* ring skipped
+    // naming it with no way back to that screen; clearing it instead sent
+    // the *same* ring back through setup it had already done. Neither is
+    // right, so the answer is not a flag: _onboardedRingIds remembers which
+    // ring was set up and is deliberately left alone here.
+    _ringOnboardingCompleted = false;
+    unawaited(_persistRingOnboarding());
     _set(() {
       _pairedRing = null;
       _selectedDevice = null;
@@ -1133,7 +1314,12 @@ class RingController extends ChangeNotifier {
     final wantsTonight = !hasTonightSleep &&
         DateTime.now().hour < kTonightSleepGiveUpHour;
     _set(() {
-      if (wantsTonight) _awaitingTonightSleep = true;
+      if (wantsTonight) {
+        _awaitingTonightSleep = true;
+        // Bug 36: a fresh attempt is a fresh wait, even if the retries for
+        // today were already spent.
+        _tonightSleepGaveUpAt = null;
+      }
       _isSyncing = true;
       _status = _historyHydratedFromCache
           ? 'Updating ring data…'
@@ -1167,6 +1353,7 @@ class RingController extends ChangeNotifier {
         recordCount: result.history.totalRecords,
         logSaved: logError == null,
       );
+      if ((result.basicInfo?.batteryPower ?? 0) > 0) _markBatteryRead();
       _set(() {
         _lastConnectionConfirmedAt = DateTime.now();
         _basicInfo = result.basicInfo;
@@ -1271,6 +1458,21 @@ class RingController extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final onboardingCompleted =
         prefs.getBool(_ringOnboardingCompletedKey) ?? false;
+    final onboardedIds =
+        (prefs.getStringList(_onboardedRingIdsKey) ?? const <String>[])
+            .where((id) => id.isNotEmpty)
+            .toSet();
+    // Anyone who finished setup before v1.1.5 has the old phone-wide flag
+    // and no id list. Credit the ring they have paired now, so updating does
+    // not send them back through setup on the next reconnect.
+    if (onboardingCompleted && onboardedIds.isEmpty) {
+      final saved = await PranaRingStore.load();
+      final id = saved?.identityKey;
+      if (id != null) {
+        onboardedIds.add(id);
+        await prefs.setStringList(_onboardedRingIdsKey, onboardedIds.toList());
+      }
+    }
     // Bug 18 (1): on by default whenever a ring is paired. Without the
     // service Android suspends the app, the reconnect timer stops, and
     // nothing tries again until the user opens Vyana — which is the failure
@@ -1298,6 +1500,7 @@ class RingController extends ChangeNotifier {
     if (_disposed) return;
     _set(() {
       _ringOnboardingCompleted = onboardingCompleted;
+      _onboardedRingIds = onboardedIds;
       _foregroundServiceEnabled = foregroundEnabled;
       _foregroundServiceAllowed = foregroundAllowed;
     });
@@ -1312,12 +1515,44 @@ class RingController extends ChangeNotifier {
         _foregroundServiceAllowedKey, _foregroundServiceAllowed);
   }
 
+  /// Drops the replaced ring's readings from memory and from this
+  /// controller's caches, after the vault rows themselves have been deleted.
+  /// The new ring's own setup (name, monitoring) is not touched.
+  Future<void> forgetPreviousRingData() async {
+    await _historyCache?.clearAll();
+    await _historyLogger.clear();
+    // Setup done for a ring that is no longer here is no longer a reason to
+    // skip setup; only the ring now paired keeps its credit.
+    final keep = _pairedRing?.identityKey;
+    _onboardedRingIds = keep == null ? <String>{} : {keep};
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_onboardedRingIdsKey, _onboardedRingIds.toList());
+    if (_disposed) return;
+    _set(() {
+      _history = RingHistory.empty();
+      _historyHydratedFromCache = false;
+      _cachedHistorySyncedAt = null;
+      _historyLogStatus = HistoryLogStatus.empty();
+      _vitals = RingVitals.empty();
+    });
+    _publishMeasurementSnapshot();
+  }
+
   Future<void> completeRingOnboarding({
     required bool enableForegroundService,
   }) async {
     _ringOnboardingCompleted = true;
     _foregroundServiceEnabled = enableForegroundService;
     _foregroundServiceAllowed = enableForegroundService;
+    final id = _pairedRing?.identityKey;
+    if (id != null) {
+      _onboardedRingIds = {..._onboardedRingIds, id};
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+        _onboardedRingIdsKey,
+        _onboardedRingIds.toList(),
+      );
+    }
     await _persistRingOnboarding();
     _set(() {});
     _syncForegroundService();

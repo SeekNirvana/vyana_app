@@ -21,6 +21,7 @@ class MonoEyebrow extends StatelessWidget {
     this.weight = FontWeight.w600,
     this.spacing = 1.1,
     this.maxLines = 1,
+    this.shrinkToFit = false,
   });
 
   final String text;
@@ -30,12 +31,23 @@ class MonoEyebrow extends StatelessWidget {
   final double spacing;
   final int maxLines;
 
+  /// Shrink to fit the width instead of ellipsizing.
+  ///
+  /// An eyebrow ends in the part worth reading — "ON THE CHARGER · 28%",
+  /// "LAST SYNC 14 HOURS AGO" — so dropping its tail loses exactly the
+  /// number it was there to carry. On a narrow screen, or at a large text
+  /// scale, shrinking keeps the whole line. Only for call sites with bounded
+  /// width (inside a Flexible or Expanded); elsewhere a FittedBox has no
+  /// width to fit to.
+  final bool shrinkToFit;
+
   @override
   Widget build(BuildContext context) {
-    return Text(
+    final label = Text(
       text.toUpperCase(),
       maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
+      softWrap: maxLines > 1,
       style: TextStyle(
         fontFamily: VyanaType.mono,
         // Floor: uppercase tracked mono below this is unreadable on a phone.
@@ -45,6 +57,12 @@ class MonoEyebrow extends StatelessWidget {
         height: 1.2,
         color: color ?? context.vyana.mutedInk,
       ),
+    );
+    if (!shrinkToFit) return label;
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: AlignmentDirectional.centerStart,
+      child: label,
     );
   }
 }
@@ -219,8 +237,15 @@ class NovaPill extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.vyana;
     final manager = ref.watch(guideModelManagerProvider);
-    final ready = manager.modelReady;
+    final ai = ref.watch(aiBackendProvider);
     final downloading = manager.downloadingState;
+    // Nova is ready when the backend the user picked is ready — not when
+    // the on-device model happens to be installed. Someone running their
+    // own endpoint should never be told to download a 3.1 GB model they
+    // have no use for.
+    final ready = ai.backend == AiBackend.cloud
+        ? ai.cloudReady
+        : manager.modelReady;
     final tint = t.mutedInk;
     final bright = t.heading;
 
@@ -229,9 +254,9 @@ class NovaPill extends ConsumerWidget {
     final String trailing;
     if (ready) {
       line = 'Ask Nova';
-      glyph = 'brain';
+      glyph = ai.backend == AiBackend.cloud ? 'cloud' : 'brain';
       trailing = 'chevR';
-    } else if (downloading != null) {
+    } else if (ai.backend == AiBackend.local && downloading != null) {
       final pct = (downloading.progress * 100).clamp(0, 100).round();
       line = downloading.status == GuideModelStatus.verifying
           ? 'Verifying your private guide'
@@ -239,9 +264,11 @@ class NovaPill extends ConsumerWidget {
       glyph = 'download';
       trailing = 'refresh';
     } else {
-      line = 'Install private AI guide · $kGuideModelSizeLabel';
-      glyph = 'download';
-      trailing = 'download';
+      // Not "install a model": the choice comes first, and one of the two
+      // answers involves no download at all.
+      line = 'Configure your AI';
+      glyph = 'brain';
+      trailing = 'chevR';
     }
 
     return Align(
@@ -249,7 +276,7 @@ class NovaPill extends ConsumerWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => ready ? openGuideChat(context) : openGuideStore(context),
+          onTap: () => ready ? openGuideChat(context) : openAiSetup(context),
           borderRadius: BorderRadius.circular(100),
           child: Container(
             padding: const EdgeInsets.fromLTRB(14, 9, 12, 10),
@@ -300,10 +327,26 @@ Future<void> openGuideChat(BuildContext context) {
 
 // ── Ring status ─────────────────────────────────────────────────────────────
 
-enum RingUiState { synced, syncing, stale, disconnected, charging }
+enum RingUiState {
+  synced,
+  syncing,
+  stale,
+  disconnected,
+  charging,
+
+  /// Bug 48: a reconnect the user asked for, in flight.
+  connecting,
+}
 
 RingUiState ringUiStateOf(RingController c) {
+  // Bug 48: first, so the tap on CONNECT is answered immediately rather than
+  // leaving the pill on CONNECT while the attempt runs.
+  if (c.isUserReconnecting) return RingUiState.connecting;
   if (c.isSyncing) return RingUiState.syncing;
+  // Bug 43: the state existed and the mock had it, but nothing ever returned
+  // it, so a charging ring showed a plain percentage. The SDK reports the
+  // status; this is the one place that has to read it.
+  if (c.isCharging) return RingUiState.charging;
   if (ringIsOffline(c)) return RingUiState.disconnected;
   if (ringIsStale(c)) return RingUiState.stale;
   return RingUiState.synced;
@@ -330,6 +373,9 @@ String _agoLabel(DateTime at) {
   }
   final last = c.lastSyncedAt;
   switch (ringUiStateOf(c)) {
+    case RingUiState.connecting:
+      // Bug 48: gold, because reaching the ring is a ring-sync state.
+      return (text: 'CONNECTING TO YOUR RING…', color: t.gold, pulse: true);
     case RingUiState.syncing:
       return (text: 'SYNCING YOUR RING', color: t.gold, pulse: true);
     case RingUiState.disconnected:
@@ -341,6 +387,15 @@ String _agoLabel(DateTime at) {
         pulse: false,
       );
     case RingUiState.charging:
+      // Mock Home 5a: grey, and it says what it is — the ring is off the
+      // finger on purpose, so nothing here is a warning.
+      return (
+        text: c.batteryPercent == null
+            ? 'ON THE CHARGER'
+            : 'ON THE CHARGER · ${c.batteryPercent}%',
+        color: t.mutedInk,
+        pulse: false,
+      );
     case RingUiState.synced:
       if (!c.isConnected) {
         // A short drop while the SDK reconnects — say so, quietly.
@@ -424,6 +479,91 @@ class _RingStatusDotState extends State<RingStatusDot>
   }
 }
 
+/// A reconnect in progress, in the banner's own slot. Bug 48: the banner used
+/// to keep saying "Nothing is reading you right now · Reconnect" throughout
+/// the attempt, so there was nothing to tell a running attempt from an
+/// ignored tap.
+class _ReachingRingBanner extends StatelessWidget {
+  const _ReachingRingBanner({required this.margin});
+
+  final EdgeInsets margin;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Container(
+      margin: margin,
+      padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
+      decoration: BoxDecoration(
+        color: t.gold.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.gold.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const SpinningIcon(icon: 'refresh', size: 16),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Reaching your ring…',
+              style: VyanaType.caption.copyWith(
+                color: t.text,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// An icon turning once a second — a ring-sync state in motion. Gold by
+/// default, because that is what reaching or syncing a ring looks like.
+class SpinningIcon extends StatefulWidget {
+  const SpinningIcon({
+    required this.icon,
+    required this.size,
+    this.color,
+    super.key,
+  });
+
+  final String icon;
+  final double size;
+  final Color? color;
+
+  @override
+  State<SpinningIcon> createState() => _SpinningIconState();
+}
+
+class _SpinningIconState extends State<SpinningIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return RotationTransition(
+      turns: _c,
+      child: VyanaIcon(
+        widget.icon,
+        size: widget.size,
+        color: widget.color ?? t.gold,
+      ),
+    );
+  }
+}
+
 /// Stale / disconnected banner with the fix inline — Sync now / Reconnect —
 /// so the user can act where they noticed the problem. Shown on Home (above
 /// the nav) and on Metrics (under the header).
@@ -444,6 +584,11 @@ class RingStaleBanner extends StatelessWidget {
     final t = context.vyana;
     final c = controller;
     final state = ringUiStateOf(c);
+    // Bug 48: the banner is the other place a reconnect starts, so it shows
+    // the attempt too instead of looking untouched.
+    if (state == RingUiState.connecting) {
+      return _ReachingRingBanner(margin: margin);
+    }
     if (state != RingUiState.stale && state != RingUiState.disconnected) {
       return const SizedBox.shrink();
     }
@@ -507,8 +652,10 @@ class RingStaleBanner extends StatelessWidget {
             InkWell(
               onTap: busy
                   ? null
+                  // Bug 48: the same feedback path as Sync, so a failed
+                  // reconnect says so instead of doing nothing.
                   : () => error
-                        ? unawaited(c.reconnectSavedRing(force: true))
+                        ? unawaited(reconnectWithFeedback(context, c))
                         : unawaited(syncRingWithFeedback(context, c)),
               borderRadius: BorderRadius.circular(8),
               child: Padding(
@@ -779,13 +926,27 @@ class PatternCard extends StatelessWidget {
 /// Quality colour + state word for a readiness score: Ready · Balanced ·
 /// Depleted. Words deliberately diverge from the intent chips (no "Steady"
 /// beside "Settle").
+///
+/// Bug 36: [hrvOnly] is a score built from HRV with no night behind it. It is
+/// half a reading, so it never earns a verdict — grey with the number is as
+/// far as it goes, and "Depleted" in particular must never come from a
+/// missing night.
 ({Color hue, Color soft, String word, String state}) scoreLook(
   int? score,
-  VyanaColors t,
-) {
+  VyanaColors t, {
+  bool hrvOnly = false,
+}) {
   if (score == null) {
     // No score is not a verdict: neutral grey, not the amber band.
     return (hue: t.mutedInk, soft: t.mutedInk, word: '—', state: 'No read yet');
+  }
+  if (hrvOnly) {
+    return (
+      hue: t.mutedInk,
+      soft: t.mutedInk,
+      word: 'HRV',
+      state: 'Partial read',
+    );
   }
   if (score >= 70) {
     return (hue: t.qGood, soft: t.qGoodSoft, word: 'READY', state: 'Ready');

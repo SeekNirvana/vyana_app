@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ai_backend_service.dart';
 import 'app_startup_service.dart';
 import 'guide_model_manager.dart';
 import 'guide_persona_prefs_service.dart';
@@ -13,10 +14,19 @@ import 'guide_persona_prefs_service.dart';
 /// keeps multi-turn context internally; switching guides offloads and rebuilds
 /// the session so each guide starts fresh with its own system prompt.
 class GuideRuntimeService {
-  GuideRuntimeService({required GuidePersonaPrefsService prefsService})
-      : _prefsService = prefsService;
+  GuideRuntimeService({
+    required GuidePersonaPrefsService prefsService,
+    required AiBackendController backend,
+  })  : _prefsService = prefsService,
+        _backend = backend;
 
   final GuidePersonaPrefsService _prefsService;
+
+  /// Where Nova thinks: the Gemma bundle on this phone, or an endpoint the
+  /// user runs. The routing lives here rather than at the call sites so that
+  /// every caller — chat, journal reflections, the streaming replies —
+  /// follows the user's choice without knowing there is one.
+  final AiBackendController _backend;
 
   // flutter_gemma defaults (topK: 1, randomSeed: 1) can degenerate into an
   // infinite identical-token loop when LiteRT's OpenCL sampler is unavailable.
@@ -106,6 +116,15 @@ class GuideRuntimeService {
     required GuideKind guide,
     required String prompt,
   }) async* {
+    if (_backend.backend == AiBackend.cloud && _backend.cloudReady) {
+      // The endpoint carries the whole conversation in the prompt, so there
+      // is no session to load, offload or retry on another backend. A
+      // failure here is the user's server, and saying so beats a generic
+      // "inference failed" that sends them looking at the phone.
+      yield* _backend.streamFromEndpoint(prompt);
+      return;
+    }
+
     final definition = guidePersonaDefinitions[guide]!;
     final backendCandidates = _litertLmBackends(definition);
     Object? lastError;
@@ -428,6 +447,7 @@ class GuideRuntimeService {
 final guideRuntimeServiceProvider = Provider<GuideRuntimeService>((ref) {
   final service = GuideRuntimeService(
     prefsService: ref.watch(guidePersonaPrefsServiceProvider),
+    backend: ref.watch(aiBackendProvider),
   );
   ref.onDispose(service.dispose);
   return service;

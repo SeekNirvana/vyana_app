@@ -52,6 +52,14 @@ class DayIntentController extends StateNotifier<DayIntentState> {
   DayIntentController(this._ref)
       : super(const DayIntentState(null, confirmed: false)) {
     unawaited(_load());
+    // Item 46: a planned sport day pre-sets Perform, but the pre-set is
+    // derived once at launch — so planning a run in You left the chip on
+    // whatever the weekday rule had already chosen. Re-derive when the plan
+    // changes; a value the user confirmed is still never overwritten.
+    _ref.listen<WeeklyPlan>(
+      weeklyPlanProvider,
+      (_, _) => unawaited(ensureToday()),
+    );
   }
 
   DayIntent? get intent => state.intent;
@@ -98,6 +106,18 @@ class DayIntentController extends StateNotifier<DayIntentState> {
       final ring = _ref.read(ringControllerProvider);
       final wellness = ring.currentWellnessState();
       final readiness = HomeDashboard.from(ring).readinessScore;
+      // Item 46: a planned sport or strength day opens on Perform — still
+      // dashed until the user confirms it. Otherwise the weekday rule stands.
+      final planned = plannedIntentFor(
+        _ref.read(weeklyPlanProvider),
+        DateTime.now(),
+      );
+      if (planned != null) {
+        if (mounted && !state.confirmed && state.intent != planned) {
+          state = DayIntentState(planned, confirmed: false);
+        }
+        return;
+      }
       final intent = presetIntent(
         now: DateTime.now(),
         sessionStarts: [
@@ -170,6 +190,12 @@ String readSentenceFor(
   HomeDashboard dashboard,
 ) {
   final score = dashboard.readinessScore;
+  // Bug 36: before last night has arrived nothing is known about today, so
+  // any sentence about capacity would be a guess dressed as a read.
+  if (dashboard.syncPending) {
+    return 'Your ring is still handing over last night. Today\'s read '
+        'settles in shortly.';
+  }
   final hasData = state.hasData || score != null;
   if (!hasData) {
     return 'Sync your ring and today\'s read settles in here.';
@@ -235,9 +261,84 @@ String suggestedPracticeFor(
   }
 }
 
+// ── The day's suggestion (bug 45) ─────────────────────────────────────────
+// One card, in one place, choosing by HomeMoment. The morning keeps the short
+// practice it always had; the afternoon suggests something the user actually
+// does; the evening winds down. One rule, so Home and the Practice tab can
+// never show two different "suggested today".
+
+/// Gentle movement — what Recover suggests, and the only thing suggested at
+/// all when readiness is under [kGentleOnlyReadiness].
+const Set<String> kGentlePracticeIds = {
+  'walk',
+  'yogaFlow',
+  'stretching',
+  'mobility',
+  'swimming',
+};
+
+/// What Settle suggests during the day.
+const Set<String> kSettlePracticeIds = {'walk', 'yogaFlow', 'walkingMed'};
+
+/// Below this, only gentle practices are suggested whatever the intent.
+const int kGentleOnlyReadiness = 50;
+
+/// The evening rotation, in order, at their catalogue lengths.
+const List<String> kWindDownRotation = ['bodyScan', 'yogaNidra', 'soundBath'];
+
+/// After this hour the wind-down may be Lucid Dreaming instead, on alternate
+/// nights — it is a pre-sleep practice, so it is wrong at 18:00.
+const int kLucidDreamingFromHour = 21;
+
+/// What the suggestion card shows right now.
+class HomeSuggestion {
+  const HomeSuggestion({
+    required this.activityId,
+    required this.heading,
+    required this.reason,
+    required this.minutes,
+    this.meta,
+    this.offerPin = false,
+    this.setsTarget = true,
+    this.lowReadinessAlternative,
+  });
+
+  final String activityId;
+
+  /// "Suggested practice" · "Suggested activity" · "Wind down" ·
+  /// "Planned today" (item 46).
+  final String heading;
+
+  final String reason;
+
+  /// What the card opens with. The morning slot is capped at
+  /// [kSuggestedMaxMinutes]; the others use the practice's own length.
+  final int minutes;
+
+  /// The mono line in the card — "YOUR USUAL · 32 MIN", "PLANNED · 2 OF 3".
+  final String? meta;
+
+  /// Bug 45: shown when the suggestion came from a fallback rather than a
+  /// pin, so the user can make it a pin in one tap.
+  final bool offerPin;
+
+  /// The day slot opens the practice with no target set.
+  final bool setsTarget;
+
+  /// Item 46: a gentler practice offered under a planned one on a low
+  /// readiness day. Never swapped silently.
+  final String? lowReadinessAlternative;
+
+  Activity get activity =>
+      activityById(activityId) ?? activityById('breathwork')!;
+}
+
 /// Suggested length in minutes — always four or less. A suggestion is the
 /// smallest useful dose (rest 4 · prime 2 · settle 3), never the catalogue's
 /// full default; the user can lengthen it on the activity screen.
+///
+/// Bug 45: the cap applies to the **morning slot only**. A 4-minute cap on an
+/// afternoon walk or an evening Yoga Nidra would make both meaningless.
 const int kSuggestedMaxMinutes = 4;
 
 int suggestedMinutesFor(DayIntent intent, Activity activity) {
@@ -247,6 +348,186 @@ int suggestedMinutesFor(DayIntent intent, Activity activity) {
     DayIntent.settle => 3,
   };
   return math.min(math.min(short, kSuggestedMaxMinutes), activity.dur);
+}
+
+/// Whether [a] is something to suggest for [intent] right now.
+bool _fitsIntent(Activity a, DayIntent intent, int? readiness) {
+  // The safety rule first: a tired body gets gentle whatever the chip says.
+  final gentleOnly = readiness != null && readiness < kGentleOnlyReadiness;
+  if (gentleOnly) return kGentlePracticeIds.contains(a.id);
+  return switch (intent) {
+    DayIntent.perform => a.cat == 'sport' || a.kind == 'strength',
+    DayIntent.recover => kGentlePracticeIds.contains(a.id),
+    DayIntent.settle => kSettlePracticeIds.contains(a.id),
+  };
+}
+
+/// The mindfulness practice each intent falls back to when the user has no
+/// history to suggest from. Catalogue length, catalogue practice.
+String _mindfulnessFallback(DayIntent intent, int? readiness) {
+  if (readiness != null && readiness < kGentleOnlyReadiness) return 'bodyScan';
+  return switch (intent) {
+    DayIntent.recover => 'bodyScan',
+    DayIntent.perform => 'hrvBreathing',
+    DayIntent.settle => 'walkingMed',
+  };
+}
+
+/// "YOUR USUAL · 32 MIN" — the median of the user's last five sessions of
+/// this practice, or the catalogue default when they have never done it.
+int usualMinutesFor(String activityId, List<SessionRow> history) {
+  final durations = <int>[
+    for (final s in history)
+      if (s.vyanaActivityType == activityId && s.endedAt != null)
+        s.endedAt!.difference(s.startedAt).inMinutes,
+  ].where((m) => m > 0).take(5).toList()
+    ..sort();
+  if (durations.isEmpty) {
+    return activityById(activityId)?.dur ?? kSuggestedMaxMinutes;
+  }
+  return durations[durations.length ~/ 2];
+}
+
+/// The wind-down practice for [now]. Rotates day by day so the evening is not
+/// the same twenty minutes for ever; after [kLucidDreamingFromHour] it is
+/// Lucid Dreaming on alternate nights.
+String windDownFor(DateTime now) {
+  final day = int.parse(
+    '${now.year}${now.month.toString().padLeft(2, '0')}'
+    '${now.day.toString().padLeft(2, '0')}',
+  );
+  if (now.hour >= kLucidDreamingFromHour && day.isEven) {
+    return kLucidDreamingId;
+  }
+  return kWindDownRotation[day % kWindDownRotation.length];
+}
+
+/// A gentler practice to offer beside a planned one on a low-readiness day
+/// (item 46). Uses the same gentle rule as the day slot.
+String? _gentleAlternativeFor(
+  DayIntent intent,
+  List<String> pins,
+  List<SessionRow> todaysFinished,
+) {
+  final done = {for (final s in todaysFinished) s.vyanaActivityType};
+  for (final id in pins) {
+    if (kGentlePracticeIds.contains(id) && !done.contains(id)) return id;
+  }
+  for (final id in kGentlePracticeIds) {
+    if (!done.contains(id)) return id;
+  }
+  return null;
+}
+
+/// The whole rule behind the one suggestion card (bug 45), pure so Home, the
+/// Practice tab and the tests all read the same answer.
+///
+/// [history] is every finished session, newest first. [todaysFinished] is
+/// today's, so a practice already done is not suggested again.
+HomeSuggestion homeSuggestionFor({
+  required DayIntent intent,
+  required WellnessState state,
+  required int? readiness,
+  required HomeMoment moment,
+  required DateTime now,
+  List<String> pins = const [],
+  List<SessionRow> history = const [],
+  List<SessionRow> todaysFinished = const [],
+  WeeklyPlan plan = WeeklyPlan.empty,
+}) {
+  // Item 46: a planned day replaces the day suggestion, and the morning's
+  // short practice too when the user usually trains before noon. Each stays
+  // until it is done or 22:00 — after that the evening wind-down takes over.
+  final planned = plannedStateFor(
+    plan: plan,
+    now: now,
+    todaysFinished: todaysFinished,
+    history: history,
+  );
+  if (planned != null) {
+    final usual = usualMinutesFor(planned.activityId, history);
+    final gentle = readiness != null && readiness < kGentleOnlyReadiness
+        ? _gentleAlternativeFor(intent, pins, todaysFinished)
+        : null;
+    return HomeSuggestion(
+      activityId: planned.activityId,
+      heading: 'Planned today',
+      reason: suggestedReasonFor(intent, readiness),
+      minutes: usual,
+      meta: planned.meta(usual),
+      setsTarget: false,
+      // Never swapped silently: the plan stands, with one line underneath.
+      lowReadinessAlternative: gentle,
+    );
+  }
+
+  switch (moment) {
+    case HomeMoment.morning:
+      // Unchanged: the short practice, four minutes or less.
+      final id = suggestedPracticeFor(intent, state, readiness, moment);
+      final activity = activityById(id) ?? activityById('breathwork')!;
+      return HomeSuggestion(
+        activityId: id,
+        heading: 'Suggested practice',
+        reason: suggestedReasonFor(intent, readiness),
+        minutes: suggestedMinutesFor(intent, activity),
+      );
+
+    case HomeMoment.night:
+      final id = windDownFor(now);
+      return HomeSuggestion(
+        activityId: id,
+        heading: 'Wind down',
+        reason: 'Helps your body and mind settle before sleep',
+        minutes: activityById(id)?.dur ?? 15,
+      );
+
+    case HomeMoment.day:
+      final doneToday = {
+        for (final s in todaysFinished) s.vyanaActivityType,
+      };
+      bool usable(String id) {
+        final a = activityById(id);
+        return a != null &&
+            !doneToday.contains(id) &&
+            _fitsIntent(a, intent, readiness);
+      }
+
+      HomeSuggestion day(String id, {required bool offerPin}) =>
+          HomeSuggestion(
+            activityId: id,
+            heading: 'Suggested activity',
+            reason: suggestedReasonFor(intent, readiness),
+            minutes: usualMinutesFor(id, history),
+            meta: 'YOUR USUAL · ${usualMinutesFor(id, history)} MIN',
+            offerPin: offerPin,
+            // The day slot opens the practice with no target set.
+            setsTarget: false,
+          );
+
+      // 1 · a pin that fits.
+      for (final id in pins) {
+        if (usable(id)) return day(id, offerPin: false);
+      }
+      // 2 · something done before, most recent first, even if not pinned.
+      final seen = <String>{};
+      for (final s in history) {
+        final id = s.vyanaActivityType;
+        if (!seen.add(id)) continue;
+        if (usable(id)) return day(id, offerPin: true);
+      }
+      // 3 · a mindfulness practice from the catalogue, at its own length.
+      final id = _mindfulnessFallback(intent, readiness);
+      return HomeSuggestion(
+        activityId: id,
+        heading: 'Suggested activity',
+        reason: suggestedReasonFor(intent, readiness),
+        minutes: activityById(id)?.dur ?? kSuggestedMaxMinutes,
+        meta: 'YOUR USUAL · ${activityById(id)?.dur ?? 0} MIN',
+        offerPin: true,
+        setsTarget: false,
+      );
+  }
 }
 
 /// The one-line reason under the suggested-practice heading.

@@ -127,6 +127,10 @@ bool ringHealthDeleteSucceeded(
 /// SDK-allowed automatic health monitoring interval (minutes).
 const kHealthMonitoringMinInterval = 1;
 const kHealthMonitoringMaxInterval = 60;
+
+/// How long to wait for the ring to confirm a health-monitoring change
+/// before giving up. The SDK call itself never times out.
+const kHealthMonitoringApplyTimeout = Duration(seconds: 12);
 const kHealthMonitoringDefaultInterval = 15;
 const kHealthMonitoringPresetIntervals = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
 
@@ -582,6 +586,13 @@ String _firmwareFromParts(dynamic source) {
   return '$major.$sub';
 }
 
+/// The ring models Vyana ships, upper case. Bug 49: the screen title is
+/// built from this rather than from whatever the SDK puts in `deviceType` —
+/// which on this SDK is the device category "Ring", not a model. Extend it
+/// when the next model ships (Diagnostics logs the raw value, so the new
+/// one is known before then).
+const Set<String> kRingModels = {'PRANA'};
+
 class SavedPranaRing {
   const SavedPranaRing({
     required this.name,
@@ -617,15 +628,29 @@ class SavedPranaRing {
   /// ring rather than hard-coded, so a future model shows its own name. The
   /// user's own rename ("Leena 03BE") is not a model, so the first word is
   /// only used when it still looks like one.
+  ///
+  /// Bug 49: `deviceType` was trusted outright, and this SDK reports a device
+  /// *category* there — "Ring" — so the title became "Ring ring" for every
+  /// user and the fallback below was never reached. Only a value that matches
+  /// a model we actually ship is used; a raw SDK category never is.
   String get modelName {
     final type = _cleanText(deviceType);
-    if (type != null) return type;
+    if (type != null && kRingModels.contains(type.toUpperCase())) {
+      return type.toUpperCase();
+    }
     final first = _cleanText(name)?.split(' ').first;
-    if (first != null && first.toUpperCase() == first && first.length > 2) {
+    if (first != null &&
+        first.toUpperCase() == first &&
+        first.length > 2 &&
+        kRingModels.contains(first)) {
       return first;
     }
     return 'PRANA';
   }
+
+  /// The raw `deviceType` the SDK reported, for Diagnostics (bug 49 (3)) —
+  /// so the next model's value is known before it ships.
+  String? get rawDeviceType => _cleanText(deviceType);
 
   String get displayAddress =>
       _cleanText(address) ??
@@ -633,6 +658,24 @@ class SavedPranaRing {
       _cleanText(deviceIdentifier) ??
       _cleanText(deviceId) ??
       'Unknown address';
+
+  /// A stable key for *this* ring across pairings — the MAC first, since the
+  /// scanner's `address` is a per-session handle on iOS. Null when the SDK
+  /// gave us nothing durable, in which case callers must not assume two
+  /// pairings are the same ring.
+  ///
+  /// Setup is remembered against this, not against the phone: re-pairing the
+  /// ring you already named should not walk you through naming it again,
+  /// while a *different* ring must still get its own setup.
+  String? get identityKey {
+    final raw = _cleanText(macAddress) ??
+        _cleanText(deviceId) ??
+        _cleanText(deviceIdentifier) ??
+        _cleanText(address);
+    if (raw == null) return null;
+    final clean = raw.toUpperCase().replaceAll(RegExp('[^0-9A-Z]'), '');
+    return clean.isEmpty ? null : clean;
+  }
 
   factory SavedPranaRing.fromDevice(
     dynamic device, {
@@ -664,7 +707,13 @@ class SavedPranaRing {
       deviceIdentifier: deviceIdentifier ?? previous?.deviceIdentifier,
       deviceId: deviceId ?? previous?.deviceId,
       deviceType: _cleanText(basicInfo?.deviceType) ?? previous?.deviceType,
-      rssi: rssi == -999 ? previous?.rssi : rssi,
+      // Only a real reading replaces the last one. The SDK reports 0 for a
+      // ring that is already connected, and taking that at face value threw
+      // away the genuine reading taken moments earlier at scan time — so the
+      // ring panel showed "—" for a ring whose signal we had actually
+      // measured. There is no live RSSI read on a connected device in the
+      // pinned SDK, so the scan-time value is the only one there is.
+      rssi: usableRssi(rssi) ?? previous?.rssi,
       batteryPower:
           deviceBatteryLevel(device, basicInfo, vitals) ??
           previous?.batteryPower,

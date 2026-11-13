@@ -11,6 +11,7 @@ Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
   final profile = ref.read(userProfileProvider).valueOrNull;
   if (profile == null || !profile.shouldOfferCycleSheet) return;
   final t = context.vyana;
+  CycleMode? chosen;
 
   await showModalBottomSheet<void>(
     context: context,
@@ -51,6 +52,7 @@ Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
                 child: Panel(
                   pad: 13,
                   onTap: () async {
+                    chosen = mode;
                     await ref.read(userProfileProvider.notifier).save(
                           profile.copyWith(
                             cycleMode: mode,
@@ -69,11 +71,107 @@ Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
                           style: VyanaType.label.copyWith(color: t.text),
                         ),
                       ),
-                      VyanaIcon('chevronRight', size: 17, color: t.mutedInk),
+                      VyanaIcon('chevR', size: 17, color: t.mutedInk),
                     ],
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  // Bug 35: the sheet asked nothing about the last period, so predictions
+  // started from nothing — day 1, phase and next-period date all blank until
+  // the user happened to log a start. One optional question fixes that.
+  if (chosen == CycleMode.tracking && context.mounted) {
+    await _askLastPeriodStart(context, ref);
+  }
+}
+
+/// "When did your last period start?" — a date picker and a way out. A picked
+/// day is logged as a period start with the length left unconfirmed, so the
+/// §14b predictions work from day one and the calendar can correct it later.
+Future<void> _askLastPeriodStart(BuildContext context, WidgetRef ref) async {
+  final t = context.vyana;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.fromLTRB(
+        16, 0, 16, 16 + MediaQuery.paddingOf(sheetContext).bottom,
+      ),
+      child: Panel(
+        pad: 18,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            MonoEyebrow('OPTIONAL', size: 9),
+            const SizedBox(height: 6),
+            Text(
+              'When did your last period start?',
+              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 21),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'One date and your cycle day, phase and next period are right '
+              'from today. You can correct it in the calendar any time.',
+              style: VyanaType.caption.copyWith(color: t.textSec, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            Panel(
+              pad: 13,
+              onTap: () async {
+                final now = DateTime.now();
+                final picked = await showDatePicker(
+                  context: sheetContext,
+                  initialDate: now.subtract(const Duration(days: 14)),
+                  // A start older than one cycle tells us nothing useful.
+                  firstDate: now.subtract(const Duration(days: 60)),
+                  lastDate: now,
+                  helpText: 'First day of your last period',
+                );
+                if (picked == null) return;
+                await ref
+                    .read(databaseProvider)
+                    .addCycleDay(picked);
+                if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+              },
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Pick the date',
+                      style: VyanaType.label.copyWith(color: t.text),
+                    ),
+                  ),
+                  VyanaIcon('chevR', size: 17, color: t.mutedInk),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Panel(
+              pad: 13,
+              // Dismissing the sheet by swiping is the same answer: tracking
+              // is on either way, and the Cycle row in You is there to log
+              // the first day whenever it comes.
+              onTap: () => Navigator.of(sheetContext).pop(),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      "I don't remember",
+                      style: VyanaType.label.copyWith(color: t.textSec),
+                    ),
+                  ),
+                  VyanaIcon('chevR', size: 17, color: t.mutedInk),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -84,16 +182,23 @@ Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
 // ── 13b · The Cycle section on Metrics ───────────────────────────────────
 
 class CycleBlock extends ConsumerWidget {
-  const CycleBlock({super.key});
+  const CycleBlock({this.topGap = 0, super.key});
+
+  /// Space above the block, owned here so the gap disappears with the block
+  /// (bug 41) — this sits between two sections on Metrics and must leave no
+  /// hole for anyone the Cycle section does not apply to.
+  final double topGap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(userProfileProvider).valueOrNull;
     if (profile == null || !profile.showsCycle) return const SizedBox.shrink();
-    if (profile.cycleMode == CycleMode.pregnant) {
-      return _PregnancyCard(profile: profile);
-    }
-    return const _CycleCard();
+    return Padding(
+      padding: EdgeInsets.only(top: topGap),
+      child: profile.cycleMode == CycleMode.pregnant
+          ? _PregnancyCard(profile: profile)
+          : const _CycleCard(),
+    );
   }
 }
 
@@ -245,8 +350,12 @@ class _CycleEndPrompt extends ConsumerWidget {
                 label: 'Yes',
                 onTap: () async {
                   final db = ref.read(databaseProvider);
-                  // Log through to the proposed end, then confirm it.
-                  var day = status.runs.first.start;
+                  final run = status.runs.first;
+                  // Bug 34: a run is contiguous, so everything up to its own
+                  // end is already logged. Only the days between that end and
+                  // the proposed one are new — re-writing the earlier days
+                  // would clear a confirmation that is already on them.
+                  var day = run.end.add(const Duration(days: 1));
                   while (!day.isAfter(proposed)) {
                     await db.addCycleDay(day);
                     day = day.add(const Duration(days: 1));
@@ -439,6 +548,13 @@ class CycleCalendarScreen extends ConsumerStatefulWidget {
 class _CycleCalendarScreenState extends ConsumerState<CycleCalendarScreen> {
   late DateTime _month;
 
+  /// Whether the user changed any logged day on this visit. Bug 34: editing
+  /// the dates *is* the answer to "did your period end on …?", so Done
+  /// confirms the run — but only when something was actually edited, so
+  /// simply looking at the calendar cannot close a period that is still
+  /// running.
+  bool _edited = false;
+
   @override
   void initState() {
     super.initState();
@@ -453,6 +569,24 @@ class _CycleCalendarScreenState extends ConsumerState<CycleCalendarScreen> {
     } else {
       await db.addCycleDay(day);
     }
+    if (mounted) setState(() => _edited = true);
+  }
+
+  /// Bug 34: the calendar only ever added and removed days, so correcting the
+  /// dates yourself left the question in place for good. On Done, a latest run
+  /// whose last day is already past is a finished run — record it as one.
+  Future<void> _confirmEditedRun() async {
+    if (!_edited) return;
+    final rows = ref.read(cycleDaysProvider).valueOrNull ?? const [];
+    final runs = periodRuns(rows);
+    if (runs.isEmpty) return;
+    final latest = runs.first;
+    if (latest.endConfirmed) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    // Still running if it reaches today: there is nothing to confirm yet.
+    if (!latest.end.isBefore(today)) return;
+    await ref.read(databaseProvider).confirmCycleEnd(latest.end);
   }
 
   @override
@@ -468,7 +602,10 @@ class _CycleCalendarScreenState extends ConsumerState<CycleCalendarScreen> {
       sub: 'Metrics',
       ctaLabel: 'Done',
       ctaIcon: 'check',
-      onSave: () => Navigator.of(context).pop(),
+      onSave: () async {
+        await _confirmEditedRun();
+        if (context.mounted) Navigator.of(context).pop();
+      },
       children: [
           _MonthHeader(
             month: _month,
@@ -525,7 +662,7 @@ class _MonthHeader extends StatelessWidget {
           borderRadius: BorderRadius.circular(100),
           child: Padding(
             padding: const EdgeInsets.all(8),
-            child: VyanaIcon('chevronLeft', size: 20, color: t.textSec),
+            child: VyanaIcon('chevL', size: 20, color: t.textSec),
           ),
         ),
         Expanded(
@@ -540,7 +677,7 @@ class _MonthHeader extends StatelessWidget {
           borderRadius: BorderRadius.circular(100),
           child: Padding(
             padding: const EdgeInsets.all(8),
-            child: VyanaIcon('chevronRight', size: 20, color: t.textSec),
+            child: VyanaIcon('chevR', size: 20, color: t.textSec),
           ),
         ),
       ],

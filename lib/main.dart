@@ -24,8 +24,11 @@ import 'src/services/device_capability_service.dart';
 import 'src/services/vyana_storage_service.dart';
 import 'src/services/guide_model_manager.dart';
 import 'src/services/guide_runtime_service.dart';
-import 'src/services/app_tts_service.dart';
+import 'src/services/ai_backend_service.dart';
+import 'src/services/audio_route_service.dart';
+import 'src/services/nova_voice_service.dart';
 import 'src/services/guide_voice_service.dart';
+import 'src/services/nova_voice_assets.dart';
 import 'src/services/guide_persona_prefs_service.dart';
 import 'src/services/meal_photo_service.dart';
 import 'src/services/ring_order_pricing.dart';
@@ -41,6 +44,7 @@ import 'src/state/wallet_controller.dart';
 import 'src/theme/app_colors.dart';
 import 'src/theme/app_theme.dart';
 import 'src/theme/app_typography.dart';
+import 'src/theme/display_scale.dart';
 import 'src/theme/theme_mode_controller.dart';
 import 'src/wellness/wellness_state.dart';
 import 'src/services/vitals_notification_service.dart';
@@ -69,6 +73,8 @@ part 'src/state/home_dashboard.dart';
 part 'src/state/personal_baselines.dart';
 part 'src/state/cycle_tracking.dart';
 part 'src/state/day_intent.dart';
+part 'src/state/weekly_plan.dart';
+part 'src/state/nova_context.dart';
 part 'src/state/lucid_arm.dart';
 part 'src/state/pattern_engine.dart';
 part 'src/state/pinned_practices.dart';
@@ -87,19 +93,20 @@ part 'src/screens/you_subscreens.dart';
 part 'src/screens/session_screen.dart';
 part 'src/screens/session_bodies.dart';
 part 'src/screens/your_week_screen.dart';
+part 'src/screens/my_week_screen.dart';
 part 'src/screens/home_screen.dart';
 part 'src/screens/vitals_detail_screen.dart';
 part 'src/screens/practice_screen.dart';
 part 'src/screens/journal_screen.dart';
 part 'src/screens/journal_editors.dart';
 part 'src/screens/guides_screen.dart';
+part 'src/screens/ai_setup_screen.dart';
 part 'src/screens/guide_store_screen.dart';
 part 'src/screens/guide_persona_settings_screen.dart';
 part 'src/screens/you_screen.dart';
 part 'src/screens/ecg_screen.dart';
 part 'src/screens/profile_screen.dart';
-part 'src/screens/health_monitoring_screen.dart';
-part 'src/screens/sync_settings_screen.dart';
+part 'src/screens/ring_data_screen.dart';
 part 'src/screens/ring_onboarding_screen.dart';
 part 'src/mwa_wallet_picker.dart';
 part 'src/screens/wallet_screen.dart';
@@ -135,12 +142,19 @@ class RingApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(themeModeProvider);
+    final displayScale = ref.watch(displayScaleProvider);
     return MaterialApp(
       title: 'Vyana',
       debugShowCheckedModeBanner: false,
       theme: VyanaTheme.light(),
       darkTheme: VyanaTheme.dark(),
       themeMode: mode,
+      // Wrapped here rather than around `home`, so every route, dialog and
+      // sheet the Navigator pushes is laid out at the chosen size too.
+      builder: (context, child) => DisplayScaleLayer(
+        scale: displayScale,
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: storageReady
           ? const VyanaShell()
           : _StorageUnavailableScreen(

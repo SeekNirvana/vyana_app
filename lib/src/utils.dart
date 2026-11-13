@@ -75,8 +75,30 @@ int deviceRssi(dynamic device) {
 /// on a connected device, so an unknown value says so rather than inventing
 /// a number.
 String rssiDisplayText(int? rssi) {
-  if (rssi == null || rssi == 0 || rssi == -999 || rssi > 0) return '—';
+  if (usableRssi(rssi) == null) return '—';
   return '$rssi dBm';
+}
+
+/// The reading if it is one, else null.
+///
+/// Two different values both mean "no reading": -999 is [deviceRssi]'s own
+/// "the SDK gave us nothing", and 0 is the SDK's, written deliberately for a
+/// device that is already connected (YcProductPluginDevice sets
+/// `rssiValue: 0` on the connected-device event). A real reading is
+/// negative, so anything else is absence wearing a number.
+int? usableRssi(int? rssi) {
+  if (rssi == null || rssi >= 0 || rssi == -999) return null;
+  return rssi;
+}
+
+/// Signal as a word, for someone deciding which ring in the list is theirs.
+/// Null when there is no reading — which must not be drawn as "Weak", the
+/// bug this replaces: -999 is less than every threshold, so every ring whose
+/// RSSI the SDK withheld was labelled a weak one.
+String? signalWord(int? rssi) {
+  final value = usableRssi(rssi);
+  if (value == null) return null;
+  return value >= -70 ? 'Strong' : 'Weak';
 }
 
 int? deviceBatteryLevel(
@@ -773,4 +795,25 @@ String timeOfDayLabel(DateTime time) {
   final hour = time.hour.toString().padLeft(2, '0');
   final minute = time.minute.toString().padLeft(2, '0');
   return '$hour:$minute';
+}
+
+const List<String> kShortWeekdays = [
+  'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
+];
+
+const List<String> kShortMonths = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/// How a day older than today is named: the weekday inside a week ("Tue"),
+/// the date beyond it ("12 Oct"). Bug 40 — a value from another day always
+/// says which day it came from.
+String earlierDayLabel(DateTime day, {DateTime? now}) {
+  final today = now ?? DateTime.now();
+  final a = DateTime(day.year, day.month, day.day);
+  final b = DateTime(today.year, today.month, today.day);
+  final days = b.difference(a).inDays;
+  if (days >= 1 && days < 7) return kShortWeekdays[a.weekday - 1];
+  return '${a.day} ${kShortMonths[a.month - 1]}';
 }

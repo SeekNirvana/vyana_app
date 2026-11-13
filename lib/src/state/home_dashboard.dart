@@ -17,6 +17,7 @@ class HomeDashboard {
     required this.practiceHint,
     required this.hasRingHistory,
     required this.sleepStatus,
+    this.nightReason = MissingNightReason.recorded,
     this.restingHr,
     this.overnightHrv,
     this.syncPending = false,
@@ -40,6 +41,10 @@ class HomeDashboard {
   /// must never show an older night as today's.
   final SleepNightStatus sleepStatus;
 
+  /// Why last night is missing or partial (bug 36). Nova is handed this
+  /// rather than being left to say "I can't see a night" (item 51).
+  final MissingNightReason nightReason;
+
   /// Resting HR for today — the lowest sustained HR in last night's sleep
   /// window, not the newest live reading (bug 11).
   final int? restingHr;
@@ -53,6 +58,11 @@ class HomeDashboard {
   final bool syncPending;
 
   bool get hasSleepTonight => sleepStatus == SleepNightStatus.complete;
+
+  /// A score with no night behind it (bug 36). Never shown as a verdict —
+  /// see [scoreLook]'s `hrvOnly`.
+  bool get readinessIsHrvOnly =>
+      readinessScore != null && sleepStatus != SleepNightStatus.complete;
 
   /// What the score line says about where readiness came from.
   String? get readinessSourceNote {
@@ -118,10 +128,25 @@ class HomeDashboard {
                   hrvPoints.length)
               .round();
 
+    // Bug 36: while last night may still be handed over there is no readiness
+    // yet — not a score built on HRV alone, which in the first minutes of a
+    // morning read as a verdict ("Depleted") about a night nobody had seen.
+    final pending = controller.isAwaitingTonightSleep;
+
     // Shared with the Metrics chart, so the big score and today's point on the
     // chart are the same number.
-    final readiness =
-        readinessScoreFrom(sleepScore: sleepScore, hrv: latestHrv);
+    final readiness = pending
+        ? null
+        : readinessScoreFrom(sleepScore: sleepScore, hrv: latestHrv);
+
+    final nightReason = missingNightReasonFor(
+      status: sleepStatus,
+      history: history,
+      pending: pending,
+      lastSyncedAt: controller.lastSyncedAt,
+      batteryPercent: controller.batteryPercent,
+      now: today,
+    );
 
     final delta = sleepScore != null && priorSleepScore != null
         ? sleepScore - priorSleepScore
@@ -188,9 +213,10 @@ class HomeDashboard {
       practiceHint: practiceHint,
       hasRingHistory: hasHistory,
       sleepStatus: sleepStatus,
+      nightReason: nightReason,
       restingHr: restingHr,
       overnightHrv: overnightHrv,
-      syncPending: controller.isAwaitingTonightSleep,
+      syncPending: pending,
     );
   }
 

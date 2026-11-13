@@ -18,7 +18,7 @@ class VyanaShell extends ConsumerStatefulWidget {
 class _VyanaShellState extends ConsumerState<VyanaShell>
     with WidgetsBindingObserver {
   bool _profilePromptShown = false;
-  bool _cycleSheetShown = false;
+
   StreamSubscription<Uri?>? _widgetClickSub;
 
   static const _tabs = <Widget>[
@@ -106,17 +106,12 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
           });
           return;
         }
-        // §14b: offered once, after the profile is saved with a female
-        // gender. Never before the profile is complete, so it does not stack
-        // on the set-up prompt.
-        if (!_cycleSheetShown &&
-            profile.isWellnessReady &&
-            profile.shouldOfferCycleSheet) {
-          _cycleSheetShown = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) unawaited(offerCycleTracking(context, ref));
-          });
-        }
+        // §14b's cycle offer used to live here. Bug 35: from the shell it
+        // opened on the root navigator *above* the profile editor that had
+        // just set the gender, and the editor's own pop on save closed it
+        // again at once — after which _cycleSheetShown blocked it for the
+        // rest of the session. It is now offered by the editor itself, once
+        // the editor has closed (see ProfileEditorScreen._save).
       });
     });
 
@@ -151,10 +146,16 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
     final sessionRecording = ref.watch(sessionControllerProvider).active;
     // On Home the stale banner takes the pill's place above the nav, so the
     // user can fix the ring where they noticed it; elsewhere Nova stays.
+    // Bug 48: the connecting state keeps the banner's slot, so the attempt
+    // started from the banner stays visible while it runs rather than
+    // snapping back to the Nova pill.
     final showHomeBanner =
         index == homeTab &&
-        (ringUiStateOf(ring) == RingUiState.stale ||
-            ringUiStateOf(ring) == RingUiState.disconnected);
+        const {
+          RingUiState.stale,
+          RingUiState.disconnected,
+          RingUiState.connecting,
+        }.contains(ringUiStateOf(ring));
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {

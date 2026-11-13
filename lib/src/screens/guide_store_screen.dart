@@ -217,7 +217,12 @@ class _GuideModelCard extends ConsumerWidget {
             Cta(
               label: failed ? 'Retry download' : 'Download Nova',
               icon: 'download',
-              onTap: () => manager.downloadModel(kind),
+              onTap: () async {
+                await manager.downloadModel(kind);
+                // Bug 42: the voice arrived in the same step, so pick it up
+                // now rather than waiting for a restart.
+                await ref.read(guideVoiceServiceProvider).refreshNovaVoice();
+              },
             ),
             if (failed && manager.stateFor(kind).errorMessage != null) ...[
               const SizedBox(height: 10),
@@ -390,7 +395,7 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
                     Text('Vani Voice',
                         style: VyanaType.label.copyWith(
                             color: t.text, fontSize: 15)),
-                    Text('Offline STT (Whisper) + device TTS voices',
+                    Text('Offline STT (Whisper) + Nova\'s own voice',
                         style: VyanaType.mono10.copyWith(color: t.textMuted)),
                   ],
                 ),
@@ -399,9 +404,12 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
           ),
           const SizedBox(height: 10),
           Text(
+            // Nova has her own voice, and only her own voice. The phone's
+            // text-to-speech used to stand in for it and sounded like a
+            // screen reader, which is worse than silence for guidance.
             'Talk with Nova, fully offline — Whisper transcribes your mic '
-            'input on-device. Replies can be spoken with your phone\'s built-in '
-            'text-to-speech voices.',
+            'input on this phone, and Nova answers in her own voice, also '
+            'generated here.',
             style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
           ),
           const SizedBox(height: 12),
@@ -432,12 +440,11 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
               ],
             ),
             const SizedBox(height: 14),
-            _GuideVoicePicker(
-              voices: voice.voices,
-              selected: voice.selectedVoice,
+            _NovaVoiceBlock(
+              voice: voice,
               previewing: _previewing || voice.isSpeaking,
-              onChanged: voice.setSelectedVoice,
               onPreview: () => _previewVoice(voice),
+              onInstall: () => _installNovaVoice(voice),
             ),
             const SizedBox(height: 12),
             Panel(
@@ -445,15 +452,34 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      'Speak guide replies aloud',
-                      style: VyanaType.label.copyWith(color: t.text),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Speak guide replies aloud',
+                          style: VyanaType.label.copyWith(color: t.text),
+                        ),
+                        if (!voice.novaVoiceReady) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            "Needs Nova's voice installed",
+                            style: VyanaType.mono10
+                                .copyWith(color: t.textMuted),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   Switch(
-                    value: voice.voiceResponsesEnabled,
+                    value:
+                        voice.voiceResponsesEnabled && voice.novaVoiceReady,
                     activeThumbColor: t.cyan,
-                    onChanged: voice.setVoiceResponsesEnabled,
+                    // Off and untouchable without the voice: there is
+                    // nothing left to read the reply aloud with.
+                    onChanged: voice.novaVoiceReady
+                        ? voice.setVoiceResponsesEnabled
+                        : null,
                   ),
                 ],
               ),
@@ -482,6 +508,18 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
     }
   }
 
+  Future<void> _installNovaVoice(GuideVoiceService voice) async {
+    await voice.downloadNovaVoiceModel();
+    if (!mounted) return;
+    if (voice.lastError != null) {
+      showVyanaSnackBar(
+        context,
+        message: voice.lastError!,
+        icon: 'alert',
+      );
+    }
+  }
+
   Future<void> _previewVoice(GuideVoiceService voice) async {
     setState(() => _previewing = true);
     try {
@@ -499,99 +537,122 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
   }
 }
 
-/// Device TTS voice picker grouped by locale / language.
-class _GuideVoicePicker extends StatelessWidget {
-  const _GuideVoicePicker({
-    required this.voices,
-    required this.selected,
+/// Nova's voice: install it, hear it, or remove it. There is no picker any
+/// more — the phone's own text-to-speech is not offered as an alternative,
+/// so this is the whole of the choice.
+class _NovaVoiceBlock extends StatelessWidget {
+  const _NovaVoiceBlock({
+    required this.voice,
     required this.previewing,
-    required this.onChanged,
     required this.onPreview,
+    required this.onInstall,
   });
 
-  final List<GuideVoiceOption> voices;
-  final GuideVoiceOption? selected;
+  final GuideVoiceService voice;
   final bool previewing;
-  final ValueChanged<GuideVoiceOption?> onChanged;
   final VoidCallback onPreview;
+  final VoidCallback onInstall;
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
 
-    if (voices.isEmpty) {
-      return Text(
-        'No device voices found. Install a language pack in system settings.',
-        style: VyanaType.bodySm.copyWith(color: t.textMuted, height: 1.45),
+    if (voice.isDownloadingNovaVoice) {
+      return _ProgressBlock(
+        progress: voice.novaVoiceDownloadProgress,
+        accent: t.cyan,
+        label: "Downloading Nova's voice…",
       );
     }
 
-    final sorted = [...voices]
-      ..sort((a, b) {
-        final localeCmp = a.locale.toLowerCase().compareTo(b.locale.toLowerCase());
-        if (localeCmp != 0) return localeCmp;
-        return a.label.toLowerCase().compareTo(b.label.toLowerCase());
-      });
-    final selectedOption = selected == null
-        ? null
-        : sorted.cast<GuideVoiceOption?>().firstWhere(
-              (voice) => voice?.stableId == selected!.stableId,
-              orElse: () => null,
-            );
+    if (!voice.novaVoiceAvailableToInstall) {
+      return Panel(
+        pad: 12,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            VyanaIcon('info', size: 18, color: t.gold),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                "Nova's voice is not available in this build yet. Replies "
+                'stay on screen until it is.',
+                style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.4),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('SPOKEN VOICE',
-            style: VyanaType.eyebrow.copyWith(color: t.gold)),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: t.bg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: t.border),
+    if (!voice.novaVoiceReady) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            "Nova's own voice is a one-time download. Until then her replies "
+            "stay on screen — Vyana will not read them in the phone's "
+            'built-in voice.',
+            style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45),
           ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<GuideVoiceOption>(
-              isExpanded: true,
-              value: selectedOption,
-              hint: Text('Choose a voice',
-                  style: VyanaType.bodySm.copyWith(color: t.textMuted)),
-              dropdownColor: t.card,
-              borderRadius: BorderRadius.circular(14),
-              icon: VyanaIcon('chevD', size: 16, color: t.textSec),
-              style: VyanaType.bodySm.copyWith(color: t.text),
-              items: [
-                for (final option in sorted)
-                  DropdownMenuItem<GuideVoiceOption>(
-                    value: option,
-                    child: Text(
-                      option.label,
-                      style: VyanaType.bodySm.copyWith(color: t.text),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
+          const SizedBox(height: 10),
+          Cta(
+            label: "Download Nova's voice · ${voice.novaVoiceDownloadSize}",
+            icon: 'download',
+            onTap: onInstall,
+          ),
+        ],
+      );
+    }
+
+    return Panel(
+      pad: 12,
+      child: Row(
+        children: [
+          VyanaIcon('checkCircle', size: 18, color: t.green),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Nova's voice",
+                  style: VyanaType.label.copyWith(color: t.text),
+                ),
+                Text(
+                  'Installed · ${voice.novaVoiceDownloadSize}',
+                  style: VyanaType.mono10.copyWith(color: t.textMuted),
+                ),
               ],
-              onChanged: onChanged,
             ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Grouped by locale. The default English voice is pre-selected when '
-          'available.',
-          style: VyanaType.mono10.copyWith(color: t.textMuted, height: 1.4),
-        ),
-        const SizedBox(height: 10),
-        Cta(
-          label: previewing ? 'Playing…' : 'Preview voice',
-          icon: 'speaker',
-          solid: false,
-          onTap: previewing ? null : onPreview,
-        ),
-      ],
+          TextButton(
+            onPressed: previewing ? null : onPreview,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 36),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              previewing ? 'Playing…' : 'Preview',
+              style: VyanaType.label.copyWith(color: t.cyan),
+            ),
+          ),
+          TextButton(
+            onPressed: () => unawaited(voice.deleteNovaVoiceModel()),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 36),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Remove',
+              style: VyanaType.label.copyWith(color: t.textSec),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

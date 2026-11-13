@@ -56,7 +56,6 @@ Let's Go!
 completeRingOnboarding
 
 # v1.0.5 — Sync interval, health monitoring, foreground heartbeat, reconnect backoff
-Sync interval saved.
 applyPeriodicSyncInterval
 ring_foreground_sync_tick
 Vyana is running
@@ -69,7 +68,7 @@ Today's read
 READINESS TODAY
 SUGGESTED TODAY
 See all & test
-Install private AI guide
+Configure your AI
 Ask Nova
 NOVA FOUND A PATTERN
 PATTERN WEAKENING
@@ -134,8 +133,72 @@ worked out from your HRV
 sends alerts while Vyana is closed
 PRANA RINGS NEAR ME
 Up to date
-No sessions yet this week
+No sessions in the last 7 days
 Where it went
 By practice
 No patterns yet. Nova needs a few weeks of dreams,
 Time and heart rate across your day
+
+# v1.1.5 — the 13 Nov handover
+# Whole literals only: a const name is inlined, an interpolated string never
+# exists as one, and a middot splits the run in the AOT snapshot.
+READING LAST NIGHT
+No reading today
+RING ESTIMATE
+An estimate from the ring, not a blood test.
+Did your period end on
+When did your last period start?
+CONNECTING TO YOUR RING
+Reaching your ring
+Keep it close and try again.
+Ring screen
+ON THE CHARGER
+PRANA rings
+LAST 7 DAYS
+Your practice
+Suggested activity
+Wind down
+Planned today
+YOUR USUAL
+Pin it
+My week
+Three is the limit
+Low readiness. Try
+Remind me
+DATA (from the ring and app, not the user)
+Listen first: respond fully to what the person asked
+Never guess numbers.
+Diagnostics
+Did it keep watching?
+Honor and Huawei phones close background apps
+That will not last the night. Charge it before bed or there
+Charge it soon
+Open Diagnostics
+Licences
+Ring data
+How often the ring measures you
+How often Vyana collects it
+Two intervals, two batteries. The ring measures you on its own;
+Keep collecting in the background
+Start fresh
+Erase what the ring stored
+This is not the ring Vyana was using. Choose what to clear
+currentRingNeedsOnboarding
+clearRingRecordedData
+Display size
+More fits on screen
+DisplayScaleLayer
+Skip — set this later
+kHealthMonitoringApplyTimeout
+Light, dark, or whatever the phone is set to
+kokoro-en-v0_19
+Download Nova's voice
+Nova's voice is not available in this build yet. Replies
+Needs Nova's voice installed
+355 MB
+AudioRouteService
+Your own endpoint
+On this phone
+Test and save
+ic_notification
+kNotificationAccent

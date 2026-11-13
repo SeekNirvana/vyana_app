@@ -12,6 +12,7 @@ class DeviceScanScreen extends StatefulWidget {
     required this.onReconnectPaired,
     required this.onUnpair,
     required this.onConnectedDeviceDetected,
+    this.lastSyncedAt,
     this.onRename,
     this.onFirstConnected,
     super.key,
@@ -27,6 +28,13 @@ class DeviceScanScreen extends StatefulWidget {
   final Future<bool> Function() onReconnectPaired;
   final Future<bool> Function() onUnpair;
   final ValueChanged<dynamic> onConnectedDeviceDetected;
+
+  /// Bug 37: the app's own last sync, so "Last synced 06:41" is true the
+  /// moment this screen opens. [_lastSyncedAt] used to be local to the
+  /// screen, so until you synced *here* there was nothing to show — and the
+  /// status line fell back to the scan hint instead.
+  final DateTime? lastSyncedAt;
+
   final Future<void> Function(String name)? onRename;
   final VoidCallback? onFirstConnected;
 
@@ -58,6 +66,7 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
     super.initState();
     _selectedDevice = widget.selectedDevice;
     _pairedRing = widget.pairedRing;
+    _lastSyncedAt = widget.lastSyncedAt;
     _connected = widget.connected;
     _basicInfo = widget.basicInfo;
     _vitals = widget.vitals;
@@ -262,12 +271,13 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
     final at = _lastSyncedAt;
     if (at != null) return 'Last synced ${timeOfDayLabel(at)}';
     if (_syncUpToDate) return 'Up to date';
-    // With no ring paired there is no sync to describe, and _scanHint is
-    // the full "Keep the ring awake…" paragraph — which the Nearby rings
-    // panel already shows, and which mono10 is not a style for. Say
-    // nothing and let that panel carry it.
-    if (_pairedRing == null) return '';
-    return _scanHint;
+    // Bug 37: never the scan hint. With a ring paired the hint is "Unpair
+    // this PRANA ring before scanning for another one." — which sat directly
+    // under the heading, reading as an instruction about this screen. The
+    // "PRANA rings near me" section already explains unpairing. With no ring
+    // paired the hint is the full "Keep the ring awake…" paragraph, which
+    // the Nearby rings panel carries and which mono10 is not a style for.
+    return '';
   }
 
   Future<void> _syncNow() async {
@@ -397,8 +407,9 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
                           style: VyanaType.eyebrow.copyWith(color: t.gold),
                         ),
                         Text(
+                          // Bug 49 (2): Vyana is the app; the ring is PRANA.
                           _pairedRing == null
-                              ? 'Vyana rings'
+                              ? 'PRANA rings'
                               : '${_pairedRing!.modelName} ring',
                           style: VyanaType.appBarSerif.copyWith(color: t.text),
                         ),
@@ -478,8 +489,12 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
                 ),
               // Mock 16a: the ring floats between the status panel and the
               // ring card — rotated, with no box or background behind it.
-              if (_pairedRing != null) const _FloatingRingPhoto(),
-              const SizedBox(height: 16),
+              // Bug 37: the photo carries the mock's own 22 / 18 margins, so
+              // the gap below it is not doubled.
+              if (_pairedRing != null)
+                const _FloatingRingPhoto()
+              else
+                const SizedBox(height: 16),
               if (_pairedRing != null)
                 PairedPranaPanel(
                   ring: _pairedRing!,
@@ -645,9 +660,11 @@ class _NearbyRings extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     // Signal as a word: a dBm figure means nothing to
-                    // someone deciding which ring is theirs.
+                    // someone deciding which ring is theirs. No reading says
+                    // so — it used to say "Weak", because the absent value
+                    // is -999 and that is below every threshold.
                     Text(
-                      deviceRssi(d) >= -70 ? 'Strong' : 'Weak',
+                      signalWord(deviceRssi(d)) ?? '—',
                       style: VyanaType.mono12.copyWith(color: t.textSec),
                     ),
                   ],
@@ -672,21 +689,35 @@ class _NearbyRings extends StatelessWidget {
 class _FloatingRingPhoto extends StatelessWidget {
   const _FloatingRingPhoto();
 
+  /// Mock 16a: 66% of the content width, never more than 240 px, with 22 px
+  /// above and 18 px below. Bug 37: it was a fixed 132 px tall, which on
+  /// every phone read as a thumbnail rather than the ring itself.
+  static const double kWidthFraction = 0.66;
+  static const double kMaxWidth = 240;
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Center(
-        child: Transform.rotate(
-          angle: -28 * math.pi / 180,
-          child: Image.asset(
-            'assets/ring_images/ring_inside.png',
-            height: 132,
-            fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = math.min(
+          constraints.maxWidth * kWidthFraction,
+          kMaxWidth,
+        );
+        return Padding(
+          padding: const EdgeInsets.only(top: 22, bottom: 18),
+          child: Center(
+            child: Transform.rotate(
+              angle: -28 * math.pi / 180,
+              child: Image.asset(
+                'assets/ring_images/ring_inside.png',
+                width: width,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

@@ -8,6 +8,10 @@ import '../services/vyana_storage_service.dart';
 
 part 'db.g.dart';
 
+/// Item 46: at most three planned practices per weekday. The limit is on
+/// planning, not on doing — any number can still be done in a day.
+const int kWeeklyPlanMaxPerDay = 3;
+
 /// The local vault. An [ActivitySession] is one practice; its physiology is
 /// captured as [Samples] (HR/SpO₂/HRV/…), its outdoor path as [RoutePoints],
 /// and the unprocessed ring frames as [RawSdkEvents] so nothing is lost even
@@ -352,7 +356,9 @@ class EcgRecordings extends Table {
 class GuideVoicePrefs extends Table {
   TextColumn get id => text()();
 
-  /// JSON map from flutter_tts `getVoices`, persisted for replay on launch.
+  /// The chosen voice as JSON. Once a flutter_tts `getVoices` entry; now
+  /// only ever Nova's own, since the system voices are no longer offered.
+  /// An older row holding a system voice resolves to null on load.
   TextColumn get selectedVoiceJson => text().nullable()();
 
   BoolColumn get voiceResponsesEnabled =>
@@ -364,8 +370,31 @@ class GuideVoicePrefs extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// Item 46 — "My week": up to three practices per weekday, in the user's own
+/// order, chosen from the whole catalogue. Fully optional: every day starts
+/// empty and with no plan nothing in the app changes.
+///
+/// The limit is on *planning* only — any number of practices can still be
+/// done in a day. There is no plan UI on Home or Practice; it is set in You.
+@DataClassName('WeeklyPlanRow')
+class WeeklyPlans extends Table {
+  /// 1 = Monday … 7 = Sunday, matching [DateTime.weekday].
+  IntColumn get weekday => integer()();
+
+  /// 1–3, the user's own order within the day.
+  IntColumn get position => integer()();
+
+  TextColumn get activityId => text()();
+
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {weekday, position};
+}
+
 @DriftDatabase(
   tables: [
+    WeeklyPlans,
     ActivitySessions,
     Samples,
     RoutePoints,
@@ -397,7 +426,7 @@ class VyanaDatabase extends _$VyanaDatabase {
   }
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -457,6 +486,11 @@ class VyanaDatabase extends _$VyanaDatabase {
           } on Object catch (_) {/* already exists */}
           try {
             await m.createTable(practiceTargets);
+          } on Object catch (_) {/* already exists */}
+          // Item 46: the weekly plan. Empty on arrival, so nothing changes
+          // for anyone who never opens "My week".
+          try {
+            await m.createTable(weeklyPlans);
           } on Object catch (_) {/* already exists */}
         },
         beforeOpen: (details) async {
@@ -888,6 +922,41 @@ class VyanaDatabase extends _$VyanaDatabase {
 
   Future<int> clearRingHistoryCaches() => delete(ringHistoryCaches).go();
 
+  /// How many rows in the vault came from a ring rather than from the user.
+  ///
+  /// Used when a *different* ring is paired: the vitals, ECGs and patterns in
+  /// here were recorded by the ring that was replaced, and mixing them with
+  /// the new one's is the kind of quiet wrongness nobody goes looking for.
+  /// Deliberately counts only ring-recorded rows — journal entries, meals,
+  /// practice sessions, the cycle calendar and the weekly plan are the
+  /// user's own and are never part of this offer.
+  Future<int> countRingRecordedRows() async {
+    final counts = await Future.wait([
+      _countRows(ringHistoryCaches),
+      _countRows(ecgRecordings),
+      _countRows(patterns),
+      _countRows(rawSdkEvents),
+    ]);
+    return counts.fold<int>(0, (sum, n) => sum + n);
+  }
+
+  Future<int> _countRows(TableInfo<Table, dynamic> table) async {
+    final expression = countAll();
+    final row = await (selectOnly(table)..addColumns([expression]))
+        .getSingleOrNull();
+    return row?.read(expression) ?? 0;
+  }
+
+  /// Erases what the ring recorded, and nothing the user wrote.
+  Future<void> clearRingRecordedData() async {
+    await batch((b) {
+      b.deleteAll(ringHistoryCaches);
+      b.deleteAll(ecgRecordings);
+      b.deleteAll(patterns);
+      b.deleteAll(rawSdkEvents);
+    });
+  }
+
   // ── ECG recordings ────────────────────────────────────────────────────────
   Future<void> insertEcgRecording({
     required String id,
@@ -1061,6 +1130,43 @@ class VyanaDatabase extends _$VyanaDatabase {
   }
 
   Future<void> clearCycleDays() => delete(cycleDays).go();
+
+  // ── My week (item 46) ─────────────────────────────────────────────────
+
+  Stream<List<WeeklyPlanRow>> watchWeeklyPlan() => (select(weeklyPlans)
+        ..orderBy([
+          (t) => OrderingTerm.asc(t.weekday),
+          (t) => OrderingTerm.asc(t.position),
+        ]))
+      .watch();
+
+  Future<List<WeeklyPlanRow>> allWeeklyPlan() => (select(weeklyPlans)
+        ..orderBy([
+          (t) => OrderingTerm.asc(t.weekday),
+          (t) => OrderingTerm.asc(t.position),
+        ]))
+      .get();
+
+  /// Replaces one weekday's plan with [activityIds], in the given order.
+  /// At most [kWeeklyPlanMaxPerDay] are kept; an empty list clears the day.
+  Future<void> setWeeklyPlanDay(int weekday, List<String> activityIds) async {
+    final kept = activityIds.take(kWeeklyPlanMaxPerDay).toList();
+    await transaction(() async {
+      await (delete(weeklyPlans)..where((t) => t.weekday.equals(weekday))).go();
+      for (var i = 0; i < kept.length; i++) {
+        await into(weeklyPlans).insert(
+          WeeklyPlanRow(
+            weekday: weekday,
+            position: i + 1,
+            activityId: kept[i],
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
+    });
+  }
+
+  Future<void> clearWeeklyPlan() => delete(weeklyPlans).go();
 
   Stream<List<PatternRow>> watchPatterns() =>
       (select(patterns)..orderBy([(t) => OrderingTerm.desc(t.lastConfirmed)]))

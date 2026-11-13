@@ -1,40 +1,47 @@
 part of '../../main.dart';
 
-/// Speaks session voice cues via on-device TTS (no network, no mic). The cue
-/// banner is driven separately by [SessionController.activeCue]; this just
-/// vocalises the line.
+/// Speaks session voice cues (no network, no mic). The cue banner is driven
+/// separately by [SessionController.activeCue]; this just vocalises the line.
+///
+/// Cues speak with Kokoro, like everything else Vyana says out loud. They
+/// used to go through the phone's own text-to-speech, which meant a breath
+/// session could be counted down by a screen-reader voice on one phone and
+/// by a decent one on another. Without the voice installed a cue is silent
+/// — the banner already carries the words.
 class VoiceCueService {
-  final AppTtsService _tts = AppTtsService.instance;
+  final AudioRouteService _audio = AudioRouteService.instance;
+
+  /// Slightly under normal pace: a cue lands mid-breath, not mid-sentence.
+  static const double _cueRate = 0.92;
+
+  bool get isAvailable => NovaVoiceService.instance.isReady;
 
   Future<void> speak(String text) async {
     final normalized = text.trim();
     if (normalized.isEmpty) return;
 
+    if (!await NovaVoiceService.instance.ensureLoaded()) {
+      debugPrint('VOICE_CUE skipped: Nova\'s voice is not installed');
+      return;
+    }
+
     try {
-      _tts.rebindMethodChannel();
-      await _tts.preparePlayback(speechRate: 0.46);
-      await _tts.tts.setVolume(0.9);
-      await _tts.tts.speak(normalized, focus: true);
+      await _audio.preparePlayback();
+      await NovaVoiceService.instance.speak(normalized, rate: _cueRate);
     } on Object catch (e) {
-      debugPrint('VOICE_CUE tts failed: $e');
+      debugPrint('VOICE_CUE failed: $e');
       rethrow;
     }
   }
 
-  /// Quick check from You → Voice cues that TTS is routed correctly.
+  /// Quick check from You → Voice cues that playback is routed correctly.
   Future<void> preview() {
     return speak(
       'Voice cues are on. You\'ll hear guidance during breath, rest, and movement sessions.',
     );
   }
 
-  Future<void> stop() async {
-    try {
-      await _tts.tts.stop();
-    } on Object {
-      // ignore
-    }
-  }
+  Future<void> stop() => NovaVoiceService.instance.stop();
 }
 
 final voiceCueServiceProvider = Provider<VoiceCueService>((ref) {

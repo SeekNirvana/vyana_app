@@ -83,6 +83,15 @@
 		</dict>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
+		<!-- Bug 47: without bluetooth-central iOS tears the ring connection down
+		     the moment Vyana is backgrounded, so nothing syncs, reconnects or
+		     alerts until the app is opened again. Core Bluetooth state
+		     restoration (a restore identifier on the central manager) belongs in
+		     the ring SDK — see docs/ios-background.md. -->
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>bluetooth-central</string>
+		</array>
 		<key>UILaunchStoryboardName</key>
 		<string>LaunchScreen</string>
 		<key>UIMainStoryboardFile</key>

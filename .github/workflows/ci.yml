@@ -1,51 +1,95 @@
 name: CI
 
+# The checks the release workflow would fail on anyway, run early enough to
+# be worth knowing about. Deliberately does not build an APK: the release
+# build pulls multi-gigabyte native toolchains and takes long enough that
+# running it on every push would cost more than it catches.
 on:
   push:
-    branches: [main]
+    branches: ['**']
+    tags-ignore: ['**']
   pull_request:
-    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.7'
 
 jobs:
-  analyze-and-test:
+  check:
+    name: Analyze and test
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
 
-      - name: Install dependencies
+      # pubspec declares `.env` as a bundled asset and .gitignore keeps it
+      # out of the repository, so without this `flutter analyze` reports
+      # "The asset file '.env' doesn't exist" — a *warning*, which stays
+      # fatal below and fails the run. Placeholder values, not secrets:
+      # nothing here builds or runs the app, it only has to exist.
+      - name: Write a placeholder .env
         run: |
-          cp .env.example .env
-          flutter pub get
+          set -euo pipefail
+          {
+            echo "REOWN_PROJECT_ID=ci_placeholder"
+            echo "SOLANA_RPC_URL=https://api.mainnet-beta.solana.com"
+          } > .env
+
+      - run: flutter pub get
+
+      # A declared-but-absent asset fails the release build inside Gradle,
+      # minutes in, with a message that never mentions pubspec. `.env` is
+      # excluded because it is gitignored by design and written from secrets
+      # at release time — the point here is the others.
+      - name: Declared assets exist
+        run: |
+          set -euo pipefail
+          missing=0
+          while IFS= read -r asset; do
+            [ -z "$asset" ] && continue
+            [ "$asset" = ".env" ] && continue
+            if [ ! -e "$asset" ]; then
+              echo "::error::pubspec.yaml declares '$asset', which is not in" \
+                   "the repository. The release build will fail on it."
+              missing=1
+            fi
+          done < <(awk '/^  assets:/{f=1;next} f&&/^    - /{print substr($0,7)} f&&!/^    - /&&NF{exit}' pubspec.yaml)
+          [ "$missing" -eq 0 ] && echo "All declared assets present."
+          exit "$missing"
+
+      # The release workflow reads both of these and fails if they disagree,
+      # which is a bad moment to find out. Checking here means a tag is only
+      # ever pushed at a commit that could actually be released.
+      - name: Version and changelog agree
+        run: |
+          set -euo pipefail
+          full="$(grep -m1 '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')"
+          name="${full%%+*}"
+          if ! grep -q "^## v$name" CHANGELOG.md; then
+            echo "::error::pubspec.yaml is $name but CHANGELOG.md has no" \
+                 "'## v$name' section. A tag cut here could not be released."
+            exit 1
+          fi
+          echo "pubspec $name has a changelog entry."
 
       - name: Analyze
+        # flutter analyze exits non-zero on *infos*, not just warnings and
+        # errors. This repository carries 11 accepted lint suggestions
+        # (prefer_initializing_formals, use_null_aware_elements and one
+        # use_build_context_synchronously in wallet code), so the plain
+        # command fails every run and would teach people to ignore it.
+        # Warnings and errors — the ones that break a build — are still
+        # fatal. Clearing the 11 is worth doing, in its own change.
         run: flutter analyze --no-fatal-infos
 
       - name: Test
         run: flutter test
-
-  release-apk-contract:
-    name: Release APK contract (stale-build guard)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-
-      - name: Install dependencies
-        run: |
-          cp .env.example .env
-          flutter pub get
-
-      - name: Build dApp Store release APK (unsigned OK for fingerprint check)
-        run: |
-          flutter clean
-          flutter build apk --release --flavor dappStore --target-platform android-arm64
-
-      - name: Verify release APK fingerprints
-        run: ./scripts/verify-release-apk.sh build/app/outputs/flutter-apk/app-dappstore-release.apk

@@ -948,6 +948,12 @@ class SessionController extends ChangeNotifier {
     _forgottenSnoozedUntil = null;
     _hrSettledAt = null;
     _lastSummary = summary;
+    // Item 46: a planned practice that has just been done must not still be
+    // reminded about. Re-arming also moves the reminder on to the next
+    // planned day.
+    unawaited(
+      _ref.read(weeklyPlanReminderProvider.notifier).reschedule(),
+    );
     _notify();
     return summary;
   }

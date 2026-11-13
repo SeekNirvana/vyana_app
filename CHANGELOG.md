@@ -1,5 +1,106 @@
 # Changelog
 
+## v1.1.5 — 2026-11-13 · Last night, the day's shape, and Nova with her eyes open
+
+The 13 Nov handover in full: five bugs that made the app misread its own
+data, nine that made it confusing, and four changes. One commit per item.
+
+### Added
+
+- **Nova's own voice (#42).** Nova spoke through the phone's system
+  text-to-speech, which is built for screen reading. She now speaks with
+  Kokoro (Apache 2.0) run on the phone through sherpa-onnx (Apache 2.0),
+  installed in the same step as Nova herself. Every file is fetched only
+  from our own HTTPS host, pinned by SHA-256 and verified after download
+  and again before first load. Never a cloud voice: every reply would
+  otherwise leave the phone. When the voice is missing or fails its check
+  Nova falls back to the best *offline* system voice — iOS Premium then
+  Enhanced, Android's own quality ranking — rather than the first one in
+  the list. *The Kokoro release still has to be mirrored and its checksums
+  pinned; see `docs/building.md`. Until then the fallback is what ships.*
+- **The suggestion changes through the day (#45).** One card, in one
+  place, chosen by the moment: the morning keeps its four-minute practice,
+  the afternoon suggests something you actually do ("YOUR USUAL · 32 MIN",
+  from a pin that fits the intent, then your history, then a mindfulness
+  practice), and the evening winds down on a rotation. Home and the
+  Practice tab read the same rule, so they can never disagree.
+- **My week (#46).** An optional weekly plan: up to three practices a day,
+  from the whole catalogue, set in You. Every day starts empty and with no
+  plan nothing changes anywhere. On a planned day the card shows the first
+  one not yet done; low readiness offers a gentler alternative rather than
+  swapping silently; "Remind me" is off by default.
+- **Nova can see your data (#51).** Asked why last night's score was
+  missing, Nova used to answer "let's focus on today" — she was sent the
+  typed text and nothing else, for no privacy reason, since model and data
+  are both on this phone. Every message now carries a compact data block
+  (last night and why it is missing, yesterday, today against your
+  baselines, sync, battery, today's plan, patterns, anything concerning),
+  and a question about a past day or range adds a look-up for that message.
+  Her instructions were rewritten to answer the question first and to say
+  plainly when the data does not show something.
+- **iOS background sync (#47).** `bluetooth-central` keeps the ring
+  connection alive when Vyana is backgrounded, and the evening battery
+  check is handed to the OS in advance like the stale-sync and
+  out-of-reach alerts. *Core Bluetooth state restoration belongs in the
+  ring SDK; `docs/ios-background.md` has what it needs. Until it lands,
+  keep "syncs in the background" out of the iOS listing.*
+- **Diagnostics (You → About).** Every background heartbeat with its gaps,
+  the service and battery-exemption state, the last sync, when the battery
+  was actually read, why last night is missing, and the raw SDK device
+  type.
+
+### Fixed
+
+- **Home said "Depleted" before last night had arrived (#36).** At launch
+  the app is still reconnecting, so for the first minutes of every morning
+  readiness fell back to HRV alone and that number was given a quality
+  word — a verdict about a night nobody had seen. A paired ring before
+  noon now waits: grey arc, no number, no word, "READING LAST NIGHT…".
+  The HRV-only score takes over only once the retries are spent, and is
+  never a verdict. Why a night is missing is recorded too, for Nova.
+- **"Did your period end on …?" never went away (#34).** The calendar only
+  added and removed days, so correcting the dates was never recorded as an
+  answer, and the proposed day could fall *inside* the run. Editing the
+  dates is now the answer, and the question always names a day that can be
+  confirmed.
+- **A vital with no reading today went blank (#40).** The row showed "—"
+  and "No reading yet" even with a reading from yesterday. It now shows
+  the last value in grey with its day. Stress, blood oxygen, temperature,
+  glucose, blood pressure and sleep also stopped passing an older reading
+  off as today's.
+- **Alerts only arrived when the app was opened (#44).** The watch was a
+  `dataSync` service, which Android 15 stops after six hours — it could
+  never last a night. It is a `connectedDevice` service now, the alerts
+  run in the service isolate instead of waiting for the UI isolate to
+  wake, a battery reading older than 30 minutes decides nothing, and an
+  evening check catches a battery that will not last the night.
+- **Changing gender to female never offered cycle tracking (#35).** The
+  offer waited for an age it did not need, and opened above the editor
+  that had just set the gender, which closed it again. It is offered by
+  the editor itself, and asks one optional question so predictions work
+  from day one.
+- **The ring screen (#37, #49).** "Last synced 06:41" is true the moment
+  it opens, "Unpair this PRANA ring…" no longer sits under the heading,
+  the ring photo is the size the mock draws, and the title is no longer
+  "Ring ring" — the SDK reports a device *category* there, not a model.
+- **Practice "Recent" (#38)** is text again rather than three buttons, and
+  **Cycle (#41)** sits under Movement instead of past everything.
+- **Glucose (#39)** shows the typical range across a day rather than the
+  clinical fasting range, and takes no verdict colour: it is a ring
+  estimate, not a blood test.
+- **The battery pill shows the ring on its charger (#43)**, and suppresses
+  the low-battery and out-of-reach alerts while it is there.
+- **The CONNECT pill answers the tap (#48).** It used to fire a reconnect
+  and change nothing on screen. It now shows the attempt, waits for it,
+  and says so when the ring is out of reach.
+- **"This week" resets every Monday (#50).** The card and Your practice
+  show the last seven days ending today, the same window as Metrics' 7D.
+
+### Changed
+
+- One assistant, one model: the unused Luna, Maya, Aran, Ravi and Tara
+  persona definitions are gone.
+
 ## v1.1.4 — 2026-10-21 · The mark as drawn, the ring photo, a readable week
 
 Brand and asset work from the Vyana 2.0 handover that the v1.1.3 pass

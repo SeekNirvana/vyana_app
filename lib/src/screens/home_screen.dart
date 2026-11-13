@@ -175,6 +175,11 @@ class _HomeHeader extends ConsumerWidget {
                         eyebrow.text,
                         color: eyebrow.color,
                         size: 12,
+                        // "ON THE CHARGER · 28%" and "LAST SYNC 14 HOURS
+                        // AGO" end in the number, so on a narrow screen or
+                        // at a large text scale this line shrinks rather
+                        // than ellipsizing its tail away.
+                        shrinkToFit: true,
                       ),
                     ),
                   ],
@@ -201,11 +206,14 @@ class _HomeHeader extends ConsumerWidget {
               live: c.isConnected,
               onTap: () => switch (uiState) {
                 RingUiState.disconnected => unawaited(
-                  c.reconnectSavedRing(force: true),
+                  reconnectWithFeedback(context, c),
                 ),
                 RingUiState.stale => unawaited(
                   syncRingWithFeedback(context, c),
                 ),
+                // Bug 48: taps are ignored while an attempt runs, rather
+                // than opening the ring screen on top of it.
+                RingUiState.connecting => null,
                 _ => openScanner(context, c),
               },
             ),
@@ -245,6 +253,17 @@ class _RingPill extends StatelessWidget {
         false,
         'refresh',
       ),
+      // Bug 48: the tap is answered on the pill itself — gold, because
+      // reaching the ring is a ring-sync state, with the icon turning.
+      RingUiState.connecting => ('CONNECTING…', t.gold, true, 'refresh'),
+      // Bug 43: charging is neither a sync state nor a verdict, so it is
+      // grey — never the gold of a sync or the green of a good reading.
+      RingUiState.charging => (
+        battery == null ? 'CHARGING' : '$battery%',
+        t.textSec,
+        false,
+        'batteryCharging',
+      ),
       _ => (
         battery == null ? 'RING' : '$battery%',
         live ? t.textSec : t.mutedInk,
@@ -252,6 +271,11 @@ class _RingPill extends StatelessWidget {
         null,
       ),
     };
+    // The charging pill keeps its own hairline rather than the shared border,
+    // so the mock's rgba(143,163,155,.4) is exactly what is drawn.
+    final borderTone = state == RingUiState.charging
+        ? t.mutedInk.withValues(alpha: 0.4)
+        : (filled ? tone : t.border);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -262,13 +286,16 @@ class _RingPill extends StatelessWidget {
           decoration: BoxDecoration(
             color: filled ? tone.withValues(alpha: 0.16) : Colors.transparent,
             borderRadius: BorderRadius.circular(100),
-            border: Border.all(color: filled ? tone : t.border),
+            border: Border.all(color: borderTone),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (icon != null) ...[
-                VyanaIcon(icon, size: 13, color: tone),
+                if (state == RingUiState.connecting)
+                  SpinningIcon(icon: icon, size: 13, color: tone)
+                else
+                  VyanaIcon(icon, size: 13, color: tone),
                 const SizedBox(width: 5),
               ] else ...[
                 RingStatusDot(color: live ? t.qGood : t.mutedInk, pulse: live),
@@ -316,7 +343,8 @@ class _ReadinessRead extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final score = dashboard.readinessScore;
-    final look = scoreLook(score, t);
+    final pending = dashboard.syncPending;
+    final look = scoreLook(score, t, hrvOnly: dashboard.readinessIsHrvOnly);
     final series = readinessSeries(controller.history, 30);
     final avg = series.isEmpty
         ? null
@@ -327,12 +355,14 @@ class _ReadinessRead extends StatelessWidget {
     // Bug 14/17: when readiness came from HRV alone, the score line has to
     // say so — otherwise a number built on no sleep data reads as a full one.
     final sourceNote = dashboard.readinessSourceNote;
-    if (stale) {
+    // Bug 36: pending comes before stale. In the first minutes of a morning
+    // the ring is often both — and "reading last night" is the true one.
+    if (pending) {
+      note = 'READING LAST NIGHT…';
+      noteColor = t.gold;
+    } else if (stale) {
       note = 'LAST READING';
       noteColor = t.textMuted;
-    } else if (dashboard.syncPending) {
-      note = 'GETTING LAST NIGHT';
-      noteColor = t.gold;
     } else if (sourceNote != null && score != null) {
       note = sourceNote.toUpperCase();
       noteColor = t.mutedInk;
@@ -386,19 +416,23 @@ class _ReadinessRead extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    look.state,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: VyanaType.serif,
-                      fontSize: 31,
-                      fontWeight: FontWeight.w600,
-                      height: 1,
-                      color: look.hue,
+                  // Bug 36: no score, so no word. A verdict here would be
+                  // about a night the ring has not handed over yet.
+                  if (!pending) ...[
+                    Text(
+                      look.state,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: VyanaType.serif,
+                        fontSize: 31,
+                        fontWeight: FontWeight.w600,
+                        height: 1,
+                        color: look.hue,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
+                    const SizedBox(height: 6),
+                  ],
                   MonoEyebrow(note, size: 9.5, spacing: 0.8, color: noteColor),
                 ],
               ),
@@ -826,11 +860,40 @@ class SuggestedPracticeBlock extends StatelessWidget {
     required this.reason,
     this.compact = false,
     this.doneToday = false,
+    this.heading = 'Suggested practice',
+    this.minutes,
+    this.meta,
+    this.offerPin = false,
+    this.setsTarget = true,
+    this.footnote,
+    this.onPin,
   });
 
   final DayIntent intent;
   final Activity activity;
   final String reason;
+
+  /// Bug 45: the heading changes through the day — "Suggested practice" in
+  /// the morning, "Suggested activity" during it, "Wind down" in the evening,
+  /// "Planned today" on a planned day (item 46).
+  final String heading;
+
+  /// What the card opens with. Null keeps the morning's short dose.
+  final int? minutes;
+
+  /// The mono line in the card: "YOUR USUAL · 32 MIN", "PLANNED · 2 OF 3".
+  final String? meta;
+
+  /// Bug 45: the suggestion came from a fallback rather than a pin.
+  final bool offerPin;
+
+  /// The day slot opens the practice with no target set.
+  final bool setsTarget;
+
+  /// Item 46: one line under the card, e.g. the low-readiness alternative.
+  final Widget? footnote;
+
+  final VoidCallback? onPin;
 
   /// §3: once the suggestion itself has been done, the play button becomes a
   /// grey tick — the card stays tappable, to do it again.
@@ -845,10 +908,16 @@ class SuggestedPracticeBlock extends StatelessWidget {
     final t = context.vyana;
     final hue = intent.hue(t);
     final soft = t.isDark ? intent.soft(t) : hue;
-    final minutes = suggestedMinutesFor(intent, activity);
+    final minutes = this.minutes ?? suggestedMinutesFor(intent, activity);
     final card = HairlineCard(
       padding: const EdgeInsets.fromLTRB(12, 11, 11, 11),
-      onTap: () => openActivityDetail(context, activity, minutes: minutes),
+      // Bug 45: the day slot opens the practice with no target set — "your
+      // usual 32 min" describes what you normally do, it does not set a goal.
+      onTap: () => openActivityDetail(
+        context,
+        activity,
+        minutes: setsTarget ? minutes : null,
+      ),
       child: Row(
         children: [
           Container(
@@ -881,11 +950,18 @@ class SuggestedPracticeBlock extends StatelessWidget {
                 const SizedBox(height: 3),
                 Row(
                   children: [
-                    MonoEyebrow(
-                      '$minutes MIN',
-                      size: 11,
-                      spacing: 0.8,
-                      color: t.heading,
+                    // Items 45/46 made this line long — "PLANNED · 2 OF 3 ·
+                    // YOUR USUAL 40 MIN" where it used to be "15 MIN" — so
+                    // it needs room to give. Unconstrained it overflowed the
+                    // row by 238px at 360dp.
+                    Flexible(
+                      child: MonoEyebrow(
+                        meta ?? '$minutes MIN',
+                        size: 11,
+                        spacing: 0.8,
+                        color: t.heading,
+                        shrinkToFit: true,
+                      ),
                     ),
                     if (compact) ...[
                       const SizedBox(width: 6),
@@ -937,12 +1013,47 @@ class SuggestedPracticeBlock extends StatelessWidget {
         ],
       ),
     );
-    if (compact) return card;
+    // Bug 45: "Pin it" on a fallback suggestion, so the next one can come
+    // from a pin instead.
+    final extras = <Widget>[
+      if (footnote case final line?) ...[const SizedBox(height: 8), line],
+      if (offerPin && onPin != null) ...[
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: onPin,
+          borderRadius: BorderRadius.circular(6),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 36),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                VyanaIcon('pin', size: 13, color: t.mutedInk),
+                const SizedBox(width: 5),
+                Text(
+                  'Pin it',
+                  style: VyanaType.caption.copyWith(
+                    color: t.textSec,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ];
+    if (compact) {
+      if (extras.isEmpty) return card;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [card, ...extras],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Suggested practice',
+          heading,
           style: VyanaType.label.copyWith(color: t.heading, fontSize: 16.5),
         ),
         const SizedBox(height: 3),
@@ -954,6 +1065,7 @@ class SuggestedPracticeBlock extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         card,
+        ...extras,
       ],
     );
   }
@@ -974,22 +1086,81 @@ class _SuggestedPractice extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final id = suggestedPracticeFor(intent, state, readiness, moment);
-    final activity = activityById(id) ?? activityById('breathwork')!;
-    final today = todaysFinishedSessions(
-      ref.watch(recentSessionsProvider).valueOrNull ?? const [],
+    final sessions = ref.watch(recentSessionsProvider).valueOrNull ?? const [];
+    final today = todaysFinishedSessions(sessions);
+    // Bug 45: one rule, one card — the heading, the practice and its length
+    // all come from the moment of day.
+    final suggestion = homeSuggestionFor(
+      intent: intent,
+      state: state,
+      readiness: readiness,
+      moment: moment,
+      now: DateTime.now(),
+      pins: ref.watch(pinnedPracticesProvider),
+      history: [
+        for (final s in sessions)
+          if (s.endedAt != null) s,
+      ],
+      todaysFinished: today,
+      plan: ref.watch(weeklyPlanProvider),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SuggestedPracticeBlock(
           intent: intent,
-          activity: activity,
-          reason: suggestedReasonFor(intent, readiness),
-          doneToday: today.any((s) => s.vyanaActivityType == activity.id),
+          activity: suggestion.activity,
+          reason: suggestion.reason,
+          heading: suggestion.heading,
+          minutes: suggestion.minutes,
+          meta: suggestion.meta,
+          offerPin: suggestion.offerPin,
+          setsTarget: suggestion.setsTarget,
+          footnote: _LowReadinessAlternative(suggestion: suggestion),
+          onPin: () => unawaited(
+            ref
+                .read(pinnedPracticesProvider.notifier)
+                .pin(suggestion.activityId),
+          ),
+          doneToday:
+              today.any((s) => s.vyanaActivityType == suggestion.activityId),
         ),
         DoneTodayLine(sessions: today),
       ],
+    );
+  }
+}
+
+/// Item 46: one line under a planned practice on a low-readiness day. The
+/// plan is never swapped silently — it is offered, and the user decides.
+class _LowReadinessAlternative extends StatelessWidget {
+  const _LowReadinessAlternative({required this.suggestion});
+
+  final HomeSuggestion suggestion;
+
+  @override
+  Widget build(BuildContext context) {
+    final id = suggestion.lowReadinessAlternative;
+    final alternative = id == null ? null : activityById(id);
+    if (alternative == null) return const SizedBox.shrink();
+    final t = context.vyana;
+    return InkWell(
+      onTap: () => openActivityDetail(context, alternative),
+      borderRadius: BorderRadius.circular(8),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 36),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Low readiness. Try ${alternative.name} instead?',
+            style: VyanaType.caption.copyWith(
+              color: t.textSec,
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1244,6 +1415,8 @@ class _BatterySettingsLineState extends ConsumerState<BatterySettingsLine> {
 
   Duration? _gap;
   bool _checked = false;
+  bool _exempt = true;
+  OemBackgroundSteps? _oem;
 
   @override
   void initState() {
@@ -1262,12 +1435,25 @@ class _BatterySettingsLineState extends ConsumerState<BatterySettingsLine> {
         !controller.foregroundServiceEnabled) {
       return;
     }
-    if (await RingForegroundService.isExemptFromBatteryOptimisation()) return;
+    // Bug 44 (b): the gap is the evidence, so it decides whether the card
+    // shows. This used to return early whenever the battery exemption was
+    // granted — but on a Honor 200 Pro the exemption was granted and MagicOS
+    // stopped the service anyway, which is the whole reported failure.
     final gap = await RingForegroundService.missedWatchGap(
       intervalMinutes: controller.periodicSyncIntervalMinutes,
     );
-    if (!mounted || gap == null) return;
-    setState(() => _gap = gap);
+    if (gap == null) return;
+    final exempt =
+        await RingForegroundService.isExemptFromBatteryOptimisation();
+    final oem = OemBackgroundSteps.forManufacturer(
+      await DeviceCapabilityService.instance.manufacturer(),
+    );
+    if (!mounted) return;
+    setState(() {
+      _gap = gap;
+      _exempt = exempt;
+      _oem = oem;
+    });
   }
 
   Future<void> _dismissForever() async {
@@ -1299,7 +1485,7 @@ class _BatterySettingsLineState extends ConsumerState<BatterySettingsLine> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Your phone's battery settings closed Vyana at $clock, so "
+            "Your phone stopped Vyana at $clock, so "
             '${hours < 1 ? 'some time' : '$hours ${hours == 1 ? 'hour' : 'hours'}'} '
             'are missing. Let it keep running?',
             style: VyanaType.caption.copyWith(
@@ -1308,18 +1494,46 @@ class _BatterySettingsLineState extends ConsumerState<BatterySettingsLine> {
               height: 1.45,
             ),
           ),
+          // Bug 44 (b): on some phones the battery exemption is not enough —
+          // the OEM's own launch manager closes the app regardless. Android
+          // offers no API for those switches, so the steps are spelled out.
+          if (_oem case final oem?) ...[
+            const SizedBox(height: 10),
+            Text(
+              oem.heading,
+              style: VyanaType.caption.copyWith(
+                color: t.heading,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            for (final step in oem.steps)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text(
+                  '· $step',
+                  style: VyanaType.caption.copyWith(
+                    color: t.textSec,
+                    fontSize: 12.5,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+          ],
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              BorderedPill(
-                label: 'Allow',
-                onTap: () async {
-                  await RingForegroundService.requestBatteryExemption();
-                  await _dismissForever();
-                },
-              ),
+              if (!_exempt)
+                BorderedPill(
+                  label: 'Allow',
+                  onTap: () async {
+                    await RingForegroundService.requestBatteryExemption();
+                    await _dismissForever();
+                  },
+                ),
               BorderedPill(
                 label: 'Not now',
                 onTap: () => unawaited(_dismissForever()),
