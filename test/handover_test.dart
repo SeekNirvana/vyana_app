@@ -1492,4 +1492,58 @@ void main() {
       expect(ring(address: 'addr-3').identityKey, 'ADDR3');
     });
   });
+
+  group('signal strength tells the truth about not knowing', () {
+    test('a real reading is a negative number', () {
+      expect(usableRssi(-55), -55);
+      expect(usableRssi(-91), -91);
+    });
+
+    test('0 is the SDK saying "already connected", not a perfect signal', () {
+      // YcProductPluginDevice writes rssiValue: 0 on the connected-device
+      // event. Taken at face value it is the strongest possible reading.
+      expect(usableRssi(0), isNull);
+      expect(rssiDisplayText(0), '—');
+    });
+
+    test('-999 is our own "the SDK gave us nothing"', () {
+      expect(usableRssi(-999), isNull);
+      expect(signalWord(-999), isNull);
+    });
+
+    test('an unknown signal is never called Weak', () {
+      // The bug: -999 is below every threshold, so every ring the SDK
+      // withheld an RSSI for was listed as a weak one.
+      expect(signalWord(null), isNull);
+      expect(signalWord(0), isNull);
+      expect(signalWord(-60), 'Strong');
+      expect(signalWord(-70), 'Strong');
+      expect(signalWord(-71), 'Weak');
+    });
+
+    test('a connected ring keeps the reading taken when it was scanned', () {
+      SavedPranaRing withRssi(int? rssi) => SavedPranaRing(
+            name: 'PRANA',
+            address: null,
+            macAddress: 'AABBCCDD0C4A',
+            deviceIdentifier: null,
+            deviceId: null,
+            deviceType: null,
+            rssi: rssi,
+            batteryPower: null,
+            batteryStatus: null,
+            firmwareVersion: null,
+            lastSeenAt: null,
+            lastConnectedAt: null,
+          );
+      final scanned = withRssi(-58);
+      // What the connected-device event carries.
+      final connected = SavedPranaRing.fromDevice(
+        {'macAddress': 'AABBCCDD0C4A', 'rssiValue': 0},
+        previous: scanned,
+      );
+      expect(connected.rssi, -58);
+      expect(rssiDisplayText(connected.rssi), '-58 dBm');
+    });
+  });
 }

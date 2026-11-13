@@ -660,9 +660,11 @@ class _NearbyRings extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     // Signal as a word: a dBm figure means nothing to
-                    // someone deciding which ring is theirs.
+                    // someone deciding which ring is theirs. No reading says
+                    // so — it used to say "Weak", because the absent value
+                    // is -999 and that is below every threshold.
                     Text(
-                      deviceRssi(d) >= -70 ? 'Strong' : 'Weak',
+                      signalWord(deviceRssi(d)) ?? '—',
                       style: VyanaType.mono12.copyWith(color: t.textSec),
                     ),
                   ],

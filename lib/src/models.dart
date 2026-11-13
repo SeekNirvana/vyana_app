@@ -703,7 +703,13 @@ class SavedPranaRing {
       deviceIdentifier: deviceIdentifier ?? previous?.deviceIdentifier,
       deviceId: deviceId ?? previous?.deviceId,
       deviceType: _cleanText(basicInfo?.deviceType) ?? previous?.deviceType,
-      rssi: rssi == -999 ? previous?.rssi : rssi,
+      // Only a real reading replaces the last one. The SDK reports 0 for a
+      // ring that is already connected, and taking that at face value threw
+      // away the genuine reading taken moments earlier at scan time — so the
+      // ring panel showed "—" for a ring whose signal we had actually
+      // measured. There is no live RSSI read on a connected device in the
+      // pinned SDK, so the scan-time value is the only one there is.
+      rssi: usableRssi(rssi) ?? previous?.rssi,
       batteryPower:
           deviceBatteryLevel(device, basicInfo, vitals) ??
           previous?.batteryPower,
