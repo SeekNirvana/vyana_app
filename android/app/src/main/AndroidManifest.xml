@@ -26,8 +26,13 @@
     <!-- Bug 44(a): the ring watch is a connectedDevice service. It used to be
          dataSync, which Android 15 stops after six hours in any twenty-four —
          so it could never survive a night, which is the whole point of it.
-         remoteMessaging and dataSync are gone with it; nothing declares them. -->
+         remoteMessaging went with it: nothing declares that type any more. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Not ours: background_downloader (pulled in by flutter_gemma for the
+         Nova model download) declares a dataSync service, and on API 34+ a
+         typed service without its permission throws at start. Checked in the
+         merged manifest, not assumed. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- On-device AI guides: voice prompts (mic), keep awake during model
          downloads, and download-complete notifications. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
