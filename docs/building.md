@@ -136,31 +136,69 @@ flutter test
 Signed APK → [publish.solanamobile.com](https://publish.solanamobile.com)
 
 Docs: [Build and sign an APK](https://docs.solanamobile.com/dapp-store/build-and-sign-an-apk)
-## Packaging Nova's voice (bug 42)
+## Packaging Nova's voice
 
 Nova speaks with [Kokoro](https://github.com/hexgrad/kokoro) (Apache 2.0),
 run on the phone through [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)
 (Apache 2.0). The app never fetches the model from a third-party mirror at
 runtime, so the release has to be mirrored on our own host first.
 
-`lib/src/services/nova_voice_assets.dart` holds an empty `kNovaVoiceFiles`
-until that is done. While it is empty nothing is downloaded and Nova falls
-back to the best offline *system* voice — never a cloud voice.
+### Which build, and why
 
-For each file of the Kokoro release (`model.int8.onnx`, `voices.bin`,
-`tokens.txt`, `espeak-ng-data.tar`):
+`kokoro-en-v0_19` from sherpa-onnx's pretrained TTS models — English, 11
+voices, full fp32 weights.
 
-1. Download it from Kokoro's official release and check it against the
+| File | Size |
+|---|---|
+| `model.onnx` | 330 MB |
+| `voices.bin` | 5.5 MB |
+| `tokens.txt` | 1.1 KB |
+| `espeak-ng-data/` | ~18 MB |
+| **Total** | **~355 MB** |
+
+Deliberately **not quantised**. int8 roughly thirds the model, but its
+spectral correlation against fp32 is about 0.92 — audible, in a voice whose
+whole job is to sound calm during a practice. int8 also saves download size
+and memory rather than inference time, so the usual reason to accept that
+loss does not apply. The multi-lang packs carry a Chinese lexicon and a 26 MB
+voice bank we never call; this pack's `voices.bin` is 5.5 MB, which is where
+the real saving is.
+
+There is no `kokoro-v0.19-int8` upstream, whatever an earlier pin said: v0.19
+ships fp32 only, and the int8 builds are the multi-lang packs.
+
+### Mirroring it
+
+For each file (`model.onnx`, `voices.bin`, `tokens.txt`,
+`espeak-ng-data.tar`):
+
+1. Download it from the official sherpa-onnx release and check it against the
    checksum published with that release. Do this once, at packaging time.
 2. Upload that exact file to
-   `https://cdn.seeknirvana.app/voices/kokoro/<version>/<file>` over HTTPS.
+   `https://cdn.seeknirvana.app/voices/kokoro/kokoro-en-v0_19/<file>` over
+   HTTPS.
 3. Record its URL, `sha256sum` output and byte size as a `PinnedAsset` in
-   `kNovaVoiceFiles`, and set `kNovaVoiceVersion` to that release.
+   `kNovaVoiceFiles` in `lib/src/services/nova_voice_assets.dart`.
 
 The app then verifies every file against its pinned digest after download and
 again before first load, deleting and retrying once on a mismatch. A second
 mismatch raises `NovaVoiceIntegrityException` and nothing is loaded.
 
+### Until it is mirrored
+
+`kNovaVoiceFiles` is empty, `novaVoiceConfigured` is false, nothing is
+downloaded, and **reading aloud is simply unavailable**. It does not fall
+back to the phone's own text-to-speech: `flutter_tts` is only ever as good as
+the engine the phone happens to have, and on a phone without Google services
+— which the dApp Store build cannot assume — that is a flat screen-reader
+voice, which is worse than silence for guidance. Guides › Vani Voice says so,
+and the "Speak replies aloud" switch stays off and disabled.
+
+`AppTtsService` keeps `flutter_tts` for one job only: setting the shared
+`AVAudioSession` category, which is process-wide and so governs Kokoro's
+playback through `audioplayers` and mic capture through `record`. It can be
+replaced by `audioplayers`' own `AudioContext` — left as is because that is
+the routing already proven on device.
+
 Confirm `kGuideModelSizeLabel` against the real combined download on a device
-once the files exist — it is currently the Gemma bundle plus an estimated
-90 MB for the quantised voice.
+once the files exist — it is the Gemma bundle plus ~355 MB of voice.

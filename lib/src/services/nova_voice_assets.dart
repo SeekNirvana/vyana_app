@@ -16,14 +16,33 @@
 /// * **Offline after download.** Nothing here runs at speak time.
 /// * **App-private storage**, so deleting Nova deletes the voice with it.
 ///
+/// **The exact artifact.** `kokoro-en-v0_19` from sherpa-onnx's pretrained
+/// TTS models — English, 11 voices, full fp32 weights:
+///
+/// | File | Size |
+/// |---|---|
+/// | `model.onnx` | 330 MB |
+/// | `voices.bin` | 5.5 MB |
+/// | `tokens.txt` | 1.1 KB |
+/// | `espeak-ng-data/` | ~18 MB |
+///
+/// **Deliberately not quantised.** int8 roughly thirds the model but its
+/// spectral correlation against fp32 is about 0.92 — audible, and this is a
+/// voice whose whole job is to sound calm during a practice. int8 also saves
+/// download size and memory rather than inference time, so the usual reason
+/// to accept the quality loss does not apply. The multi-lang packs carry a
+/// Chinese lexicon and a 26 MB voice bank we would never call; the
+/// English-only pack's `voices.bin` is 5.5 MB, which is where the real
+/// saving is.
+///
 /// > **Packaging step, before this can ship.** [kNovaVoiceFiles] is empty
 /// > until the Kokoro release is mirrored on our own host. For each file:
-/// > take it from Kokoro's official release, check it against the checksum
-/// > published with that release, upload that exact file to
+/// > take it from the official sherpa-onnx release, check it against the
+/// > checksum published with that release, upload that exact file to
 /// > `https://$kNovaVoiceHost/voices/kokoro/<version>/`, then record its URL,
 /// > its `sha256sum` and its size below. Until then [novaVoiceConfigured] is
-/// > false, no download is attempted and Nova falls back to the best offline
-/// > system voice — never to a cloud voice.
+/// > false, no download is attempted, and the read-out feature is simply
+/// > unavailable — it never falls back to a system voice or a cloud one.
 /// The only host Nova's voice may be fetched from. We mirror Kokoro's release
 /// ourselves so a third party cannot change what the app downloads.
 
@@ -44,7 +63,12 @@ const String kNovaVoiceHost = 'cdn.seeknirvana.app';
 
 /// The Kokoro release this build is pinned to. Part of the stored path, so a
 /// new version lands beside the old one rather than half-overwriting it.
-const String kNovaVoiceVersion = 'kokoro-v0.19-int8';
+///
+/// This is the name sherpa-onnx publishes, not one of ours: there is no
+/// `kokoro-v0.19-int8` upstream — v0.19 ships as fp32 only, and the int8
+/// builds exist for the multi-lang packs. Naming a build that does not exist
+/// is how a packaging step gets attempted and abandoned.
+const String kNovaVoiceVersion = 'kokoro-en-v0_19';
 
 /// One downloaded file, pinned by digest.
 class PinnedAsset {
@@ -69,14 +93,15 @@ class PinnedAsset {
   final int bytes;
 }
 
-/// The files Kokoro needs through sherpa-onnx: the quantised model, the voice
+/// The files Kokoro needs through sherpa-onnx: the model, the voice
 /// embeddings, the token table and the espeak-ng data directory.
 ///
 /// Empty until the packaging step above is done. See the library doc.
 const List<PinnedAsset> kNovaVoiceFiles = <PinnedAsset>[];
 
 /// The name of the ONNX model inside [kNovaVoiceFiles], once it is populated.
-const String kNovaVoiceModelFile = 'model.int8.onnx';
+/// Full-precision weights, as shipped — see the library doc on why.
+const String kNovaVoiceModelFile = 'model.onnx';
 const String kNovaVoiceVoicesFile = 'voices.bin';
 const String kNovaVoiceTokensFile = 'tokens.txt';
 
@@ -85,9 +110,24 @@ const String kNovaVoiceTokensFile = 'tokens.txt';
 const String kNovaVoiceDataArchive = 'espeak-ng-data.tar';
 const String kNovaVoiceDataDir = 'espeak-ng-data';
 
-/// Roughly the quantised model plus its data, for the install prompt. Confirm
+/// Roughly the model plus its data, for the install prompt: 330 MB of
+/// weights, 5.5 MB of voices and about 18 MB of espeak-ng data. Confirm
 /// against the real files on a device once they are packaged.
-const int kNovaVoiceApproxBytes = 90 * 1024 * 1024;
+///
+/// This is large enough that it must stay an opt-in download the user asks
+/// for — never part of the APK, and never fetched on first launch.
+const int kNovaVoiceApproxBytes = 355 * 1024 * 1024;
+
+/// The download size as the UI should say it, so the prompt, the settings
+/// row and the progress bar cannot drift apart. MB below a gigabyte —
+/// "0.35 GB" reads as a rounding error rather than a real number.
+String get novaVoiceApproxSizeLabel {
+  const mb = 1024 * 1024;
+  if (kNovaVoiceApproxBytes < 1024 * mb) {
+    return '${(kNovaVoiceApproxBytes / mb).round()} MB';
+  }
+  return '${(kNovaVoiceApproxBytes / (1024 * mb)).toStringAsFixed(1)} GB';
+}
 
 /// Whether this build actually has a voice to fetch. False until the files
 /// above are packaged and pinned; everything downstream falls back quietly.
