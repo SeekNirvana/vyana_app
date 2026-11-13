@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyana/main.dart';
 import 'package:vyana/src/data/db.dart';
+import 'package:vyana/src/services/ai_backend_service.dart';
 import 'package:vyana/src/services/guide_model_manager.dart';
 import 'package:vyana/src/services/guide_persona_prefs_service.dart';
 import 'package:vyana/src/services/guide_voice_service.dart';
@@ -1522,6 +1523,134 @@ void main() {
       );
       expect(connected.rssi, -58);
       expect(rssiDisplayText(connected.rssi), '-58 dBm');
+    });
+  });
+
+
+  group('where Nova thinks', () {
+    group('an address is read for what it is, not what it claims', () {
+      test('the phone itself', () {
+        expect(reachForHost('localhost'), EndpointReach.onThisPhone);
+        expect(reachForHost('127.0.0.1'), EndpointReach.onThisPhone);
+        expect(reachForHost('::1'), EndpointReach.onThisPhone);
+      });
+
+      test('a machine on your own network', () {
+        for (final host in [
+          '10.0.0.5',
+          '172.16.3.1',
+          '172.31.255.254',
+          '192.168.1.20',
+          '169.254.1.1',
+          'my-nas.local',
+        ]) {
+          expect(reachForHost(host), EndpointReach.onYourNetwork,
+              reason: host);
+        }
+      });
+
+      test('anything else leaves your network', () {
+        for (final host in [
+          'example.com',
+          '8.8.8.8',
+          '172.32.0.1', // just outside the private block
+          '172.15.0.1',
+          '11.0.0.1',
+        ]) {
+          expect(reachForHost(host), EndpointReach.overTheInternet,
+              reason: host);
+        }
+      });
+
+      test('only the private ones are private', () {
+        expect(EndpointReach.onThisPhone.isPrivate, isTrue);
+        expect(EndpointReach.onYourNetwork.isPrivate, isTrue);
+        expect(EndpointReach.overTheInternet.isPrivate, isFalse);
+      });
+    });
+
+    group('cleartext is allowed close to home and nowhere else', () {
+      test('http to the phone or the LAN is fine', () {
+        // Ollama and LM Studio serve exactly this; demanding https would
+        // make the feature unusable for the people it is for.
+        expect(validateEndpoint('http://localhost:11434/v1').host,
+            'localhost');
+        expect(validateEndpoint('http://192.168.1.20:11434/v1').port, 11434);
+      });
+
+      test('http across the internet is refused', () {
+        // The conversation carries health figures. In the clear, every hop
+        // in between can read them.
+        expect(
+          () => validateEndpoint('http://example.com/v1'),
+          throwsA(isA<EndpointRejected>()),
+        );
+      });
+
+      test('https is fine anywhere', () {
+        expect(validateEndpoint('https://example.com/v1').scheme, 'https');
+      });
+
+      test('nonsense is refused before anything is sent', () {
+        for (final raw in ['', '   ', 'not a url', 'ftp://host/v1', 'http://']) {
+          expect(() => validateEndpoint(raw), throwsA(isA<EndpointRejected>()),
+              reason: raw);
+        }
+      });
+    });
+
+    group('the stream is read the way servers actually write it', () {
+      test('a delta chunk yields its text', () {
+        expect(
+          CloudInferenceClient.deltaFromLine(
+            'data: {"choices":[{"delta":{"content":"Hel"}}]}',
+          ),
+          'Hel',
+        );
+      });
+
+      test('a whole-message chunk is read too', () {
+        // A few servers send `message` per chunk rather than `delta`.
+        expect(
+          CloudInferenceClient.deltaFromLine(
+            'data: {"choices":[{"message":{"content":"lo"}}]}',
+          ),
+          'lo',
+        );
+      });
+
+      test('the terminator and the keep-alives yield nothing', () {
+        expect(CloudInferenceClient.deltaFromLine('data: [DONE]'), isNull);
+        expect(CloudInferenceClient.deltaFromLine('data:'), isNull);
+        expect(CloudInferenceClient.deltaFromLine(''), isNull);
+        expect(CloudInferenceClient.deltaFromLine(': ping'), isNull);
+      });
+
+      test('a malformed line never takes the stream down', () {
+        // Half a frame is normal at a chunk boundary; throwing here would
+        // end a reply mid-sentence.
+        expect(CloudInferenceClient.deltaFromLine('data: {"choices":'), isNull);
+        expect(CloudInferenceClient.deltaFromLine('data: {}'), isNull);
+        expect(
+          CloudInferenceClient.deltaFromLine('data: {"choices":[]}'),
+          isNull,
+        );
+      });
+    });
+
+    test('an endpoint is only complete with both parts', () {
+      expect(CloudEndpoint.empty.isComplete, isFalse);
+      expect(
+        const CloudEndpoint(baseUrl: 'http://localhost:11434/v1', model: '')
+            .isComplete,
+        isFalse,
+      );
+      const full = CloudEndpoint(
+        baseUrl: 'http://192.168.1.20:11434/v1',
+        model: 'llama3.1:8b',
+      );
+      expect(full.isComplete, isTrue);
+      expect(full.reach, EndpointReach.onYourNetwork);
     });
   });
 }
