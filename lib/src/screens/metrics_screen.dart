@@ -910,7 +910,16 @@ List<_VitalRowData> _buildVitalRows(
         label: '',
       ),
   ];
-  final sleepToday = sleepPoints.isEmpty ? null : sleepPoints.last.value;
+  // Bug 40: `sleepPoints.last` is the newest night on the record whatever
+  // day it belongs to, so an older night was shown as today's — with today's
+  // verdict colour on it. Only the night that describes today counts, and
+  // only when it is a real one; anything else goes through the stale branch,
+  // which prints it in grey with the day it came from.
+  final tonightUsable = tonight != null &&
+      sleepNightStatus(tonight, history: history) ==
+          SleepNightStatus.complete;
+  final sleepToday =
+      tonightUsable ? tonight.breakdown.asleepSeconds / 3600 : null;
 
   final hrPoints = vitalHistoryPoints(history, VitalsMetricKind.heartRate);
   final hrToday = restingHrForDay(
