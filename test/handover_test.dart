@@ -1365,4 +1365,74 @@ void main() {
       expect(status.shouldAskEnd, isFalse);
     });
   });
+
+  group('Ring data — the two intervals on one screen', () {
+    // Sync and Health monitoring looked like the same setting and were not.
+    // Merged, the subtitle has to say which battery each one spends.
+    test('both intervals read as a pair', () {
+      expect(
+        ringDataSubtitle(
+          supportsMonitoring: true,
+          monitoringOn: true,
+          monitoringMinutes: 30,
+          collectMinutes: 20,
+          background: false,
+        ),
+        'Ring measures every 30 min · Vyana collects every 20 min',
+      );
+    });
+
+    test('monitoring off says so rather than dropping the ring half', () {
+      expect(
+        ringDataSubtitle(
+          supportsMonitoring: true,
+          monitoringOn: false,
+          monitoringMinutes: 30,
+          collectMinutes: 20,
+          background: false,
+        ),
+        'Ring not measuring · Vyana collects every 20 min',
+      );
+    });
+
+    test('a ring without monitoring shows only the half it has', () {
+      expect(
+        ringDataSubtitle(
+          supportsMonitoring: false,
+          monitoringOn: false,
+          monitoringMinutes: 30,
+          collectMinutes: 20,
+          background: false,
+        ),
+        'Vyana collects every 20 min',
+      );
+    });
+
+    test('the background service is named on the row, not hidden', () {
+      expect(
+        ringDataSubtitle(
+          supportsMonitoring: true,
+          monitoringOn: true,
+          monitoringMinutes: 5,
+          collectMinutes: 60,
+          background: true,
+        ),
+        'Ring measures every 5 min · Vyana collects every 60 min · '
+        'in the background',
+      );
+    });
+
+    test('each side keeps its own range — they are different devices', () {
+      expect(clampHealthMonitoringInterval(0), kHealthMonitoringMinInterval);
+      expect(clampHealthMonitoringInterval(999), kHealthMonitoringMaxInterval);
+      expect(
+        clampPeriodicSyncIntervalMinutes(0),
+        kPeriodicSyncMinIntervalMinutes,
+      );
+      expect(
+        clampPeriodicSyncIntervalMinutes(999),
+        kPeriodicSyncMaxIntervalMinutes,
+      );
+    });
+  });
 }

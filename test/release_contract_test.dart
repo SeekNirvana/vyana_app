@@ -122,14 +122,19 @@ void main() {
     expect(onboarding, contains("Let's Go!"));
     expect(onboarding, contains('completeRingOnboarding'));
 
-    final syncSettings = readLib('src/screens/sync_settings_screen.dart');
-    expect(syncSettings, contains('Sync interval saved.'));
-    expect(syncSettings, contains('applyPeriodicSyncInterval'));
+    // v1.1.5: Sync and Health monitoring merged into one "Ring data"
+    // screen — two intervals, two batteries, one place.
+    final ringData = readLib('src/screens/ring_data_screen.dart');
+    expect(ringData, contains('applyPeriodicSyncInterval'));
+    expect(ringData, contains('applyHealthMonitoring'));
     // The Android foreground toggle folded into the Sync screen in v1.1.0.
-    expect(syncSettings, contains('setForegroundServiceEnabled'));
+    expect(ringData, contains('setForegroundServiceEnabled'));
+    expect(ringData, contains('How often the ring measures you'));
+    expect(ringData, contains('How often Vyana collects it'));
 
     final youScreen = readLib('src/screens/you_screen.dart');
-    expect(youScreen, contains('Health monitoring'));
+    expect(youScreen, contains('Ring data'));
+    expect(youScreen, contains('openRingData'));
 
     final foreground = readLib('src/services/ring_foreground_service.dart');
     expect(foreground, contains('kRingForegroundSyncTick'));

@@ -306,44 +306,23 @@ class YouScreen extends ConsumerWidget {
                 // that screen, beside the ring they act on.
                 onTap: c.isReady ? () => openScanner(context, c) : null,
               ),
-              if (c.supportsHealthMonitoring)
-                _SettingsRow(
-                  icon: 'activity',
-                  iconColor: t.heading,
-                  label: 'Health monitoring',
-                  subtitle: 'Ring measures on its own',
-                  trailing: Text(
-                    c.healthMonitoring.enabled
-                        ? 'ON · ${c.healthMonitoring.intervalMinutes} MIN'
-                        : 'OFF',
-                    style: VyanaType.mono10.copyWith(
-                      color: c.healthMonitoring.enabled &&
-                              c.healthMonitoring.ringAcknowledged
-                          ? t.green
-                          : t.textMuted,
-                    ),
-                  ),
-                  onTap: () => openHealthMonitoring(context, c),
-                ),
+              // Two screens with near-identical "every N minutes" steppers
+              // became one: the ring's own interval and Vyana's collection
+              // interval read as a pair, which is the only way either makes
+              // sense.
               _SettingsRow(
-                icon: 'refresh',
+                icon: 'activity',
                 iconColor: t.heading,
-                label: 'Sync',
-                subtitle: [
-                  if (c.isSyncing)
-                    'Syncing now'
-                  else if (lastSync != null)
-                    'Last synced ${_clockLabel(lastSync)}'
-                  else
-                    'Not synced yet',
-                  if (Platform.isAndroid && c.foregroundServiceEnabled)
-                    'background service',
-                ].join(' · '),
-                trailing: Text(
-                  'EVERY ${c.periodicSyncIntervalMinutes} MIN',
-                  style: VyanaType.mono10.copyWith(color: t.textMuted),
+                label: 'Ring data',
+                subtitle: ringDataSubtitle(
+                  supportsMonitoring: c.supportsHealthMonitoring,
+                  monitoringOn: c.healthMonitoring.enabled,
+                  monitoringMinutes: c.healthMonitoring.intervalMinutes,
+                  collectMinutes: c.periodicSyncIntervalMinutes,
+                  background:
+                      Platform.isAndroid && c.foregroundServiceEnabled,
                 ),
-                onTap: () => openSyncSettings(context, c),
+                onTap: () => openRingData(context, c),
               ),
               _SettingsRow(
                 icon: 'bell',

@@ -56,7 +56,6 @@ Let's Go!
 completeRingOnboarding
 
 # v1.0.5 — Sync interval, health monitoring, foreground heartbeat, reconnect backoff
-Sync interval saved.
 applyPeriodicSyncInterval
 ring_foreground_sync_tick
 Vyana is running
@@ -176,3 +175,8 @@ That will not last the night. Charge it before bed or there
 Charge it soon
 Open Diagnostics
 Licences
+Ring data
+How often the ring measures you
+How often Vyana collects it
+Two intervals, two batteries. The ring measures you on its own;
+Keep collecting in the background

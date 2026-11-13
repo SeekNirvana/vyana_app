@@ -209,4 +209,39 @@ void main() {
       }
     }
   });
+
+  // The merged "Ring data" screen puts two of these steppers on one screen,
+  // each with its own range label. The row is minus · value · plus, so the
+  // value column is what gives way first on a narrow phone.
+  group('the interval stepper keeps its number', () {
+    for (final (min, max, minutes) in [(1, 60, 30), (5, 120, 120)]) {
+      for (final scale in [1.0, 1.3, 1.5]) {
+        testWidgets('$minutes min ($min–$max) at ${scale}x on 320dp',
+            (t) async {
+          await at(
+            t,
+            tiny,
+            SizedBox(
+              width: 288, // 320dp less the screen's 16dp side padding
+              child: RingIntervalStepper(
+                minutes: minutes,
+                min: min,
+                max: max,
+                presets: const [5, 15, 30, 60],
+                onChanged: (_) {},
+              ),
+            ),
+            textScale: scale,
+          );
+          // The number itself must still be on screen — scaled down is fine,
+          // gone or clipped to "3…" is not.
+          expect(find.text('$minutes min'), findsOneWidget);
+          expect(find.text('Every'), findsOneWidget);
+          expect(find.text('$min–$max min allowed'), findsOneWidget);
+          // Both steps stay reachable.
+          expect(find.byType(IconBtn), findsNWidgets(2));
+        });
+      }
+    }
+  });
 }
