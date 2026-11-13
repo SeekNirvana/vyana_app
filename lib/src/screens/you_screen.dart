@@ -63,7 +63,9 @@ Future<void> reconnectWithFeedback(
   BuildContext context,
   RingController c,
 ) async {
-  // Ignore taps while an attempt is already running.
+  // Rule 3: ignore taps while a user-driven attempt is already running.
+  // A passive retry is not ignored — the call below joins it, so the pill
+  // still answers the tap.
   if (c.isUserReconnecting || c.isConnected) return;
 
   var connected = false;

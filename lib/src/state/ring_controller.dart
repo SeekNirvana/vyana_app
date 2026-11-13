@@ -27,6 +27,7 @@ class RingController extends ChangeNotifier {
   bool _isConnecting = false;
   bool _isAutoReconnecting = false;
   bool _isUserReconnecting = false;
+  Future<bool>? _reconnectInFlight;
   bool _isSyncing = false;
   bool _isMeasuring = false;
   bool _isConnected = false;
@@ -839,7 +840,25 @@ class RingController extends ChangeNotifier {
     _reconnectBackoff = _reconnectAttemptInterval;
   }
 
-  Future<bool> reconnectSavedRing({bool force = false}) async {
+  Future<bool> reconnectSavedRing({bool force = false}) {
+    // Bug 48: a user-driven attempt that lands while a passive retry is
+    // already running used to return false instantly — so the pill flashed
+    // straight to "couldn't reach your ring" while the ring was in fact
+    // being reached. It joins the attempt in flight instead, and the UI
+    // shows it as the user's own.
+    final inFlight = _reconnectInFlight;
+    if (inFlight != null) {
+      if (force && !_isUserReconnecting) {
+        _set(() => _isUserReconnecting = true);
+      }
+      return inFlight;
+    }
+    final attempt = _reconnectSavedRing(force: force);
+    _reconnectInFlight = attempt;
+    return attempt.whenComplete(() => _reconnectInFlight = null);
+  }
+
+  Future<bool> _reconnectSavedRing({bool force = false}) async {
     final pairedRing = _pairedRing;
     if (!_isReady ||
         pairedRing == null ||
