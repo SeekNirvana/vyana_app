@@ -11,7 +11,7 @@ import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 import 'package:whisper_ggml_plus_ffmpeg/whisper_ggml_plus_ffmpeg.dart';
 
 import '../data/db.dart';
-import 'app_tts_service.dart';
+import 'audio_route_service.dart';
 import 'guide_model_manager.dart';
 import 'nova_voice_assets.dart';
 import 'nova_voice_service.dart';
@@ -76,7 +76,7 @@ class GuideVoiceService extends ChangeNotifier {
   final GuideModelManager _modelManager;
   final VyanaDatabase _db;
   final AudioRecorder _recorder = AudioRecorder();
-  final AppTtsService _ttsEngine = AppTtsService.instance;
+  final AudioRouteService _ttsEngine = AudioRouteService.instance;
 
   Future<void>? _initFuture;
   Future<void>? _speakReadyFuture;
