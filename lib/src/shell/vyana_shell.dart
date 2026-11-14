@@ -68,7 +68,43 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
   void _showProfileLaunchSheet() {
     if (!mounted || _profilePromptShown) return;
     _profilePromptShown = true;
-    showModalBottomSheet<void>(
+    unawaited(_offerRestoreThenProfile());
+  }
+
+  /// Item 53: the one moment restoring is obvious, and the only one where
+  /// it costs nothing.
+  ///
+  /// Offered before profile setup, and only when the vault is empty —
+  /// someone arriving on a new phone has a backup and no history, and
+  /// nothing here can overwrite anything. Later, in Your data, the same
+  /// act replaces a phone's worth of records and asks first.
+  Future<void> _offerRestoreThenProfile() async {
+    final empty = await ref.read(databaseProvider).isEmptyOfUserData();
+    if (!mounted) return;
+
+    if (empty) {
+      final restored = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        isDismissible: false,
+        enableDrag: false,
+        backgroundColor: Colors.transparent,
+        builder: (sheetContext) => _RestoreLaunchSheet(
+          onChoose: () => Navigator.of(sheetContext).pop(true),
+          onFresh: () => Navigator.of(sheetContext).pop(false),
+        ),
+      );
+      if (!mounted) return;
+      if (restored == true) {
+        final done = await runRestoreFlow(context, ref);
+        // A restore brings the profile with it, so asking for one now
+        // would be asking for something they already have.
+        if (done || !mounted) return;
+      }
+    }
+
+    if (!mounted) return;
+    unawaited(showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -79,7 +115,7 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
         },
         onLater: () => Navigator.of(sheetContext).pop(),
       ),
-    );
+    ));
   }
 
   @override
@@ -437,6 +473,55 @@ class _ProfileLaunchSheet extends StatelessWidget {
             Cta(label: 'Set up profile', icon: 'user', onTap: onSetUp),
             const SizedBox(height: 10),
             Cta(label: 'Not now', icon: 'chevR', solid: false, onTap: onLater),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Item 53: offered on a phone with nothing on it, before anything else.
+///
+/// Worded as a question rather than a warning: on a new phone there is no
+/// risk in either answer, and "Start fresh" is a perfectly good one.
+class _RestoreLaunchSheet extends StatelessWidget {
+  const _RestoreLaunchSheet({required this.onChoose, required this.onFresh});
+
+  final VoidCallback onChoose;
+  final VoidCallback onFresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        0,
+        16,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Panel(
+        pad: 20,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Restore from a backup?',
+              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 22),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'If you have a Vyana backup from another phone, this is the '
+              'moment to bring it over. You will need the passphrase it was '
+              'made with.',
+              style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45),
+            ),
+            const SizedBox(height: 18),
+            Cta(label: 'Choose backup', icon: 'db', onTap: onChoose),
+            const SizedBox(height: 10),
+            Cta(label: 'Start fresh', icon: 'chevR', solid: false,
+                onTap: onFresh),
           ],
         ),
       ),

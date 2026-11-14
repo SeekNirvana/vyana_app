@@ -170,55 +170,28 @@ class _YourDataScreenState extends ConsumerState<YourDataScreen> {
   }
 
   Future<void> _restore() async {
-    final service = ref.read(backupServiceProvider);
-    final file = await service.chooseBackup();
-    if (file == null || !mounted) return;
-
+    // Here, unlike the first-launch offer, there is something to lose —
+    // so it is named before anything is chosen.
     final confirmed = await showVyanaConfirmDialog<bool>(
       context: context,
       title: 'Replace everything on this phone?',
-      message: 'Restoring puts the backup back as it was. Anything recorded '
+      message: 'Restoring puts a backup back as it was. Anything recorded '
           'since then — readings, entries, meals — is replaced by what the '
           'backup holds.',
-      confirmLabel: 'Restore',
+      confirmLabel: 'Choose backup',
       cancelLabel: 'Cancel',
       destructive: true,
     );
     if (confirmed != true || !mounted) return;
 
-    final passphrase =
-        await askForBackupPassphrase(context, creating: false);
-    if (passphrase == null || passphrase.isEmpty || !mounted) return;
-
     setState(() {
       _busy = true;
       _note = null;
     });
-
-    try {
-      final report =
-          await service.restoreFrom(file: file, passphrase: passphrase);
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _note = null;
-      });
-      showVyanaSnackBar(context, message: report.summary, icon: 'check');
-    } on BackupException catch (error) {
-      // The four reasons read differently on purpose; flattening them to
-      // "restore failed" sends people to the wrong place.
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _note = error.message;
-      });
-    } on Object catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _note = 'The backup could not be restored. $error';
-      });
-    }
+    await runRestoreFlow(context, ref);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    await _readLastBackup();
   }
 
   @override
@@ -337,5 +310,41 @@ class _YourDataScreenState extends ConsumerState<YourDataScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Chooses a backup, asks for the passphrase, and restores it.
+///
+/// Shared by Your data and the first-launch offer so the two cannot drift
+/// apart in what they ask or what they say when it fails. Returns whether
+/// anything was actually restored.
+Future<bool> runRestoreFlow(BuildContext context, WidgetRef ref) async {
+  final service = ref.read(backupServiceProvider);
+  final file = await service.chooseBackup();
+  if (file == null || !context.mounted) return false;
+
+  final passphrase = await askForBackupPassphrase(context, creating: false);
+  if (passphrase == null || passphrase.isEmpty || !context.mounted) {
+    return false;
+  }
+
+  try {
+    final report =
+        await service.restoreFrom(file: file, passphrase: passphrase);
+    if (!context.mounted) return true;
+    showVyanaSnackBar(context, message: report.summary, icon: 'check');
+    return true;
+  } on BackupException catch (error) {
+    if (!context.mounted) return false;
+    showVyanaSnackBar(context, message: error.message, icon: 'alert');
+    return false;
+  } on Object catch (error) {
+    if (!context.mounted) return false;
+    showVyanaSnackBar(
+      context,
+      message: 'The backup could not be restored. $error',
+      icon: 'alert',
+    );
+    return false;
   }
 }

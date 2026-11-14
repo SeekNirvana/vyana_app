@@ -248,4 +248,28 @@ void main() {
       expect(report.summary, '2 records and 2 photos restored');
     });
   });
+
+  group('whether a restore can be offered without a warning', () {
+    test('a fresh phone holds nothing, so restoring costs nothing', () async {
+      expect(await db.isEmptyOfUserData(), isTrue);
+    });
+
+    test('one journal entry is enough to make it a replacement', () async {
+      // Item 53: the first-launch offer has no confirmation because there
+      // is nothing to lose. The moment there is, it becomes the Your data
+      // path, which asks first.
+      await db.addJournalEntry(
+        id: 'j1',
+        type: 'note',
+        title: 'Something',
+        body: 'Anything at all.',
+      );
+      expect(await db.isEmptyOfUserData(), isFalse);
+    });
+
+    test('a meal counts too', () async {
+      await db.addMeal(id: 'm1', label: 'Soup', mealType: 'lunch');
+      expect(await db.isEmptyOfUserData(), isFalse);
+    });
+  });
 }

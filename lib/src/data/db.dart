@@ -766,6 +766,28 @@ class VyanaDatabase extends _$VyanaDatabase {
     );
   }
 
+  /// Whether this phone holds nothing the user put here.
+  ///
+  /// Item 53: decides whether a restore can be offered without a warning.
+  /// An empty vault means nothing can be overwritten, which is the only
+  /// condition under which restoring is a free choice.
+  Future<bool> isEmptyOfUserData() async {
+    for (final table in const [
+      'activity_sessions',
+      'journal_entries',
+      'meals',
+      'cycle_days',
+      'samples',
+      'chat_sessions',
+    ]) {
+      final row = await customSelect(
+        'SELECT COUNT(*) AS n FROM $table',
+      ).getSingleOrNull();
+      if ((row?.data['n'] as int? ?? 0) > 0) return false;
+    }
+    return true;
+  }
+
   Future<void> deleteJournalEntry(String id) =>
       (delete(journalEntries)..where((t) => t.id.equals(id))).go();
 
