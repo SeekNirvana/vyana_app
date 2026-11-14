@@ -153,6 +153,22 @@ class RingController extends ChangeNotifier {
   RingRepository get repo => _repo;
   SavedPranaRing? get pairedRing => _pairedRing;
   bool get isReady => _isReady;
+
+  /// Why the ring SDK did not start, when it did not.
+  ///
+  /// Item 85 (i): the failure only reached [status], which nothing beside
+  /// the greyed-out Pair row shows. So on a phone where the SDK will not
+  /// start, Scan & pair was simply dead — no reason, no way to try again,
+  /// and no way to tell it from a bug in the app.
+  String? get sdkFailure => _sdkFailure;
+  String? _sdkFailure;
+
+  /// Tries the SDK again, for the Retry beside [sdkFailure].
+  Future<void> retrySdkInit() async {
+    if (_isReady) return;
+    _set(() => _sdkFailure = null);
+    await initialize();
+  }
   bool get isConnecting => _isConnecting;
 
   /// Whether the phone's Bluetooth radio is off.
@@ -597,7 +613,12 @@ class RingController extends ChangeNotifier {
       }
     } on Object catch (error) {
       if (_disposed) return;
-      _set(() => _status = 'SDK unavailable: $error');
+      _set(() {
+        _status = 'SDK unavailable: $error';
+        // Item 85 (i): kept where a screen can read it, so the dead Pair
+        // row can say why it is dead and offer another go.
+        _sdkFailure = 'The ring service would not start on this phone. $error';
+      });
     }
   }
 

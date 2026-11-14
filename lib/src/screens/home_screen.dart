@@ -1384,10 +1384,23 @@ class RecoveredSessionLine extends ConsumerWidget {
                 label: 'Resume',
                 color: t.gold,
                 onTap: () async {
+                  // Item 85 (d, e): the messenger and navigator are taken
+                  // before the await, and a failure is said out loud. This
+                  // used to return on an error with the bar still sitting
+                  // there, so tapping Resume on a session that could not be
+                  // resumed did nothing at all, twice, and then a third
+                  // time.
+                  final messenger = ScaffoldMessenger.of(context);
+                  final navigator = Navigator.of(context);
                   final error = await controller.resumeRecoveredSession();
-                  if (!context.mounted || error != null) return;
-                  await Navigator.of(context).push<void>(
+                  if (error != null) {
+                    messenger.showSnackBar(SnackBar(content: Text(error)));
+                    return;
+                  }
+                  await navigator.push<void>(
                     MaterialPageRoute(
+                      settings:
+                          const RouteSettings(name: kLiveSessionRouteName),
                       builder: (_) => const LiveSessionScreen(),
                     ),
                   );
@@ -1536,7 +1549,22 @@ class _BatterySettingsLineState extends ConsumerState<BatterySettingsLine> {
                 BorderedPill(
                   label: 'Allow',
                   onTap: () async {
-                    await RingForegroundService.requestBatteryExemption();
+                    // Item 85 (f): dismissed only if the settings screen
+                    // actually opened. Otherwise the card and its
+                    // explanation were gone for good on a phone that cannot
+                    // show that screen, and nothing said why.
+                    final messenger = ScaffoldMessenger.of(context);
+                    final opened =
+                        await RingForegroundService.requestBatteryExemption();
+                    if (!opened) {
+                      messenger.showSnackBar(const SnackBar(
+                        content: Text(
+                          'This phone would not open its battery settings. '
+                          'Look for Battery optimisation in Settings.',
+                        ),
+                      ));
+                      return;
+                    }
                     await _dismissForever();
                   },
                 ),

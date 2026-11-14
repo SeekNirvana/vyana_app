@@ -73,6 +73,7 @@ Future<void> reconnectWithFeedback(
   // still answers the tap.
   if (c.isUserReconnecting || c.isConnected) return;
 
+  final host = Navigator.of(context).context;
   var connected = false;
   try {
     connected = await c
@@ -86,21 +87,21 @@ Future<void> reconnectWithFeedback(
   } on Object catch (error) {
     debugPrint('Reconnect with feedback failed: $error');
   }
-  if (!context.mounted) return;
+  if (!host.mounted) return;
 
   if (connected) {
     // A fresh connection starts its own sync; this makes it the narrated one.
-    await syncRingWithFeedback(context, c);
+    await syncRingWithFeedback(host, c);
     return;
   }
   showVyanaSnackBar(
-    context,
+    host,
     message: "Couldn't reach your ring. Keep it close and try again.",
     success: false,
     duration: const Duration(seconds: 6),
     action: SnackBarAction(
       label: 'Ring screen',
-      onPressed: () => unawaited(openScanner(context, c)),
+      onPressed: () => unawaited(openScanner(host, c)),
     ),
   );
 }
@@ -109,33 +110,38 @@ Future<void> syncRingWithFeedback(
   BuildContext context,
   RingController c,
 ) async {
+  // Item 85 (d): the navigator's own context, which outlives the screen
+  // this was called from. A Retry in a snack bar is tapped seconds later,
+  // often after the screen has closed — and a closure holding that screen's
+  // context did nothing at all when pressed. Same fault as bug 52.
+  final host = Navigator.of(context).context;
   // A sync needs a live link; when the ring dropped, reach for it first so
   // "Sync" from the Home pill or banner is one tap, not two.
   if (!c.isConnected) {
     showVyanaSnackBar(
-      context,
+      host,
       message: 'Reaching your ring…',
       icon: 'bluetooth',
       success: true,
       duration: const Duration(seconds: 2),
     );
     final connected = await c.reconnectSavedRing(force: true);
-    if (!context.mounted) return;
+    if (!host.mounted) return;
     if (!connected) {
       showVyanaSnackBar(
-        context,
+        host,
         message: 'Ring not in reach. Bring it closer and try again.',
         success: false,
         action: SnackBarAction(
           label: 'Retry',
-          onPressed: () => unawaited(syncRingWithFeedback(context, c)),
+          onPressed: () => unawaited(syncRingWithFeedback(host, c)),
         ),
       );
       return;
     }
   }
   showVyanaSnackBar(
-    context,
+    host,
     message: 'Updating your health data…',
     icon: 'refresh',
     success: true,
@@ -144,16 +150,16 @@ Future<void> syncRingWithFeedback(
   final feedback = await c.syncDeviceData();
   // Null here means a sync was already running (a fresh connection starts
   // one on its own) — the pill shows SYNCING, nothing more to say.
-  if (!context.mounted || feedback == null) return;
+  if (!host.mounted || feedback == null) return;
   showVyanaSnackBar(
-    context,
+    host,
     message: feedback.snackMessage,
     success: feedback.success,
     action: feedback.success
         ? null
         : SnackBarAction(
             label: 'Retry',
-            onPressed: () => unawaited(syncRingWithFeedback(context, c)),
+            onPressed: () => unawaited(syncRingWithFeedback(host, c)),
           ),
   );
 }
@@ -187,6 +193,11 @@ Future<void> openPrivacy(BuildContext context) {
   ).push<void>(MaterialPageRoute(builder: (_) => const AppPrivacyScreen()));
 }
 
+/// The route name an activity's detail screen is pushed under, so another
+/// screen can tell whether that practice's detail is already open.
+String activityDetailRouteName(String activityId) =>
+    'activity-detail/$activityId';
+
 Future<void> openActivityDetail(
   BuildContext context,
   Activity activity, {
@@ -194,6 +205,9 @@ Future<void> openActivityDetail(
 }) {
   return Navigator.of(context).push<void>(
     MaterialPageRoute(
+      // Item 85 (h): named so a screen that wants to *return* to an open
+      // detail can find it instead of pushing a second copy.
+      settings: RouteSettings(name: activityDetailRouteName(activity.id)),
       builder: (_) => ActivityDetailScreen(activity: activity, minutes: minutes),
     ),
   );
@@ -319,6 +333,17 @@ class YouScreen extends ConsumerWidget {
                 // that screen, beside the ring they act on.
                 onTap: c.isReady ? () => openScanner(context, c) : null,
               ),
+              // Item 85 (i): a greyed-out Scan & pair with no explanation
+              // reads as a broken app. When the SDK did not start, say so
+              // and offer another go.
+              if (!c.isReady && c.sdkFailure != null)
+                SettingsRow(
+                  icon: 'alert',
+                  iconColor: t.gold,
+                  label: 'Retry ring service',
+                  subtitle: c.sdkFailure,
+                  onTap: () => unawaited(c.retrySdkInit()),
+                ),
               // Two screens with near-identical "every N minutes" steppers
               // became one: the ring's own interval and Vyana's collection
               // interval read as a pair, which is the only way either makes

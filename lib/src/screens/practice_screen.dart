@@ -1269,8 +1269,26 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
 
   Future<void> _begin(BuildContext context) async {
     final controller = ref.read(sessionControllerProvider);
-    // If a session is already running, just jump back into it rather than
-    // erroring (only one runs at a time).
+    // Item 85 (g): a session already running is a different practice, and
+    // tapping Begin on this one used to open that one — so Begin on a Walk
+    // silently opened a Run that had been going since this morning. Only
+    // one runs at a time, so the choice is the person's to make.
+    final running = controller.activity;
+    if (controller.active && running != null && running.id != widget.activity.id) {
+      final end = await showVyanaConfirmDialog<bool>(
+        context: context,
+        title: '${running.name} is still running',
+        message: 'Only one practice runs at a time. End ${running.name} and '
+            'start ${widget.activity.name}?',
+        confirmLabel: 'End and start',
+        cancelLabel: 'Keep ${running.name}',
+      );
+      if (end != true) return;
+      if (!context.mounted) return;
+      await controller.end();
+      if (!context.mounted) return;
+    }
+    // If the same practice is already running, jump back into it.
     if (!controller.active) {
       // Bug 12: the chosen length now reaches the session, so a suggested
       // three minutes counts down and ends instead of running forever.
@@ -1294,7 +1312,10 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
     if (!context.mounted) return;
     await Navigator.of(
       context,
-    ).push<void>(MaterialPageRoute(builder: (_) => const LiveSessionScreen()));
+    ).push<void>(MaterialPageRoute(
+      settings: const RouteSettings(name: kLiveSessionRouteName),
+      builder: (_) => const LiveSessionScreen(),
+    ));
   }
 }
 

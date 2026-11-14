@@ -52,8 +52,12 @@ class _BaselineQuestionCardState extends ConsumerState<BaselineQuestionCard> {
 
   Future<void> _answer(BaselineAnswer answer) async {
     final controller = ref.read(personalBaselinesProvider.notifier);
-    await controller.answer(widget.question.vital, answer);
+    // Item 85 (c): read before the await, not after. Answering the question
+    // dismisses the card, and this ref dies with it — so the sleep target
+    // that the answer was supposed to set was never updated, and nothing
+    // said so. Same shape as bug 52.
     final ring = ref.read(ringControllerProvider);
+    await controller.answer(widget.question.vital, answer);
     final nights = averageableNights(
       sleepDaySummaries(ring.history.sleep),
       history: ring.history,

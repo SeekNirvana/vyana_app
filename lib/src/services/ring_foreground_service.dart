@@ -207,11 +207,21 @@ class RingForegroundService {
 
   /// Opens the OS screen where the user can let Vyana keep running. Never
   /// asked up front, and never during ring setup.
-  static Future<void> requestBatteryExemption() async {
-    if (!Platform.isAndroid) return;
+  /// Opens the battery-optimisation settings, reporting whether it worked.
+  ///
+  /// Item 85 (f): it returned void and swallowed the failure, so the card
+  /// dismissed itself forever whether or not anything had opened. Someone
+  /// on a phone where that screen cannot be reached lost the card and the
+  /// explanation with it.
+  static Future<bool> requestBatteryExemption() async {
+    if (!Platform.isAndroid) return false;
     try {
       await FlutterForegroundTask.openIgnoreBatteryOptimizationSettings();
-    } on Object catch (_) {}
+      return true;
+    } on Object catch (error) {
+      debugPrint('RING_FOREGROUND_BATTERY_SETTINGS_FAILED: $error');
+      return false;
+    }
   }
 
   /// Default background heartbeat cadence (minutes) when no interval is passed.

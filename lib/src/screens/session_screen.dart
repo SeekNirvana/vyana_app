@@ -479,9 +479,29 @@ class _SummaryBody extends StatelessWidget {
             icon: 'chart',
             solid: false,
             onTap: () {
+              // Item 85 (d, h): the navigator is captured before the pop,
+              // because the context this closure holds belongs to the screen
+              // being removed — and if that practice's detail is already
+              // open underneath, go back to it rather than stacking a second
+              // copy, which is what happens to anyone who started the
+              // session from that very screen.
+              final navigator = Navigator.of(context);
+              final name = activityDetailRouteName(activity.id);
               controller?.clear();
-              Navigator.of(context).pop();
-              openActivityDetail(context, activity);
+              var alreadyOpen = false;
+              navigator.popUntil((route) {
+                if (route.settings.name == name) {
+                  alreadyOpen = true;
+                  return true;
+                }
+                // Stop as soon as we are past the session screen, so a
+                // stack without that detail in it loses exactly one route
+                // — the one this button is leaving.
+                return route.settings.name != kLiveSessionRouteName;
+              });
+              if (!alreadyOpen) {
+                unawaited(openActivityDetail(navigator.context, activity));
+              }
             },
           ),
         const SizedBox(height: 10),
@@ -599,6 +619,13 @@ String _fmtDuration(Duration d) {
   String two(int n) => n.toString().padLeft(2, '0');
   return h > 0 ? '${two(h)}:${two(m)}:${two(s)}' : '${two(m)}:${two(s)}';
 }
+
+/// The route name the live session screen is pushed under.
+///
+/// Item 85 (h): so "Your X history" can pop past the session and no
+/// further. Without it, a popUntil looking for an already-open detail
+/// screen walked all the way to the first route when there was none.
+const String kLiveSessionRouteName = 'live-session';
 
 Future<void> openSessionHistory(BuildContext context) {
   return Navigator.of(context).push<void>(

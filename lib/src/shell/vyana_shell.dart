@@ -340,7 +340,12 @@ class SessionResumeBar extends ConsumerWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: () => Navigator.of(context).push<void>(
-          MaterialPageRoute(builder: (_) => const LiveSessionScreen()),
+          MaterialPageRoute(
+            // Item 85 (h): named, so the post-session history button can
+            // pop past it and no further.
+            settings: const RouteSettings(name: kLiveSessionRouteName),
+            builder: (_) => const LiveSessionScreen(),
+          ),
         ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
