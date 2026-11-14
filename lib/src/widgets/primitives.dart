@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -200,6 +201,92 @@ class Pill extends StatelessWidget {
 }
 
 /// Primary call-to-action — solid gradient or outlined.
+/// A [Cta] whose action is awaited, and which cannot be tapped twice.
+///
+/// Item 73: every Save button in the app wrote its record and then popped
+/// its screen, with nothing stopping a second tap landing while the first
+/// write was still in flight. That gave two journal entries, two meals or
+/// two sports from one intention — and, worse, two pops, the second of
+/// which closed whatever screen had come up underneath.
+///
+/// The guard is a widget rather than a flag in each screen because there
+/// were ten screens to remember it in. [onTap] returning a Future is the
+/// whole mechanism: a plain callback gives nothing to wait on, so there is
+/// no moment at which the button can know it is safe again.
+///
+/// One button, one action. Two different buttons that must not both run —
+/// the "Outdoor" and "Indoor" pair on the add-a-sport sheet, say — need a
+/// flag they share, which this cannot give them.
+class BusyCta extends StatefulWidget {
+  const BusyCta({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.icon,
+    this.solid = true,
+    this.disabled = false,
+    this.busyLabel,
+  });
+
+  final String label;
+
+  /// Awaited. While it runs the button is disabled.
+  final FutureOr<void> Function() onTap;
+
+  final String? icon;
+  final bool solid;
+  final bool disabled;
+
+  /// Shown while the action runs, so a slow write looks like work rather
+  /// than a button that did nothing. Defaults to "Saving…".
+  final String? busyLabel;
+
+  @override
+  State<BusyCta> createState() => _BusyCtaState();
+}
+
+class _BusyCtaState extends State<BusyCta> {
+  bool _busy = false;
+
+  Future<void> _run() async {
+    if (_busy || widget.disabled) return;
+    setState(() => _busy = true);
+    try {
+      await widget.onTap();
+    } on Object catch (error, stack) {
+      // Caught rather than left to escape. Cta takes a plain VoidCallback,
+      // so nothing awaits this future and a thrown error would become an
+      // unhandled zone error — logged inconsistently in release and
+      // invisible to a test.
+      //
+      // Reported, not shown: each screen's own save already tells the
+      // person what went wrong in the words that screen should use, and a
+      // button inventing its own error UI would talk over them.
+      FlutterError.reportError(FlutterErrorDetails(
+        exception: error,
+        stack: stack,
+        library: 'vyana',
+        context: ErrorDescription('running a BusyCta action'),
+      ));
+    } finally {
+      // A save that pops its own screen is the normal case, so this widget
+      // is usually gone by now; the flag only matters while it is still up.
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Cta(
+      label: _busy ? (widget.busyLabel ?? 'Saving…') : widget.label,
+      icon: widget.icon,
+      solid: widget.solid,
+      disabled: widget.disabled || _busy,
+      onTap: _run,
+    );
+  }
+}
+
 class Cta extends StatelessWidget {
   const Cta({
     super.key,

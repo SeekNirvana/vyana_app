@@ -1119,11 +1119,22 @@ Future<void> showCycleModeSheet(BuildContext context, WidgetRef ref) {
   final t = context.vyana;
   final profile =
       ref.read(userProfileProvider).valueOrNull ?? const UserProfile();
+  // Item 73: a flag the rows share, so a second tap cannot run while the
+  // first is still saving. Picking Pregnant twice was the sharpest version
+  // of the double-tap fault: the first tap saved, popped the sheet and
+  // opened the due-date picker, and the second tap's pop then landed on
+  // the picker and dismissed it — leaving pregnancy mode on with no due
+  // date, which is the one state it cannot say anything in. `canPop()` was
+  // no defence, because by then there genuinely was something to pop; it
+  // was just not the sheet.
+  var saving = false;
+
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (sheetContext) => Padding(
+    builder: (sheetContext) => StatefulBuilder(
+      builder: (sheetContext, setSheetState) => Padding(
       padding: EdgeInsets.fromLTRB(
         16, 0, 16, 16 + MediaQuery.paddingOf(sheetContext).bottom,
       ),
@@ -1151,21 +1162,28 @@ Future<void> showCycleModeSheet(BuildContext context, WidgetRef ref) {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Panel(
                   pad: 13,
-                  onTap: () async {
-                    final navigator = Navigator.of(sheetContext);
-                    await ref.read(userProfileProvider.notifier).save(
-                          profile.copyWith(
-                            cycleMode: mode,
-                            cycleSheetSeen: true,
-                            clearDueDate: mode != CycleMode.pregnant,
-                          ),
-                        );
-                    if (navigator.canPop()) navigator.pop();
-                    // Pregnancy needs a due date before it can say anything.
-                    if (mode == CycleMode.pregnant && context.mounted) {
-                      await openPregnancyDueDate(context, ref);
-                    }
-                  },
+                  onTap: saving
+                      ? null
+                      : () async {
+                          setSheetState(() => saving = true);
+                          final navigator = Navigator.of(sheetContext);
+                          await ref
+                              .read(userProfileProvider.notifier)
+                              .save(
+                                profile.copyWith(
+                                  cycleMode: mode,
+                                  cycleSheetSeen: true,
+                                  clearDueDate: mode != CycleMode.pregnant,
+                                ),
+                              );
+                          if (navigator.canPop()) navigator.pop();
+                          // Pregnancy needs a due date before it can say
+                          // anything.
+                          if (mode == CycleMode.pregnant &&
+                              context.mounted) {
+                            await openPregnancyDueDate(context, ref);
+                          }
+                        },
                   child: Row(
                     children: [
                       Expanded(
@@ -1186,6 +1204,7 @@ Future<void> showCycleModeSheet(BuildContext context, WidgetRef ref) {
               ),
           ],
         ),
+      ),
       ),
     ),
   );

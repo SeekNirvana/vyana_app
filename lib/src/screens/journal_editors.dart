@@ -12,6 +12,15 @@ Future<void> openMealLog(BuildContext context) => Navigator.of(context)
 
 /// Shared editor chrome: back affordance, serif title, scrolling body, and a
 /// sticky CTA at the bottom.
+/// The shell every editor screen shares: a title, a scrolling body and one
+/// Save button at the bottom.
+///
+/// Item 73: the busy guard lives here rather than in each screen, which is
+/// where it belongs — a second tap while the first save is in flight wrote
+/// the record twice and popped twice, and the second pop closed whatever
+/// screen had come up underneath. Ten screens use this shell, and putting
+/// the flag in each of them would have meant ten chances to forget. Any
+/// editor added later gets it for free.
 class _EditorScaffold extends StatelessWidget {
   const _EditorScaffold({
     required this.title,
@@ -28,7 +37,13 @@ class _EditorScaffold extends StatelessWidget {
   final List<Widget> children;
   final String ctaLabel;
   final String ctaIcon;
-  final VoidCallback onSave;
+
+  /// Awaited, so the button can stay disabled until the save is done.
+  /// Returning a Future is what makes the guard possible: a plain callback
+  /// gives nothing to wait on and the screen cannot tell when it is safe
+  /// to accept another tap.
+  final FutureOr<void> Function() onSave;
+
   final bool canSave;
 
   @override
@@ -67,7 +82,7 @@ class _EditorScaffold extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
-                child: Cta(
+                child: BusyCta(
                     label: ctaLabel,
                     icon: ctaIcon,
                     disabled: !canSave,

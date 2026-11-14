@@ -1595,6 +1595,7 @@ Future<void> showAddYourOwnSportSheet(
   final t = context.vyana;
   final name = TextEditingController(text: prefill);
   var icon = 'sports';
+  var saving = false;
 
   return showModalBottomSheet<void>(
     context: context,
@@ -1607,9 +1608,14 @@ Future<void> showAddYourOwnSportSheet(
       ),
       child: StatefulBuilder(
         builder: (context, setState) {
+          // Item 73: the id is minted from the clock, so two taps make two
+          // sports with the same name rather than one — and the second pop
+          // closes whatever came up after the sheet.
           Future<void> add(String kind) async {
+            if (saving) return;
             final label = name.text.trim();
             if (label.isEmpty) return;
+            setState(() => saving = true);
             final navigator = Navigator.of(sheetContext);
             await ref.read(databaseProvider).upsertUserActivity(
                   id: 'user_${DateTime.now().microsecondsSinceEpoch}',
@@ -1705,7 +1711,9 @@ Future<void> showAddYourOwnSportSheet(
                 const SizedBox(height: 10),
                 Panel(
                   pad: 13,
-                  onTap: name.text.trim().isEmpty ? null : () => add('gps'),
+                  onTap: name.text.trim().isEmpty || saving
+                      ? null
+                      : () => add('gps'),
                   child: Row(
                     children: [
                       VyanaIcon('mapPin', size: 17, color: t.mutedInk),
@@ -1722,7 +1730,9 @@ Future<void> showAddYourOwnSportSheet(
                 const SizedBox(height: 8),
                 Panel(
                   pad: 13,
-                  onTap: name.text.trim().isEmpty ? null : () => add('indoor'),
+                  onTap: name.text.trim().isEmpty || saving
+                      ? null
+                      : () => add('indoor'),
                   child: Row(
                     children: [
                       VyanaIcon('dumbbell', size: 17, color: t.mutedInk),

@@ -164,7 +164,11 @@ class _RingDataScreenState extends State<RingDataScreen> {
       ctaLabel: _applying ? 'Applying…' : 'Save',
       ctaIcon: 'check',
       canSave: _canSave,
-      onSave: () => unawaited(_save()),
+      // Item 73: handed over rather than fired and forgotten, so the
+      // scaffold can await it and keep the button disabled until the write
+      // is finished. unawaited() returned immediately and the guard let a
+      // second tap straight through.
+      onSave: _save,
       children: [
         Text(
           'Two intervals, two batteries. The ring measures you on its own; '
