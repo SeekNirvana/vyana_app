@@ -128,7 +128,23 @@ class GuideRuntimeService {
       // is no session to load, offload or retry on another backend. A
       // failure here is the user's server, and saying so beats a generic
       // "inference failed" that sends them looking at the phone.
-      yield* _backend.streamFromEndpoint(prompt);
+      //
+      // Item 69: the same persona configuration the on-device session is
+      // created with. The endpoint used to get the user turn by itself —
+      // including the DATA block of someone's vitals, which travels inside
+      // the prompt — and none of Nova's instructions, so a server was
+      // handed the health figures with no guidance about them and replied
+      // as a stock assistant. Response length and temperature go too,
+      // otherwise Guide settings would mean one thing on the phone and
+      // nothing at all on a server.
+      final cloudDefinition = guidePersonaDefinitions[guide]!;
+      final cloudConfig = await _prefsService.effectiveConfig(cloudDefinition);
+      yield* _backend.streamFromEndpoint(
+        prompt,
+        systemPrompt: cloudConfig.systemPrompt,
+        temperature: cloudConfig.temperature,
+        maxTokens: cloudConfig.maxTokens,
+      );
       return;
     }
 

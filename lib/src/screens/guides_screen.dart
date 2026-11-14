@@ -77,6 +77,15 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     final backend = ref.read(aiBackendProvider);
     final onCloud = backend.backend == AiBackend.cloud && backend.cloudReady;
 
+    // Item 69: before the first message to a server, say what goes to it.
+    // Asked here rather than when the endpoint is saved, because saving is
+    // a connection test with nothing personal in it; this is the moment
+    // someone's vitals are about to travel. Declining leaves the typed
+    // message in the box, so the answer to "no" is not also losing what
+    // you wrote.
+    if (onCloud && !await _confirmEndpointSend(backend)) return;
+    if (!mounted) return;
+
     setState(() {
       _input.clear();
       _sending = true;
@@ -145,6 +154,27 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
       if (mounted) setState(() => _sending = false);
       _scrollToEnd();
     }
+  }
+
+  /// Shows the one-line notice the first time anything is sent to a given
+  /// server, and returns whether to go ahead.
+  ///
+  /// Remembered per server, so pointing Nova at a different host asks
+  /// again — the data is going somewhere new, and the earlier agreement was
+  /// about somewhere else.
+  Future<bool> _confirmEndpointSend(AiBackendController backend) async {
+    if (!await backend.endpointNoticeDue()) return true;
+    if (!mounted) return false;
+    final agreed = await showVyanaConfirmDialog<bool>(
+      context: context,
+      title: kEndpointNoticeTitle,
+      message: endpointNoticeBody(backend.endpoint.baseUrl),
+      confirmLabel: 'Send',
+      cancelLabel: 'Not now',
+    );
+    if (agreed != true) return false;
+    await backend.rememberEndpointNoticeShown();
+    return true;
   }
 
   Future<void> _onVoice(GuidePersona guide) async {
