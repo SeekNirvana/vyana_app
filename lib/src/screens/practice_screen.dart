@@ -38,6 +38,8 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     final searching = _query.trim().isNotEmpty;
     final activities =
         searching ? searchActivities(_query) : allActivitiesByCat(_cat);
+    // Item 56: pinned first, in the user's own pin order, then the rest.
+    final split = splitByPins(activities, pins);
     final moment = homeMomentAt(DateTime.now());
     // Bug 45: the same rule as Home, so "Suggested today" here and the card
     // on Home can never be two different practices.
@@ -238,7 +240,12 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
             onPick: (id) => setState(() => _cat = id),
           ),
           const SizedBox(height: 12),
-          MonoEyebrow(category.eyebrow, size: 11, spacing: 0.9),
+          // Item 56: the category's own eyebrow still heads the list when
+          // nothing here is pinned. With pins, PINNED and ALL head the two
+          // groups instead — three eyebrows stacked would be noise, and the
+          // category is already named by the control just above.
+          if (split.pinned.isEmpty)
+            MonoEyebrow(category.eyebrow, size: 11, spacing: 0.9),
         ] else
           MonoEyebrow(
             activities.isEmpty
@@ -249,16 +256,21 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
             spacing: 0.9,
           ),
         const SizedBox(height: 8),
-        for (final a in activities)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 7),
-            child: _CatalogueRow(
-              activity: a,
-              pinned: pins.contains(a.id),
-              onPin: () =>
-                  ref.read(pinnedPracticesProvider.notifier).toggle(a.id),
-            ),
-          ),
+        // Searching stays one flat list: a match is a match, and grouping
+        // results by pin would bury the thing someone just typed.
+        if (searching)
+          for (final a in activities) _row(ref, a, pins)
+        else ...[
+          if (split.pinned.isNotEmpty) ...[
+            const MonoEyebrow('PINNED', size: 11, spacing: 0.9),
+            const SizedBox(height: 8),
+            for (final a in split.pinned) _row(ref, a, pins),
+            const SizedBox(height: 6),
+            const MonoEyebrow('ALL', size: 11, spacing: 0.9),
+            const SizedBox(height: 8),
+          ],
+          for (final a in split.rest) _row(ref, a, pins),
+        ],
         // Last row of Movement, and the fallback when search finds nothing.
         if (searching || _cat == 'sport')
           Padding(
@@ -275,6 +287,17 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       ],
     );
   }
+
+  /// One catalogue row, used by both groups and by search, so they cannot
+  /// drift apart in how a row looks or what pinning does.
+  Widget _row(WidgetRef ref, Activity a, List<String> pins) => Padding(
+        padding: const EdgeInsets.only(bottom: 7),
+        child: _CatalogueRow(
+          activity: a,
+          pinned: pins.contains(a.id),
+          onPin: () => ref.read(pinnedPracticesProvider.notifier).toggle(a.id),
+        ),
+      );
 
   Future<void> _openPinPicker(BuildContext context) {
     return showModalBottomSheet<void>(

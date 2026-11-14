@@ -1930,4 +1930,49 @@ void main() {
       expect(rules, contains('<include domain="database"'));
     });
   });
+
+  group('pinned practices come first in their category', () {
+    List<Activity> movement() => allActivitiesByCat('sport');
+
+    test('pins lead, in the order the user pinned them', () {
+      // Item 56: the rail at the top uses pin order, so the list below has
+      // to agree — two readings of "your pins" in two orders is worse than
+      // not grouping at all.
+      final all = movement();
+      final second = all[1].id;
+      final fifth = all[4].id;
+      final split = splitByPins(all, [fifth, second]);
+
+      expect(split.pinned.map((a) => a.id), [fifth, second]);
+      expect(split.rest.map((a) => a.id), isNot(contains(fifth)));
+      expect(split.rest.map((a) => a.id), isNot(contains(second)));
+    });
+
+    test('a practice appears exactly once', () {
+      final all = movement();
+      final split = splitByPins(all, [all.first.id, all.last.id]);
+      final seen = [...split.pinned, ...split.rest].map((a) => a.id).toList();
+      expect(seen.length, all.length);
+      expect(seen.toSet().length, all.length, reason: 'no repeats');
+    });
+
+    test('the rest stays in catalogue order', () {
+      final all = movement();
+      final split = splitByPins(all, [all[3].id]);
+      final expected = [
+        for (final a in all)
+          if (a.id != all[3].id) a.id,
+      ];
+      expect(split.rest.map((a) => a.id), expected);
+    });
+
+    test('no pins in this category means no Pinned group', () {
+      final all = movement();
+      // A pin that belongs to another category must not create an empty
+      // group here, or head a list it has nothing in.
+      final split = splitByPins(all, ['not-a-movement-practice']);
+      expect(split.pinned, isEmpty);
+      expect(split.rest.length, all.length);
+    });
+  });
 }

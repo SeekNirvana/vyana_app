@@ -151,6 +151,15 @@ conversation into that would cost the room the next answer needs.
   combination sherpa-onnx refuses: every sentence came back as an empty
   waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
   less to download — 341 MB, not the 355 MB the prompt used to quote.
+- **Pinned practices come first in their category.** With a few pins, the
+  rail at the top became a scroll hunt and the list below still showed every
+  practice in catalogue order with your pinned ones mixed in — so finding one
+  you had deliberately marked meant scrolling past the ones you hadn't. Each
+  category now leads with PINNED, in your own pin order, then ALL. Nothing
+  appears twice, and searching stays one flat list.
+- **Two labels in Wallet stop pretending to be buttons.** The currency beside
+  your address and a row's status badge rippled under a finger and did
+  nothing. They are text, and are drawn as text now.
 - **Android no longer copies your health data to Google Drive.** The manifest
   set no backup attribute, and Android's default is on — so the vault, with
   ring history, journal entries and cycle days, could be uploaded to your
