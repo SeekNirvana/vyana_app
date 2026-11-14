@@ -25,7 +25,7 @@
 /// | `model.onnx` | 345,555,491 | `kokoro-en-v0_19.tar.bz2` |
 /// | `voices.bin` | 5,755,904 | `kokoro-en-v0_19.tar.bz2` |
 /// | `tokens.txt` | 1,078 | `kokoro-en-v0_19.tar.bz2` |
-/// | `lexicon-en-us.txt` | 6,305,773 | published beside the pack |
+/// | `lexicon-en-us.txt` | 6,306,807 | published beside the pack, plus ours |
 ///
 /// **The lexicon is not optional, and `espeak-ng-data` is not used.** The
 /// pack ships an 18 MB `espeak-ng-data/` directory and this file used to
@@ -38,12 +38,23 @@
 /// hosted, not downloaded and not referenced — 18 MB nobody would have
 /// heard, and a tarball nothing ever unpacked.
 ///
-/// One consequence worth knowing: a word outside the lexicon's ~168,000
-/// entries is skipped rather than guessed at. The sentence around it still
-/// speaks. Sanskrit practice names (`pranayama`, `savasana`, `nadi`) are
-/// among the missing, as is `HRV` — the lexicon is plain
-/// `word || phones` text on our own host, so those are entries to add
-/// rather than a limit to live with.
+/// A word outside the lexicon is skipped rather than guessed at — not
+/// mispronounced, *silent*, with the sentence around it carrying on. That
+/// took `Vyana`, `PRANA`, `pranayama`, `savasana`, `HRV` and ten more of
+/// our own catalogue with it: "Try the Nadi Shodhana pranayama for seven
+/// cycles" spoke as "Try the for seven cycles".
+///
+/// So the hosted lexicon is upstream's plus
+/// `scripts/nova-voice-lexicon-additions.txt`, concatenated at packaging
+/// time — which is why its digest below is not the one GitHub serves.
+/// Every phone in those entries is one upstream already uses, and each
+/// word was checked against a same-shape word already in the lexicon
+/// (`vyana` against `piano`, `savasana` against `alabama`). Rebuild with:
+///
+/// ```sh
+/// cat lexicon-en-us.txt scripts/nova-voice-lexicon-additions.txt \
+///   > lexicon-en-us.txt.new
+/// ```
 ///
 /// **Deliberately not quantised.** int8 roughly thirds the model but its
 /// spectral correlation against fp32 is about 0.92 — audible, and this is a
@@ -166,8 +177,8 @@ const List<PinnedAsset> kNovaVoiceFiles = <PinnedAsset>[
     name: kNovaVoiceLexiconFile,
     url: 'https://seeknirvana.com/resources/voices/kokoro/kokoro-en-v0_19/'
         'lexicon-en-us.txt',
-    sha256: '8b67ae549a465eee78f92ecb74644ad90c3c58ce65f19c68baf85878a10ef73a',
-    bytes: 6305773,
+    sha256: 'cbaed6951acd2eb87185827d4bfb6070456d226defd9bc44f92c67910aae7f7c',
+    bytes: 6306807,
   ),
 ];
 
@@ -188,7 +199,7 @@ const String kNovaVoiceLexiconFile = 'lexicon-en-us.txt';
 ///
 /// This is large enough that it must stay an opt-in download the user asks
 /// for — never part of the APK, and never fetched on first launch.
-const int kNovaVoiceApproxBytes = 357618246;
+const int kNovaVoiceApproxBytes = 357619280;
 
 /// The download size as the UI should say it, so the prompt, the settings
 /// row and the progress bar cannot drift apart. MB below a gigabyte —

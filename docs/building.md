@@ -203,8 +203,8 @@ voices, full fp32 weights.
 | `model.onnx` | 345,555,491 | `kokoro-en-v0_19.tar.bz2` |
 | `voices.bin` | 5,755,904 | `kokoro-en-v0_19.tar.bz2` |
 | `tokens.txt` | 1,078 | `kokoro-en-v0_19.tar.bz2` |
-| `lexicon-en-us.txt` | 6,305,773 | published beside the pack |
-| **Total** | **357,618,246 (341 MB)** | |
+| `lexicon-en-us.txt` | 6,306,807 | published beside the pack, plus ours |
+| **Total** | **357,619,280 (341 MB)** | |
 
 **The lexicon is required; `espeak-ng-data` is not used.** The pack ships an
 18 MB `espeak-ng-data/` directory and this file used to say we host it.
@@ -214,10 +214,25 @@ lexicon available" and returns an empty waveform. Measured against this exact
 model, lexicon alone and lexicon-plus-espeak give byte-identical sample
 counts, and espeak alone gives none.
 
-A word outside the lexicon's ~168,000 entries is skipped rather than guessed
-at; the sentence around it still speaks. `pranayama`, `savasana`, `nadi` and
-`HRV` are among the missing. The lexicon is plain `word || phones` text on our
-own host, so those are entries to add.
+A word outside the lexicon is skipped rather than guessed at — not
+mispronounced, *silent*, with the sentence around it carrying on. That took
+`Vyana` and `PRANA` with it, along with `pranayama`, `savasana`, `nidra`,
+`breathwork`, `HRV` and the rest of our own catalogue.
+
+So the hosted lexicon is upstream's plus
+`scripts/nova-voice-lexicon-additions.txt`, which is why its digest is not the
+one GitHub serves. Build it at packaging time:
+
+```sh
+cat lexicon-en-us.txt scripts/nova-voice-lexicon-additions.txt > hosted.txt
+```
+
+Every phone in those entries is one upstream already uses — a symbol outside
+that set renders as nothing — and each word was checked against a word of the
+same shape already in the lexicon (`vyana` against `piano`, `savasana` against
+`alabama`, `hrv` against `hiv`). Adding more is the same exercise: copy the
+stress convention from a neighbouring entry, then confirm the word takes about
+as long to say as its reference.
 
 Deliberately **not quantised**. int8 roughly thirds the model, but its
 spectral correlation against fp32 is about 0.92 — audible, in a voice whose
@@ -244,7 +259,8 @@ For each of the four files above:
    `/resources/` to `/resources`, and the download follows at most one hop,
    to the same host.
 3. Record its URL, `sha256sum` output and byte size as a `PinnedAsset` in
-   `kNovaVoiceFiles` in `lib/src/services/nova_voice_assets.dart`.
+   `kNovaVoiceFiles` in `lib/src/services/nova_voice_assets.dart`. For the
+   lexicon, hash the concatenated file, not upstream's.
 
 The app then verifies every file against its pinned digest after download and
 again before first load, deleting and retrying once on a mismatch. A second

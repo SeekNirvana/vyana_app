@@ -1,0 +1,27 @@
+# Vyana additions — words the app says that CMUDict does not carry.
+# Same format as the rest of the file: word || space-separated IPA phones,
+# stress glued to the onset consonant of the stressed syllable, as upstream
+# writes it (yoga || jˈ o ʊ ɡ ə).
+vyana || v jˈ ɑː n ə
+prana || p ɹˈ ɑː n ə
+pranayama || p ɹˌ ɑː n ə jˈ ɑː m ə
+asana || ˈ ɑː s ə n ə
+asanas || ˈ ɑː s ə n ə z
+savasana || ʃ ə vˈ ɑː s ə n ə
+shavasana || ʃ ə vˈ ɑː s ə n ə
+vinyasa || v ɪ n jˈ ɑː s ə
+nadi || nˈ ɑː d i
+shodhana || ʃˈ o ʊ d ə n ə
+ujjayi || uː d ʒˈ a ɪ i
+nidra || nˈ iː d ɹ ə
+breathwork || b ɹˈ ɛ θ w ɜː k
+salutation || sˌ æ l j uː tˈ e ɪ ʃ ə n
+salutations || sˌ æ l j uː tˈ e ɪ ʃ ə n z
+physiotherapy || fˌ ɪ z ɪ o ʊ θˈ ɛ ɹ ə p i
+snowboarding || s nˈ o ʊ b oː ɹ d ɪ ŋ
+padel || p ɐ dˈ ɛ l
+hiit || hˈ iː t
+hrv || ˌ e ɪ t ʃˌ ɑː ɹ vˈ iː
+nsdr || ˌ ɛ nˌ ɛ sˌ d iːˈ ɑː ɹ
+bpm || bˌ iː pˌ iːˈ ɛ m
+ecg || ˌ iː sˌ iː d ʒˈ iː

@@ -151,6 +151,12 @@ conversation into that would cost the room the next answer needs.
   combination sherpa-onnx refuses: every sentence came back as an empty
   waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
   less to download — 341 MB, not the 355 MB the prompt used to quote.
+- **She can say "Vyana".** A word the lexicon doesn't carry is skipped
+  silently, and the lexicon carried neither our name nor most of our
+  catalogue: "Try the Nadi Shodhana pranayama for seven cycles" would have
+  spoken as "Try the for seven cycles". Twenty-three entries added — the
+  product names, the Sanskrit practice names, breathwork, physiotherapy,
+  padel, HIIT, and HRV, ECG and BPM as spoken letters.
 
 - **The chat's app bar plus no longer opens the AI settings.** It was a
   leftover from the guide library and the fourth way into a screen You already
