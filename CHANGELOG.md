@@ -106,15 +106,31 @@ conversation into that would cost the room the next answer needs.
   form; then her voice. The guide store is gone; it was built for a
   multi-guide world that never arrived and had become the place the model and
   voice downloads were parked.
-- **A model picker: one that answers best, one that fits.** Gemma E2B
-  (2.6 GB) and Qwen3 1.7B (977 MB). Both ends of the range were found by
-  trying them. A 0.6B answered "I am sorry, but I can't understand what you"
-  to a plain question, which is Nova in a state where she cannot read a
-  vitals block and say anything useful. A 4B was simply too large for the
-  phones this runs on — 2.7 GB to fetch and more memory to load it than most
-  of them have. Qwen3 1.7B at int4 sits between them and is the first entry
-  a 4 GB phone holds without the memory warning. A phone too small even for
-  that is better served by an endpoint, one tap away on the same screen.
+- **The model picker, built — and then stood down to one model, because
+  the second one cannot answer.** Qwen3 4B Instruct (2.7 GB) was never the
+  smaller-phone option it was offered as: larger than Gemma, and more memory
+  than these phones have. Qwen3 1.7B at int4 (977 MB) is the right size and
+  downloads, validates and loads cleanly on a 4 GB phone — and then answers
+  nothing, because the prompt never reaches it. The native prefill log shows
+  378 characters going in and an empty user turn coming out:
+
+        <|im_start|>user
+        <|im_end|>
+
+  Asked "What is 2 plus 2" it replied "Sure! I'm here to help with anything
+  you need." Qwen3-0.6B did the same thing earlier in this release and was
+  read as a model too small to be useful; it was never given the question
+  either. On `.litertlm` the native LiteRT-LM applies the chat template, and
+  under flutter_gemma 0.13.6 the Qwen3 one renders the message away — so no
+  entry in the catalogue can work around it, and none should pretend to.
+
+  There is no ungated small Gemma-family `.litertlm` to put there instead:
+  Gemma3-1B-IT and Gemma2-2B-IT both answer 401 without a Hugging Face
+  licence acceptance this app has no way to carry. flutter_gemma is at
+  1.11.4 against our 0.13.6, so that upgrade is the route to a second model,
+  re-tested against this same prefill log. The picker's plumbing stays; with
+  one model the heading and the rows fold away, and a phone too small for
+  Gemma is served by an endpoint, one tap away on the same screen.
 - **The RAM warning sits on the model row it concerns**, with the phone's
   measured memory in it, instead of a banner above a screen that also serves
   people running no local model at all.

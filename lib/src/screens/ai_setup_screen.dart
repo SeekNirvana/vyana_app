@@ -507,9 +507,16 @@ class _LocalBackendPanel extends ConsumerWidget {
       );
     }
 
+    // "Which model?" over a single row is a question with one answer. The
+    // catalogue is down to one until a second can actually answer — see the
+    // note on kOnDeviceModels — so the heading and the rows come back
+    // together with it.
+    final offersAChoice = kOnDeviceModels.length > 1;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (offersAChoice) ...[
         Text('Which model?', style: VyanaType.label.copyWith(color: t.textSec)),
         const SizedBox(height: 8),
         for (final model in kOnDeviceModels) ...[
@@ -524,6 +531,17 @@ class _LocalBackendPanel extends ConsumerWidget {
           const SizedBox(height: 8),
         ],
         const SizedBox(height: 6),
+        ] else ...[
+          // One model, so the memory warning it carries still has to land
+          // somewhere: on the row that offers the download.
+          _ModelRow(
+            model: selected,
+            selected: true,
+            ramMb: ramMb,
+            onTap: null,
+          ),
+          const SizedBox(height: 14),
+        ],
         Cta(
           label: 'Install ${selected.label} · '
               '${formatDownloadSize(selected.bytes)}',
@@ -551,7 +569,11 @@ class _ModelRow extends StatelessWidget {
   final OnDeviceModel model;
   final bool selected;
   final int? ramMb;
-  final VoidCallback onTap;
+
+  /// null when there is nothing to choose between — the row still carries
+  /// the size and the memory warning, it just does not pretend to be a
+  /// radio button.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

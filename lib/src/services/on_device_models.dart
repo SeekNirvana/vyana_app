@@ -57,19 +57,38 @@ class OnDeviceModel {
   bool fitsIn(int? ramMb) => ramMb == null || ramMb >= wantsRamMb;
 }
 
-/// Two models: one that answers best, and one that fits.
+/// One model, until a second one can actually answer.
 ///
-/// There is a floor and a ceiling here, both found the same way. A 0.6B was
-/// tried and shipped nothing worth reading — asked to help someone settle
-/// for four minutes it answered "I am sorry, but I can't understand what
-/// you" — and no amount of labelling makes a model that cannot read a vitals
-/// block a real choice. A 4B was tried at the other end and was simply too
-/// large for the phones this app runs on: 2.7 GB to download and more than
-/// most of them have the memory to load.
+/// Three were tried here. Qwen3 4B Instruct (2.7 GB) is larger than Gemma
+/// and wants more memory than these phones have, so it was never the
+/// smaller-phone option it was offered as. Qwen3 1.7B at int4 (977 MB) is
+/// the right size and downloads, validates and loads cleanly on a 4 GB
+/// phone — and then answers nothing, because the prompt never reaches it:
 ///
-/// Qwen3 1.7B at int4 sits between them at 977 MB, which is the first entry
-/// here a 4 GB phone can hold without the warning. A phone too small even
-/// for that is better served by an endpoint, one tap away on the same
+///     RunPrefillAsync:
+///     <|im_start|>system
+///     <|im_end|>
+///     <|im_start|>user
+///     <|im_end|>
+///     <|im_start|>assistant
+///
+/// 378 characters went into the session and an empty user turn came out the
+/// other side. Asked "What is 2 plus 2" it replied "Sure! I'm here to help
+/// with anything you need" — the answer of a model handed an empty message.
+/// Qwen3-0.6B did the same thing, which was read at the time as a model too
+/// small to be useful; it was never given the question either.
+///
+/// So this is not a size or a quality problem and no entry in this list can
+/// work around it: for `.litertlm` on Android, LiteRT-LM applies the chat
+/// template itself, and flutter_gemma 0.13.6 hands it something the Qwen3
+/// template renders away. Gemma's template path is the one that works.
+///
+/// There is no ungated small Gemma-family `.litertlm` to put here instead —
+/// Gemma3-1B-IT and Gemma2-2B-IT both answer 401 without a Hugging Face
+/// licence acceptance, which this app has no way to carry. flutter_gemma is
+/// at 1.11.4 against our 0.13.6, so the way to a second model is that
+/// upgrade, re-tested against this exact prefill log. A phone too small for
+/// Gemma is served by an endpoint until then, one tap away on the same
 /// screen.
 const List<OnDeviceModel> kOnDeviceModels = <OnDeviceModel>[
   OnDeviceModel(
@@ -82,17 +101,6 @@ const List<OnDeviceModel> kOnDeviceModels = <OnDeviceModel>[
     fileType: ModelFileType.litertlm,
     blurb: 'Steady, and the one Nova was written against.',
     wantsRamMb: 6 * 1024,
-  ),
-  OnDeviceModel(
-    id: 'qwen3-1_7b',
-    label: 'Qwen3 1.7B',
-    url: 'https://huggingface.co/litert-community/Qwen3-1.7B/'
-        'resolve/main/Qwen3-1.7B_dynamic_wi4b32_afp32.litertlm',
-    bytes: 977184032,
-    modelType: ModelType.qwen3,
-    fileType: ModelFileType.litertlm,
-    blurb: 'Smaller and quicker, and it fits a phone Gemma does not.',
-    wantsRamMb: 3 * 1024,
   ),
 ];
 

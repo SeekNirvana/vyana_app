@@ -242,8 +242,7 @@ void main() {
         .allMatches(models)
         .map((m) => int.parse(m.group(1)!))
         .toList();
-    expect(counts.length, greaterThanOrEqualTo(2),
-        reason: 'the picker needs more than one model to pick from');
+    expect(counts, isNotEmpty, reason: 'Nova needs something to think with');
     for (final bytes in counts) {
       expect(bytes, greaterThan(100 * 1000 * 1000),
           reason: 'a usable model is not under 100 MB');
@@ -252,6 +251,15 @@ void main() {
     }
     // And none of them is the 4B that would not fit the phones this runs on.
     expect(counts.every((b) => b < 2_700_000_000), isTrue);
+
+    // No Qwen3 while the prompt does not reach it. On .litertlm the native
+    // LiteRT-LM applies the chat template, and under flutter_gemma 0.13.6
+    // the Qwen3 one renders an empty user turn: 378 characters in, nothing
+    // out. "What is 2 plus 2" came back "Sure! I'm here to help with
+    // anything you need". Re-test against the RunPrefillAsync log before
+    // putting one back.
+    expect(models, isNot(contains('ModelType.qwen3')),
+        reason: 'a model that is handed an empty prompt is not a choice');
     final modelManager = readLib('src/services/guide_model_manager.dart');
     expect(modelManager, contains('activeOnDeviceModel.bytes'));
     expect(manifest, isNot(contains('3.1 GB')));
@@ -563,5 +571,7 @@ void main() {
     final setup = readLib('src/screens/ai_setup_screen.dart');
     expect(setup, isNot(contains(r"A $kGuideModelSizeLabel download")));
     expect(setup, contains('ref.watch(onDeviceModelProvider).bytes'));
+    // "Which model?" over a single row is a question with one answer.
+    expect(setup, contains('kOnDeviceModels.length > 1'));
   });
 }
