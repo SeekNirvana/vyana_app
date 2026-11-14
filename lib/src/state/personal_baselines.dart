@@ -19,6 +19,27 @@ enum BaselineVital { hrv, restingHr, sleep, stress }
 extension BaselineVitalX on BaselineVital {
   String get storageKey => name;
 
+  /// Item 95: the typical band this vital is judged against, so the sheet
+  /// can show what "outside the typical range" meant for this person
+  /// instead of asking them to agree to an abstraction.
+  /// Resting HR's band depends on how often the person trains, so it is
+  /// asked for rather than constant.
+  VitalReferenceRange typicalRangeFor(TrainingFrequency? trainingFrequency) =>
+      switch (this) {
+        BaselineVital.hrv => kHrvRange,
+        BaselineVital.restingHr => restingHrBand(trainingFrequency),
+        BaselineVital.sleep => kSleepRange,
+        BaselineVital.stress => kStressRange,
+      };
+
+  /// The unit the numbers are in, for "yours about 72 bpm".
+  String get unit => switch (this) {
+        BaselineVital.hrv => 'ms',
+        BaselineVital.restingHr => 'bpm',
+        BaselineVital.sleep => 'h',
+        BaselineVital.stress => '',
+      };
+
   /// The row label this baseline sits under.
   String get label => switch (this) {
         BaselineVital.hrv => 'HRV',
@@ -49,12 +70,17 @@ enum BaselineAnswer {
 }
 
 extension BaselineAnswerX on BaselineAnswer {
-  /// How the answer reads in You, where it stays editable.
+  /// How the answer reads, in Metrics and in You.
+  ///
+  /// Item 95: renamed. "It is a real signal" did not say what it does —
+  /// nobody reading it could tell what they were choosing. Each of these
+  /// now names the consequence: keep flagging it, or stop. The behaviour of
+  /// each answer is unchanged.
   String get label => switch (this) {
         BaselineAnswer.none => 'Not asked yet',
-        BaselineAnswer.adopted => 'This is my normal',
-        BaselineAnswer.kept => 'It is a real signal',
-        BaselineAnswer.deferred => 'Not sure yet',
+        BaselineAnswer.adopted => 'This is normal for me',
+        BaselineAnswer.kept => 'Keep flagging it',
+        BaselineAnswer.deferred => 'Ask me later',
       };
 
   static BaselineAnswer fromStored(String? value) {
