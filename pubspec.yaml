@@ -77,6 +77,11 @@ dependencies:
   # Item 53: encrypted backups. AES-256-GCM for the file, Argon2id to turn
   # the user's passphrase into the key — `crypto` above is hashing only.
   cryptography: ^2.7.0            # AES-256-GCM + Argon2id for backup files
+  # Item 53/65: handing a file to the system and taking one back. The app
+  # had neither, which is why "Saved to your exports folder" was only true
+  # while the folder happened to be reachable over USB.
+  share_plus: ^13.3.1             # Save/share sheet — Files, Drive, iCloud
+  file_selector: ^1.0.3           # Pick a backup to restore
   image_picker: ^1.2.2
   url_launcher: ^6.3.1
 
