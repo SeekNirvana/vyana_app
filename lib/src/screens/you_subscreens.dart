@@ -877,6 +877,9 @@ String formatBytes(int bytes) {
   if (bytes <= 0) return '0 MB';
   final mb = bytes / (1024 * 1024);
   if (mb >= 1000) return '${(mb / 1024).toStringAsFixed(2)} GB';
+  // Below a megabyte, "0 MB" reads as nothing stored. The stored
+  // conversations are kilobytes of text and they are not nothing.
+  if (mb < 1) return '${(bytes / 1024).round()} KB';
   return '${mb.round()} MB';
 }
 
@@ -928,6 +931,7 @@ class _NovaFootprintScreenState extends ConsumerState<NovaFootprintScreen> {
     // the user had chosen, which is false the moment they point her at
     // their own endpoint.
     final ai = ref.watch(aiBackendProvider);
+    final chatFootprint = ref.watch(chatFootprintProvider).valueOrNull;
     final backendNote = ai.backend == AiBackend.cloud && ai.cloudReady
         ? 'Nova is thinking on your own endpoint (${ai.endpoint.model}), so '
             'the model below is not in use. What is on disk is the voice and '
@@ -960,7 +964,17 @@ class _NovaFootprintScreenState extends ConsumerState<NovaFootprintScreen> {
             : s.voiceBytes > 0
                 ? '${formatBytes(s.voiceBytes)} · Kokoro, her voice'
                 : 'Not installed · she stays on screen'),
-        _KV('TOTAL', s == null ? '…' : formatBytes(s.totalBytes)),
+        // Conversations are stored now, so this screen says so: a screen
+        // that answers "what is Nova keeping" must not leave out the one
+        // thing in it that is the user's own words. The row below was
+        // TOTAL, which only ever counted the models — a name that would
+        // start lying the moment something it does not count sat above it.
+        _KV('CONVERSATIONS', chatFootprint == null
+            ? '…'
+            : chatFootprint.isEmpty
+                ? 'None kept yet'
+                : '${chatFootprint.label} · in Nova\'s chat'),
+        _KV('MODELS', s == null ? '…' : formatBytes(s.totalBytes)),
         const SizedBox(height: 10),
         Text(
           backendNote,

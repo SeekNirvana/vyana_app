@@ -243,6 +243,31 @@ class GuideRuntimeService {
     }
   }
 
+  /// Drop the conversation so far without unloading the model.
+  ///
+  /// The chat screen's messages and this history were two records of one
+  /// conversation, and only one of them was ever cleared: leaving the screen
+  /// rebuilt the visible list and left this one intact, so a new-looking chat
+  /// was answered by a model still carrying the last one. "New conversation"
+  /// now ends both, and this is the half the user cannot see.
+  ///
+  /// Reloading the model is not needed — the session behind the chat is
+  /// recreated with the same system prompt, which costs a moment rather than
+  /// the two and a half gigabytes a reload would re-read.
+  Future<void> forgetConversation() async {
+    final chat = _activeChat;
+    if (chat == null) return;
+    if (_isGenerating) return;
+    try {
+      await chat.clearHistory();
+    } on Object catch (error) {
+      // A model that will not forget is worse than one that cannot be asked
+      // to, so drop it and let the next message rebuild from nothing.
+      debugPrint('[GuideRuntime] clearHistory failed ($error); offloading.');
+      await offload();
+    }
+  }
+
   /// Offload and free resources.
   Future<void> offload({bool resetBackendAttempts = true}) async {
     if (_isGenerating) {

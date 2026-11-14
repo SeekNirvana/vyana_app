@@ -392,9 +392,73 @@ class WeeklyPlans extends Table {
   Set<Column> get primaryKey => {weekday, position};
 }
 
+/// One stored conversation with a guide.
+///
+/// Chat used to live in the chat screen's own `State`: leave the screen and
+/// everything said was gone, while the model's own history quietly survived —
+/// so the screen showed a fresh greeting to a model that still remembered
+/// the last conversation. Storing the conversation fixes the half anyone can
+/// see, and gives the model's history an explicit boundary to agree with.
+@DataClassName('ChatSessionRow')
+class ChatSessions extends Table {
+  TextColumn get id => text()();
+
+  /// Catalog persona id, e.g. `nova`.
+  TextColumn get personaId => text()();
+
+  /// The first thing the user asked, trimmed. Their own words, so the
+  /// history list reads as the questions they came with rather than
+  /// "Conversation 4".
+  TextColumn get title => text()();
+
+  /// `device` | `cloud` — where this conversation was answered. Recorded
+  /// because the answer to "why does this one read differently" is usually
+  /// that it was answered somewhere else.
+  TextColumn get backend => text().withDefault(const Constant('device'))();
+
+  /// The model that answered, as the picker names it.
+  TextColumn get modelLabel => text().nullable()();
+
+  DateTimeColumn get startedAt => dateTime()();
+
+  /// Last message in either direction. The history list sorts on this.
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// One turn in a stored conversation.
+///
+/// [body] holds what the bubble showed, not what the model was sent: the
+/// prompt also carries a DATA block of the user's own numbers, which is
+/// appended behind the scenes and would be stale by the time anyone read it
+/// back.
+@DataClassName('ChatMessageRow')
+class ChatMessages extends Table {
+  TextColumn get id => text()();
+
+  TextColumn get sessionId =>
+      text().references(ChatSessions, #id, onDelete: KeyAction.cascade)();
+
+  /// Position in the conversation, from 0.
+  IntColumn get ordinal => integer()();
+
+  BoolColumn get fromUser => boolean()();
+
+  TextColumn get body => text()();
+
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DriftDatabase(
   tables: [
     WeeklyPlans,
+    ChatSessions,
+    ChatMessages,
     ActivitySessions,
     Samples,
     RoutePoints,
@@ -426,7 +490,7 @@ class VyanaDatabase extends _$VyanaDatabase {
   }
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -491,6 +555,14 @@ class VyanaDatabase extends _$VyanaDatabase {
           // for anyone who never opens "My week".
           try {
             await m.createTable(weeklyPlans);
+          } on Object catch (_) {/* already exists */}
+          // Stored conversations. Empty on arrival: nothing said before this
+          // build was written down anywhere, so there is nothing to backfill.
+          try {
+            await m.createTable(chatSessions);
+          } on Object catch (_) {/* already exists */}
+          try {
+            await m.createTable(chatMessages);
           } on Object catch (_) {/* already exists */}
         },
         beforeOpen: (details) async {
@@ -1215,6 +1287,124 @@ class VyanaDatabase extends _$VyanaDatabase {
 
   Future<int> deletePattern(String id) =>
       (delete(patterns)..where((t) => t.id.equals(id))).go();
+
+  // ── Stored conversations ──────────────────────────────────────────────────
+
+  Future<void> insertChatSession({
+    required String id,
+    required String personaId,
+    required String title,
+    required String backend,
+    String? modelLabel,
+    required DateTime startedAt,
+  }) {
+    return into(chatSessions).insert(
+      ChatSessionsCompanion.insert(
+        id: id,
+        personaId: personaId,
+        title: title,
+        backend: Value(backend),
+        modelLabel: Value(modelLabel),
+        startedAt: startedAt,
+        updatedAt: startedAt,
+      ),
+    );
+  }
+
+  /// Moves a conversation to the top of the history list, and takes a title
+  /// if it does not have one yet.
+  Future<void> touchChatSession(
+    String id, {
+    String? title,
+    DateTime? at,
+  }) {
+    return (update(chatSessions)..where((t) => t.id.equals(id))).write(
+      ChatSessionsCompanion(
+        updatedAt: Value(at ?? DateTime.now()),
+        title: title == null ? const Value.absent() : Value(title),
+      ),
+    );
+  }
+
+  Future<void> insertChatMessage({
+    required String id,
+    required String sessionId,
+    required int ordinal,
+    required bool fromUser,
+    required String body,
+    required DateTime createdAt,
+  }) {
+    return into(chatMessages).insertOnConflictUpdate(
+      ChatMessagesCompanion.insert(
+        id: id,
+        sessionId: sessionId,
+        ordinal: ordinal,
+        fromUser: fromUser,
+        body: body,
+        createdAt: createdAt,
+      ),
+    );
+  }
+
+  /// A reply is written once, when it has finished arriving. Writing every
+  /// token would be hundreds of writes per answer for a row nobody reads
+  /// until the conversation is over.
+  Future<void> updateChatMessageBody(String id, String body) {
+    return (update(chatMessages)..where((t) => t.id.equals(id)))
+        .write(ChatMessagesCompanion(body: Value(body)));
+  }
+
+  Stream<List<ChatSessionRow>> watchChatSessions() =>
+      (select(chatSessions)..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
+          .watch();
+
+  Future<List<ChatSessionRow>> allChatSessions() =>
+      (select(chatSessions)..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
+          .get();
+
+  Future<ChatSessionRow?> getChatSession(String id) =>
+      (select(chatSessions)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  /// Watched rather than fetched: opening the transcript of the conversation
+  /// that is still in progress should not show a snapshot of it.
+  Stream<List<ChatMessageRow>> watchChatMessagesFor(String sessionId) =>
+      (select(chatMessages)
+            ..where((t) => t.sessionId.equals(sessionId))
+            ..orderBy([(t) => OrderingTerm.asc(t.ordinal)]))
+          .watch();
+
+  Future<List<ChatMessageRow>> chatMessagesFor(String sessionId) =>
+      (select(chatMessages)
+            ..where((t) => t.sessionId.equals(sessionId))
+            ..orderBy([(t) => OrderingTerm.asc(t.ordinal)]))
+          .get();
+
+  /// Messages cascade with the row; `PRAGMA foreign_keys` is on in
+  /// [beforeOpen], so this does not leave orphans behind.
+  Future<int> deleteChatSession(String id) =>
+      (delete(chatSessions)..where((t) => t.id.equals(id))).go();
+
+  Future<void> deleteAllChatSessions() async {
+    await batch((b) {
+      b.deleteAll(chatMessages);
+      b.deleteAll(chatSessions);
+    });
+  }
+
+  Future<int> chatSessionsCount() => _countRows(chatSessions);
+
+  Future<int> chatMessagesCount() => _countRows(chatMessages);
+
+  /// Roughly what the stored conversations occupy, for the footprint screen.
+  /// The text itself, not the page overhead around it — close enough to tell
+  /// somebody whether this is worth clearing, and honest about being a sum
+  /// of what was written rather than a file size.
+  Future<int> chatHistoryBytes() async {
+    final length = chatMessages.body.length.sum();
+    final row = await (selectOnly(chatMessages)..addColumns([length]))
+        .getSingleOrNull();
+    return row?.read(length)?.toInt() ?? 0;
+  }
 }
 
 /// The local vault (drift). One instance app-wide.

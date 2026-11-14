@@ -129,6 +129,7 @@ class VyanaIcon extends StatelessWidget {
     'kayak': Icons.kayaking_rounded,
     'sports': Icons.sports_rounded,
     'trash': Icons.delete_outline_rounded,
+    'chats': Icons.forum_rounded,
     'soccer': Icons.sports_soccer_rounded,
     'basketball': Icons.sports_basketball_rounded,
     'golf': Icons.sports_golf_rounded,
