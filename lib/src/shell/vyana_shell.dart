@@ -37,11 +37,18 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (await isSolanaMobileDevice()) return;
-      if (!mounted) return;
-      ref.read(reownWalletProvider.notifier).initIfNeeded(context);
-    });
+    // Item 66: WalletConnect is deliberately *not* started here. Launching
+    // the app used to initialise Reown on every non-Solana phone, which
+    // opened relay connections, fetched the wallet directory and asked
+    // Reown's API whether to send analytics — telling it the project id and
+    // this phone's IP before anyone had been near the Wallet screen, while
+    // the privacy screen said it happens "only if you connect".
+    //
+    // The Wallet screen initialises it when it opens, which is the moment
+    // the person asked for it. Nothing else needs it: a connected address
+    // is read back from preferences by the wallet controller, not from a
+    // live session, and since item 61 buying a ring is a browser handoff
+    // to the website that touches no wallet at all.
     _listenForWidgetLaunch();
   }
 
