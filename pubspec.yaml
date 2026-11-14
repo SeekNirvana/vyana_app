@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.5+13
+version: 1.1.6+14
 
 environment:
   sdk: ^3.12.0
@@ -74,6 +74,14 @@ dependencies:
   sherpa_onnx: ^2.0.1             # Offline neural TTS runtime (Kokoro)
   audioplayers: ^6.8.1            # Plays Kokoro's generated audio
   crypto: ^3.0.6                  # SHA-256 pinning for downloaded voice files
+  # Item 53: encrypted backups. AES-256-GCM for the file, Argon2id to turn
+  # the user's passphrase into the key — `crypto` above is hashing only.
+  cryptography: ^2.7.0            # AES-256-GCM + Argon2id for backup files
+  # Item 53/65: handing a file to the system and taking one back. The app
+  # had neither, which is why "Saved to your exports folder" was only true
+  # while the folder happened to be reachable over USB.
+  share_plus: ^13.3.1             # Save/share sheet — Files, Drive, iCloud
+  file_selector: ^1.0.3           # Pick a backup to restore
   image_picker: ^1.2.2
   url_launcher: ^6.3.1
 

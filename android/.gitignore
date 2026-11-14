@@ -1,4 +1,6 @@
 /.gradle
+# Kotlin build-session state, written by newer Kotlin Gradle plugins.
+/.kotlin/
 # The root .gitignore anchors its build rule with a leading slash (/build/),
 # so it only covers the repo root and android/build/ escaped it entirely.
 /build/

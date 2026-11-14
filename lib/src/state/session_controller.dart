@@ -438,9 +438,11 @@ class SessionController extends ChangeNotifier {
       _notify();
       return;
     }
-    // Bug 13(a): without "Allow all the time" Android cuts the stream when
-    // the screen locks. Asked here, in context, rather than up front.
-    unawaited(service.requestBackgroundPermission());
+    // Item 67: no second prompt here. What keeps the stream alive once the
+    // screen locks is the location-typed foreground service that
+    // positions() declares, not "Allow all the time" — a foreground
+    // service started while the app is open needs only "while using this
+    // app", which ensurePermission() has just obtained.
     _posSub = service
         .positions(
           notificationText: 'Recording your ${_activity?.name ?? 'session'}',
@@ -931,9 +933,9 @@ class SessionController extends ChangeNotifier {
     final summary = _computeSummary();
     if (id != null) {
       await _db.finishSession(id, endedAt, jsonEncode(summary));
-      if (_ref.read(sessionSyncEnabledProvider)) {
-        unawaited(_ref.read(sessionSyncServiceProvider).queue(id));
-      }
+      // Item 88: nothing is queued for a cloud that does not exist. The
+      // queue was written to and never read from.
+
     }
     // Lucid dreaming is the one practice whose result arrives the next
     // morning: finishing it arms the Journal's wake capture.

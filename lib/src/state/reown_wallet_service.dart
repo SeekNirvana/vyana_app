@@ -88,6 +88,12 @@ class ReownWalletService extends StateNotifier<ReownWalletState> {
     };
   }
 
+  /// Starts Reown, once, when the person has asked for a wallet.
+  ///
+  /// Called from the Wallet screen as it opens and from nowhere else. It
+  /// must not be called at launch or from a background task: initialising
+  /// reaches Reown's relay and API, so the call site *is* the consent, and
+  /// a caller that is not the person opening Wallet does not have it.
   Future<void> initIfNeeded(BuildContext context) async {
     if (_initStarted) return;
     _initStarted = true;
@@ -119,6 +125,13 @@ class ReownWalletService extends StateNotifier<ReownWalletState> {
         context: hostContext,
         projectId: kReownProjectId,
         featuresConfig: _featuresConfig,
+        // Item 66: off, and explicitly rather than by omission. Left null,
+        // the SDK's analytics service GETs `/getAnalyticsConfig` from
+        // Reown's API on init to ask whether it should report — a request
+        // that carries the project id and this phone's IP whatever the
+        // answer turns out to be. `false` skips the question and the
+        // reporting both.
+        enableAnalytics: false,
         metadata: PairingMetadata(
           name: kVyanaWalletIdentityName,
           description: 'Sovereign wellness · optional Solana wallet',

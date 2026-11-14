@@ -36,13 +36,16 @@ extension GpsStateX on GpsState {
 /// Phone GPS for outdoor sessions. GPS, elevation and the route come from the
 /// phone — never the ring (per the SDK constraints).
 class LocationService {
-  /// Whether the user has granted background location, which is what keeps
-  /// the stream alive once the screen locks.
-  Future<bool> hasBackgroundPermission() async {
-    final permission = await Geolocator.checkPermission();
-    return permission == LocationPermission.always;
-  }
-
+  /// Whether an outdoor session may use the GPS.
+  ///
+  /// Item 67: "while using this app" is enough and is all Vyana asks for.
+  /// There used to be a hasBackgroundPermission/requestBackgroundPermission
+  /// pair here that chased `always` on top of this, on the belief that
+  /// Android cuts the position stream when the screen locks. It does not,
+  /// so long as the stream runs under a location-typed foreground service
+  /// started while the app is open — which is what [positions] sets up.
+  /// The pair is gone rather than left unused, so nothing reaches for it
+  /// again.
   Future<bool> ensurePermission() async {
     if (!await Geolocator.isLocationServiceEnabled()) return false;
     var permission = await Geolocator.checkPermission();
@@ -51,18 +54,6 @@ class LocationService {
     }
     return permission == LocationPermission.always ||
         permission == LocationPermission.whileInUse;
-  }
-
-  /// Asks for background ("Allow all the time") location, in plain language,
-  /// after foreground access is already granted. Android only; on iOS the
-  /// `always` authorisation comes through the same prompt.
-  Future<bool> requestBackgroundPermission() async {
-    if (await hasBackgroundPermission()) return true;
-    // Android requires foreground permission before the background prompt
-    // will show at all.
-    if (!await ensurePermission()) return false;
-    final permission = await Geolocator.requestPermission();
-    return permission == LocationPermission.always;
   }
 
   /// The position stream for a live session.

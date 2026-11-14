@@ -35,7 +35,11 @@ class DeviceScanScreen extends StatefulWidget {
   /// status line fell back to the scan hint instead.
   final DateTime? lastSyncedAt;
 
-  final Future<void> Function(String name)? onRename;
+  /// Item 85 (b): returns the result rather than void. renameRing already
+  /// reports whether it worked and why not; this threw that away, so the
+  /// screen showed the new name whatever happened — including when the ring
+  /// was not connected and nothing had been renamed at all.
+  final Future<RingNameUpdateResult> Function(String name)? onRename;
   final VoidCallback? onFirstConnected;
 
   @override
@@ -100,6 +104,21 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
     });
 
     try {
+      // Before permissions: with the radio off the scan returns nothing and
+      // the screen said "Scanning for PRANA rings" until it gave up, which
+      // reads as "no ring found" rather than "turn Bluetooth on".
+      if (await widget.repo.bluetoothState() == BluetoothState.off) {
+        final shown = await widget.repo.requestEnableBluetooth();
+        if (!mounted) return;
+        setState(() {
+          _status = 'Bluetooth is off';
+          _scanHint = shown
+              ? 'Turn it on and scan again.'
+              : 'Turn Bluetooth on in Settings, then scan again.';
+        });
+        return;
+      }
+
       final scanAccess = await widget.repo.ensureScanAccess();
       if (!scanAccess.granted) {
         if (!mounted) return;
@@ -151,6 +170,13 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
       if (connectedScanDevice != null) {
         widget.onConnectedDeviceDetected(connectedScanDevice);
         unawaited(_syncConnectedDeviceDetails());
+        // Item 85 (a): a ring already connected in system Bluetooth arrives
+        // here rather than through _connect, and only that path announced a
+        // first connection — so setup was skipped entirely for anyone whose
+        // ring was paired in Android's own settings first. The handler
+        // checks currentRingNeedsOnboarding, so a ring already set up still
+        // goes straight back.
+        widget.onFirstConnected?.call();
       }
     } on Object catch (error) {
       if (!mounted) return;
@@ -360,9 +386,21 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
       ),
     );
     if (name == null || name.isEmpty) return;
-    await rename(name);
+    final result = await rename(name);
     if (!mounted) return;
-    setState(() => _pairedRing = _pairedRing?.copyWith(name: name));
+    if (!result.successful) {
+      showVyanaSnackBar(
+        context,
+        message: result.message,
+        icon: 'alert',
+      );
+      return;
+    }
+    // The name the ring accepted, which is not always the one typed — it
+    // trims and may shorten.
+    setState(() => _pairedRing = _pairedRing?.copyWith(
+          name: result.name.isEmpty ? name : result.name,
+        ));
   }
 
   Future<void> _syncConnectedDeviceDetails() async {

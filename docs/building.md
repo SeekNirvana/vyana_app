@@ -198,13 +198,41 @@ runtime, so the release has to be mirrored on our own host first.
 `kokoro-en-v0_19` from sherpa-onnx's pretrained TTS models — English, 11
 voices, full fp32 weights.
 
-| File | Size |
-|---|---|
-| `model.onnx` | 330 MB |
-| `voices.bin` | 5.5 MB |
-| `tokens.txt` | 1.1 KB |
-| `espeak-ng-data/` | ~18 MB |
-| **Total** | **~355 MB** |
+| File | Bytes | Source |
+|---|---|---|
+| `model.onnx` | 345,555,491 | `kokoro-en-v0_19.tar.bz2` |
+| `voices.bin` | 5,755,904 | `kokoro-en-v0_19.tar.bz2` |
+| `tokens.txt` | 1,078 | `kokoro-en-v0_19.tar.bz2` |
+| `lexicon-en-us.txt` | 6,306,807 | published beside the pack, plus ours |
+| **Total** | **357,619,280 (341 MB)** | |
+
+**The lexicon is required; `espeak-ng-data` is not used.** The pack ships an
+18 MB `espeak-ng-data/` directory and this file used to say we host it.
+sherpa-onnx 2.0.1 tokenises Kokoro through a lexicon and nothing else: a
+config carrying `dataDir` and no `lexicon` fails every sentence with "No
+lexicon available" and returns an empty waveform. Measured against this exact
+model, lexicon alone and lexicon-plus-espeak give byte-identical sample
+counts, and espeak alone gives none.
+
+A word outside the lexicon is skipped rather than guessed at — not
+mispronounced, *silent*, with the sentence around it carrying on. That took
+`Vyana` and `PRANA` with it, along with `pranayama`, `savasana`, `nidra`,
+`breathwork`, `HRV` and the rest of our own catalogue.
+
+So the hosted lexicon is upstream's plus
+`scripts/nova-voice-lexicon-additions.txt`, which is why its digest is not the
+one GitHub serves. Build it at packaging time:
+
+```sh
+cat lexicon-en-us.txt scripts/nova-voice-lexicon-additions.txt > hosted.txt
+```
+
+Every phone in those entries is one upstream already uses — a symbol outside
+that set renders as nothing — and each word was checked against a word of the
+same shape already in the lexicon (`vyana` against `piano`, `savasana` against
+`alabama`, `hrv` against `hiv`). Adding more is the same exercise: copy the
+stress convention from a neighbouring entry, then confirm the word takes about
+as long to say as its reference.
 
 Deliberately **not quantised**. int8 roughly thirds the model, but its
 spectral correlation against fp32 is about 0.92 — audible, in a voice whose
@@ -217,26 +245,30 @@ the real saving is.
 There is no `kokoro-v0.19-int8` upstream, whatever an earlier pin said: v0.19
 ships fp32 only, and the int8 builds are the multi-lang packs.
 
-### Mirroring it
+### Hosting it
 
-For each file (`model.onnx`, `voices.bin`, `tokens.txt`,
-`espeak-ng-data.tar`):
+For each of the four files above:
 
-1. Download it from the official sherpa-onnx release and check it against the
-   checksum published with that release. Do this once, at packaging time.
+1. Download it from the official sherpa-onnx `tts-models` release and check
+   the tarball against the SHA-256 GitHub publishes for the asset
+   (`912804855a04745fa77a30be545b3f9a5d15c4d66db00b88cbcd4921df605ac7` for
+   `kokoro-en-v0_19.tar.bz2`). Do this once, at packaging time.
 2. Upload that exact file to
-   `https://cdn.seeknirvana.app/voices/kokoro/kokoro-en-v0_19/<file>` over
-   HTTPS.
+   `https://seeknirvana.com/resources/voices/kokoro/kokoro-en-v0_19/<file>`
+   over HTTPS, serving it with no redirect — the site normalises
+   `/resources/` to `/resources`, and the download follows at most one hop,
+   to the same host.
 3. Record its URL, `sha256sum` output and byte size as a `PinnedAsset` in
-   `kNovaVoiceFiles` in `lib/src/services/nova_voice_assets.dart`.
+   `kNovaVoiceFiles` in `lib/src/services/nova_voice_assets.dart`. For the
+   lexicon, hash the concatenated file, not upstream's.
 
 The app then verifies every file against its pinned digest after download and
 again before first load, deleting and retrying once on a mismatch. A second
 mismatch raises `NovaVoiceIntegrityException` and nothing is loaded.
 
-### Until it is mirrored
+### Until the files are up
 
-`kNovaVoiceFiles` is empty, `novaVoiceConfigured` is false, nothing is
+If `kNovaVoiceFiles` is empty, `novaVoiceConfigured` is false, nothing is
 downloaded, and **reading aloud is simply unavailable**. It does not fall
 back to the phone's own text-to-speech: `flutter_tts` is only ever as good as
 the engine the phone happens to have, and on a phone without Google services
@@ -244,11 +276,9 @@ the engine the phone happens to have, and on a phone without Google services
 voice, which is worse than silence for guidance. Guides › Vani Voice says so,
 and the "Speak replies aloud" switch stays off and disabled.
 
-`AppTtsService` keeps `flutter_tts` for one job only: setting the shared
-`AVAudioSession` category, which is process-wide and so governs Kokoro's
-playback through `audioplayers` and mic capture through `record`. It can be
-replaced by `audioplayers`' own `AudioContext` — left as is because that is
-the routing already proven on device.
+Audio routing is `AudioRouteService` (`audio_session`), not a speech engine.
+It sets the playback category process-wide, which governs Kokoro's playback
+through `audioplayers` and mic capture through `record`.
 
 Confirm `kGuideModelSizeLabel` against the real combined download on a device
-once the files exist — it is the Gemma bundle plus ~355 MB of voice.
+— it is the Gemma bundle plus 341 MB of voice.

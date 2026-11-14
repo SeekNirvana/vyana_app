@@ -7,7 +7,8 @@
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
-		<string>Test Vyana</string>
+		<!-- Item 86: this shipped as "Test Vyana". -->
+		<string>Vyana</string>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
 		<key>CFBundleIdentifier</key>
@@ -51,7 +52,10 @@
 		<key>NSBluetoothPeripheralUsageDescription</key>
 		<string>Vyana uses Bluetooth to communicate with your smart ring.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>Location permission can be required by the platform while scanning nearby Bluetooth devices.</string>
+		<!-- Item 76: this said location was for Bluetooth scanning. It is
+		     for recording routes, which is what the person is actually
+		     agreeing to, and a purpose string has to name the real use. -->
+		<string>Vyana uses your location to record the route of walks, runs and rides you start.</string>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Vyana needs microphone access so you can speak prompts to your on-device guides.</string>
 		<key>NSCameraUsageDescription</key>
@@ -91,6 +95,11 @@
 		<key>UIBackgroundModes</key>
 		<array>
 			<string>bluetooth-central</string>
+			<!-- Item 76: without this, allowBackgroundLocationUpdates in
+			     location_service.dart has nothing behind it, so an outdoor
+			     session stopped recording the moment the phone locked —
+			     which is the normal case for a walk or a run. -->
+			<string>location</string>
 		</array>
 		<key>UILaunchStoryboardName</key>
 		<string>LaunchScreen</string>

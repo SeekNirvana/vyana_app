@@ -37,8 +37,10 @@ extension on ExportRange {
 }
 
 /// Your data — a health report over a date range, the journal, and a
-/// machine-readable archive of everything. Files are written to Vyana's own
-/// exports folder on this device; nothing leaves it unless you move it.
+/// machine-readable archive of everything. Each file is written to Vyana's
+/// own exports folder on this device and then offered through the system
+/// sheet, so it can reach Files, Drive or mail; nothing leaves the phone
+/// unless the person sends it.
 class ExportsScreen extends ConsumerStatefulWidget {
   const ExportsScreen({super.key, this.section});
 
@@ -62,11 +64,16 @@ class _ExportsScreenState extends ConsumerState<ExportsScreen> {
       final path = await job();
       if (!mounted) return;
       setState(() => _lastPath = path);
+      // Saved, then offered. The file is written first and kept, so a
+      // closed sheet or a phone that cannot open one still leaves the
+      // person with their export rather than nothing.
+      final delivery = exportDelivery(await _offer(File(path)));
+      if (!mounted) return;
       showVyanaSnackBar(
         context,
-        message: 'Saved $label to your exports folder.',
-        icon: 'check',
-        success: true,
+        message: delivery.message,
+        icon: delivery.success ? 'check' : 'alert',
+        success: delivery.success,
       );
     } catch (e) {
       if (!mounted) return;
@@ -74,6 +81,28 @@ class _ExportsScreenState extends ConsumerState<ExportsScreen> {
     } finally {
       if (mounted) setState(() => _busy = null);
     }
+  }
+
+  Future<FileOfferResult> _offer(File file) {
+    return const FileExchangeService()
+        .offerFile(file: file, subject: 'Vyana export');
+  }
+
+  /// Offers the last export again, for a sheet that was closed by mistake.
+  ///
+  /// Re-offers the file on disk rather than exporting afresh: the same
+  /// bytes, so nothing is recomputed and no second file accumulates.
+  Future<void> _shareLast() async {
+    final path = _lastPath;
+    if (path == null) return;
+    final delivery = exportDelivery(await _offer(File(path)));
+    if (!mounted) return;
+    showVyanaSnackBar(
+      context,
+      message: delivery.message,
+      icon: delivery.success ? 'check' : 'alert',
+      success: delivery.success,
+    );
   }
 
   @override
@@ -96,8 +125,8 @@ class _ExportsScreenState extends ConsumerState<ExportsScreen> {
       onSave: () => Navigator.of(context).pop(),
       children: [
         Text(
-          'Everything here is written to Vyana\'s exports folder on this device. '
-          'Nothing is uploaded.',
+          'Each export is saved on this phone, then you choose where it goes '
+          '\u2014 Files, Drive, mail, anywhere. Vyana uploads nothing.',
           style: VyanaType.caption.copyWith(color: t.textSec, height: 1.45),
         ),
         const SizedBox(height: 16),
@@ -273,16 +302,35 @@ class _ExportsScreenState extends ConsumerState<ExportsScreen> {
                   style: VyanaType.mono10.copyWith(color: t.textSec, height: 1.4),
                 ),
                 const SizedBox(height: 10),
-                Cta(
-                  label: 'Copy path',
-                  icon: 'db',
-                  solid: false,
-                  onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: _lastPath!));
-                    if (!context.mounted) return;
-                    showVyanaSnackBar(context,
-                        message: 'Path copied.', icon: 'check', success: true);
-                  },
+                // Share first: it is the one that gets the file off the
+                // phone, and the path is the fallback for when it cannot.
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    // 'download' rather than a share glyph, because item
+                    // 53's Back up now opens the same sheet with the same
+                    // icon and one gesture should not have two faces.
+                    Cta(
+                      label: 'Share',
+                      icon: 'download',
+                      onTap: _shareLast,
+                    ),
+                    Cta(
+                      label: 'Copy path',
+                      icon: 'db',
+                      solid: false,
+                      onTap: () async {
+                        await Clipboard.setData(
+                            ClipboardData(text: _lastPath!));
+                        if (!context.mounted) return;
+                        showVyanaSnackBar(context,
+                            message: 'Path copied.',
+                            icon: 'check',
+                            success: true);
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -507,7 +555,7 @@ Future<String> exportHealthReport(
     hrByDay.putIfAbsent(DateTime(pt.time.year, pt.time.month, pt.time.day), () => [])
         .add(pt.value);
   }
-  final sleepByDay = {for (final d in sleepDaySummaries(history.sleep)) d.day: d};
+  final sleepByDay = {for (final d in history.sleepNights) d.day: d};
   final stepsByDay = {for (final d in stepDaySummaries(history.steps)) d.day: d};
   final readiness = {
     for (final r in readinessSeries(history, 3650)) r.day: r.score,
@@ -616,7 +664,7 @@ Future<String> exportSleepNights(RingHistory history, {DateTime? since}) async {
   final buf = StringBuffer(
     'night,asleep_hours,deep_min,light_min,rem_min,awake_min,score,window_start,window_end\n',
   );
-  for (final n in sleepDaySummaries(history.sleep).reversed) {
+  for (final n in history.sleepNights.reversed) {
     if (since != null && n.day.isBefore(since)) continue;
     final b = n.breakdown;
     buf.writeln([
@@ -877,6 +925,9 @@ String formatBytes(int bytes) {
   if (bytes <= 0) return '0 MB';
   final mb = bytes / (1024 * 1024);
   if (mb >= 1000) return '${(mb / 1024).toStringAsFixed(2)} GB';
+  // Below a megabyte, "0 MB" reads as nothing stored. The stored
+  // conversations are kilobytes of text and they are not nothing.
+  if (mb < 1) return '${(bytes / 1024).round()} KB';
   return '${mb.round()} MB';
 }
 
@@ -924,24 +975,57 @@ class _NovaFootprintScreenState extends ConsumerState<NovaFootprintScreen> {
     final definition = guidePersonaDefinitions[GuideKind.nova]!;
     final state = manager.stateFor(GuideKind.nova);
     final s = _storage;
+    // The screen used to assert "Nova runs entirely on this phone" whatever
+    // the user had chosen, which is false the moment they point her at
+    // their own endpoint.
+    final ai = ref.watch(aiBackendProvider);
+    final chatFootprint = ref.watch(chatFootprintProvider).valueOrNull;
+    final backendNote = ai.backend == AiBackend.cloud && ai.cloudReady
+        ? 'Nova is thinking on your own endpoint (${ai.endpoint.model}), so '
+            'the model below is not in use. What is on disk is the voice and '
+            'the listening model; your journal and vitals never leave either '
+            'way.'
+        : 'One model, one assistant. Nova runs entirely on this phone — '
+            'every reflection, every pattern, every chat stays here.';
     return _EditorScaffold(
       title: 'Nova',
-      sub: 'Private AI guide',
+      sub: ai.backend == AiBackend.cloud ? 'Your own endpoint' : 'On this phone',
       ctaLabel: state.isReady ? 'Remove from this phone' : 'Install Nova',
       ctaIcon: state.isReady ? 'x' : 'download',
       canSave: state.status != GuideModelStatus.downloading,
-      onSave: state.isReady ? _remove : () => openGuideStore(context),
+      onSave: state.isReady ? _remove : () => openAiSetup(context),
       children: [
         _KV('STATUS', state.statusLabel),
         _KV('MODEL', definition.modelLabel),
         _KV('FILE', guideInstalledModelFileName(definition)),
-        _KV('ON DISK', s == null ? '…' : formatBytes(s.guideModelBytes)),
-        _KV('VOICE (VANI)', s == null ? '…' : formatBytes(s.voiceBytes + s.whisperModelBytes)),
-        _KV('TOTAL', s == null ? '…' : formatBytes(s.totalBytes)),
+        _KV('THINKING', formatBytes(s?.guideModelBytes ?? 0)),
+        // These were one row labelled VOICE, adding the two together. With
+        // the voice never installed that row showed Whisper's ~74 MB under
+        // the word VOICE — the right number against the wrong thing, which
+        // is worse than no number. They are two models doing opposite jobs
+        // and they are counted separately now.
+        _KV('LISTENING', s == null
+            ? '…'
+            : '${formatBytes(s.whisperModelBytes)} · Whisper, your mic'),
+        _KV('SPEAKING', s == null
+            ? '…'
+            : s.voiceBytes > 0
+                ? '${formatBytes(s.voiceBytes)} · Kokoro, her voice'
+                : 'Not installed · she stays on screen'),
+        // Conversations are stored now, so this screen says so: a screen
+        // that answers "what is Nova keeping" must not leave out the one
+        // thing in it that is the user's own words. The row below was
+        // TOTAL, which only ever counted the models — a name that would
+        // start lying the moment something it does not count sat above it.
+        _KV('CONVERSATIONS', chatFootprint == null
+            ? '…'
+            : chatFootprint.isEmpty
+                ? 'None kept yet'
+                : '${chatFootprint.label} · in Nova\'s chat'),
+        _KV('MODELS', s == null ? '…' : formatBytes(s.totalBytes)),
         const SizedBox(height: 10),
         Text(
-          'One model, one assistant. Nova runs entirely on this phone — every '
-          'reflection, every pattern, every chat stays here.',
+          backendNote,
           style: VyanaType.caption.copyWith(color: t.textSec, height: 1.45),
         ),
       ],

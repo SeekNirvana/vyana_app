@@ -1,12 +1,15 @@
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+
+import 'nova_budget.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'ai_backend_service.dart';
 import 'app_startup_service.dart';
+import 'device_capability_service.dart';
 import 'guide_model_manager.dart';
 import 'guide_persona_prefs_service.dart';
 
@@ -37,6 +40,11 @@ class GuideRuntimeService {
   static const _runtimeConfigEpoch = 2;
 
   final Random _sessionRandom = Random();
+
+  /// Whether this phone should try CPU before GPU. Set once from the
+  /// measured RAM; unknown RAM keeps the Gemma-tuned order, because a guess
+  /// either way is worse than the behaviour that has shipped.
+  bool _prefersCpuFirst = false;
   int? _loadedConfigEpoch;
   int _backendAttemptIndex = 0;
   int? _loadedBackendAttempt;
@@ -57,6 +65,7 @@ class GuideRuntimeService {
   /// Initialize the runtime for a specific guide.
   Future<void> initialize(GuideKind guide) async {
     await AppStartupService.instance.ensureInitialized();
+    _prefersCpuFirst = await DeviceCapabilityService.instance.isLowRam();
 
     final definition = guidePersonaDefinitions[guide]!;
     final effective = await _prefsService.effectiveConfig(definition);
@@ -103,25 +112,69 @@ class GuideRuntimeService {
   Future<String> generateResponse({
     required GuideKind guide,
     required String prompt,
+    String dataBlock = '',
+    String lookupBlock = '',
   }) async {
     var finalResponse = '';
-    await for (final partial in streamResponse(guide: guide, prompt: prompt)) {
+    await for (final partial in streamResponse(
+      guide: guide,
+      prompt: prompt,
+      dataBlock: dataBlock,
+      lookupBlock: lookupBlock,
+    )) {
       finalResponse = partial;
     }
     return finalResponse;
   }
 
+  /// The DATA block the live session has already been given, if any.
+  ///
+  /// Item 70: cleared in [offload], so it is remembered for exactly as long
+  /// as the session that received it. A block "already sent" to a session
+  /// that no longer exists would leave Nova with no numbers at all.
+  String? _sentDataBlock;
+
   /// Stream a response for [prompt] as text accumulates.
+  ///
+  /// [dataBlock] and [lookupBlock] are passed separately rather than joined
+  /// into [prompt] by the caller, because whether the DATA block needs
+  /// sending depends on the session — which only this service knows about.
   Stream<String> streamResponse({
     required GuideKind guide,
     required String prompt,
+    String dataBlock = '',
+    String lookupBlock = '',
   }) async* {
-    if (_backend.backend == AiBackend.cloud && _backend.cloudReady) {
+    final onCloud = _backend.backend == AiBackend.cloud && _backend.cloudReady;
+
+    if (onCloud) {
       // The endpoint carries the whole conversation in the prompt, so there
       // is no session to load, offload or retry on another backend. A
       // failure here is the user's server, and saying so beats a generic
       // "inference failed" that sends them looking at the phone.
-      yield* _backend.streamFromEndpoint(prompt);
+      //
+      // Item 69: the same persona configuration the on-device session is
+      // created with. The endpoint used to get the user turn by itself —
+      // including the DATA block of someone's vitals, which travels inside
+      // the prompt — and none of Nova's instructions, so a server was
+      // handed the health figures with no guidance about them and replied
+      // as a stock assistant. Response length and temperature go too,
+      // otherwise Guide settings would mean one thing on the phone and
+      // nothing at all on a server.
+      final cloudDefinition = guidePersonaDefinitions[guide]!;
+      final cloudConfig = await _prefsService.effectiveConfig(cloudDefinition);
+      // An HTTP request carries its whole context and remembers nothing
+      // between calls, so the endpoint gets the data every time.
+      yield* _backend.streamFromEndpoint(
+        composeNovaPrompt(
+          message: prompt,
+          dataBlock: dataBlock,
+          lookupBlock: lookupBlock,
+        ),
+        systemPrompt: cloudConfig.systemPrompt,
+        temperature: cloudConfig.temperature,
+        maxTokens: cloudConfig.replyTokens,
+      );
       return;
     }
 
@@ -133,7 +186,11 @@ class GuideRuntimeService {
       _backendAttemptIndex = attempt;
       try {
         await initialize(guide);
-        yield* _streamOnce(prompt);
+        yield* _streamOnce(
+          prompt,
+          dataBlock: dataBlock,
+          lookupBlock: lookupBlock,
+        );
         _backendAttemptIndex = 0;
         _loadedBackendAttempt = 0;
         return;
@@ -162,7 +219,18 @@ class GuideRuntimeService {
     );
   }
 
-  Stream<String> _streamOnce(String prompt) async* {
+  /// One attempt at an on-device reply.
+  ///
+  /// Item 70: composing happens here, not in [streamResponse], because this
+  /// is what the retry loop calls again. A failed attempt offloads, which
+  /// clears the session's memory of the DATA block — so the second attempt
+  /// has to send it again, and a prompt composed once before the loop
+  /// would have arrived without it.
+  Stream<String> _streamOnce(
+    String message, {
+    required String dataBlock,
+    required String lookupBlock,
+  }) async* {
     if (_activeChat == null) {
       throw StateError('Failed to initialize chat');
     }
@@ -176,11 +244,31 @@ class GuideRuntimeService {
       await Future.delayed(const Duration(milliseconds: 100));
     }
 
+    // An on-device chat keeps the turns it was given, so repeating the
+    // numbers is what pushes the question out of the window.
+    final sendData = novaDataNeedsSending(
+      block: dataBlock,
+      lastSent: _sentDataBlock,
+      sessionRemembers: true,
+    );
+
     try {
       try {
         await _activeChat!.addQueryChunk(
-          Message.text(text: prompt, isUser: true),
+          Message.text(
+            text: composeNovaPrompt(
+              message: message,
+              dataBlock: sendData ? dataBlock : '',
+              lookupBlock: lookupBlock,
+            ),
+            isUser: true,
+          ),
         );
+        // Recorded only now the session has it. Recording it when the
+        // block was composed would mean a turn that failed to be added
+        // left Nova with no numbers for the rest of the session, and no
+        // sign of why.
+        if (sendData) _sentDataBlock = dataBlock;
       } catch (e) {
         throw StateError('Failed to add message to chat: $e');
       }
@@ -236,6 +324,36 @@ class GuideRuntimeService {
     }
   }
 
+  /// Drop the conversation so far without unloading the model.
+  ///
+  /// The chat screen's messages and this history were two records of one
+  /// conversation, and only one of them was ever cleared: leaving the screen
+  /// rebuilt the visible list and left this one intact, so a new-looking chat
+  /// was answered by a model still carrying the last one. "New conversation"
+  /// now ends both, and this is the half the user cannot see.
+  ///
+  /// Reloading the model is not needed — the session behind the chat is
+  /// recreated with the same system prompt, which costs a moment rather than
+  /// the two and a half gigabytes a reload would re-read.
+  Future<void> forgetConversation() async {
+    final chat = _activeChat;
+    if (chat == null) return;
+    if (_isGenerating) return;
+    try {
+      await chat.clearHistory();
+      // Item 70: the session has just forgotten the DATA block along with
+      // everything else, so it has to be sent again. Without this, asking
+      // for a new conversation left Nova with no numbers and nothing to
+      // say about them.
+      _sentDataBlock = null;
+    } on Object catch (error) {
+      // A model that will not forget is worse than one that cannot be asked
+      // to, so drop it and let the next message rebuild from nothing.
+      debugPrint('[GuideRuntime] clearHistory failed ($error); offloading.');
+      await offload();
+    }
+  }
+
   /// Offload and free resources.
   Future<void> offload({bool resetBackendAttempts = true}) async {
     if (_isGenerating) {
@@ -252,6 +370,9 @@ class GuideRuntimeService {
 
     _activeChat = null;
     _activeGuide = null;
+    // Item 70: the DATA block is remembered for exactly as long as the
+    // session that received it.
+    _sentDataBlock = null;
     _loadedConfigEpoch = null;
     _loadedBackendAttempt = null;
     _loadedPrefsUpdatedAt = null;
@@ -283,11 +404,13 @@ class GuideRuntimeService {
     final backend = _preferredBackendFor(definition);
     debugPrint(
       '[GuideRuntime] Loading ${definition.name} on $backend '
-      '(maxTokens=${effective.maxTokens}, temp=${effective.temperature})',
+      '(contextTokens=${effective.contextTokens}, '
+      'replyTokens=${effective.replyTokens}, temp=${effective.temperature})',
     );
 
     _currentModel = await FlutterGemma.getActiveModel(
-      maxTokens: effective.maxTokens,
+      // Item 70: the window, not the reply length.
+      maxTokens: effective.contextTokens,
       preferredBackend: backend,
     );
 
@@ -379,9 +502,28 @@ class GuideRuntimeService {
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
-      // GPU is the supported LiteRT-LM path for Gemma 4 E2B. CPU often fails
-      // tensor allocation (DYNAMIC_UPDATE_SLICE). NPU is a secondary attempt on
-      // Qualcomm / MediaTek / Tensor devices.
+      // GPU is the supported LiteRT-LM path for Gemma 4 E2B — CPU often
+      // fails tensor allocation there (DYNAMIC_UPDATE_SLICE) — and NPU is a
+      // secondary attempt on Qualcomm / MediaTek / Tensor parts.
+      //
+      // That order is right for Gemma and wrong for a phone that cannot
+      // afford it. Loading a model on the GPU path inflates well past the
+      // file's size, and on a 4 GB device it does not fail politely: the
+      // low-memory killer takes the app, and on the device this was found
+      // on it took the system launcher with it. A SIGKILL is not an
+      // exception, so the GPU→NPU fallback below never runs — the process
+      // is simply gone.
+      //
+      // So on a phone short of memory, try CPU first. It may fail tensor
+      // allocation and fall through to GPU, which is a recoverable error;
+      // the reverse is not.
+      if (_prefersCpuFirst) {
+        return [
+          PreferredBackend.cpu,
+          PreferredBackend.gpu,
+          PreferredBackend.npu,
+        ];
+      }
       return [PreferredBackend.gpu, PreferredBackend.npu];
     }
 

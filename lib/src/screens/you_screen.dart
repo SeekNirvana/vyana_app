@@ -73,29 +73,35 @@ Future<void> reconnectWithFeedback(
   // still answers the tap.
   if (c.isUserReconnecting || c.isConnected) return;
 
+  final host = Navigator.of(context).context;
   var connected = false;
   try {
     connected = await c
         .reconnectSavedRing(force: true)
-        .timeout(kReconnectTimeout, onTimeout: () => c.isConnected);
+        .timeout(kReconnectTimeout, onTimeout: () {
+      // Item 84 (bug 48): the pill has to stop saying CONNECTING at the
+      // same moment the snack bar says it did not work.
+      c.giveUpUserReconnect();
+      return c.isConnected;
+    });
   } on Object catch (error) {
     debugPrint('Reconnect with feedback failed: $error');
   }
-  if (!context.mounted) return;
+  if (!host.mounted) return;
 
   if (connected) {
     // A fresh connection starts its own sync; this makes it the narrated one.
-    await syncRingWithFeedback(context, c);
+    await syncRingWithFeedback(host, c);
     return;
   }
   showVyanaSnackBar(
-    context,
+    host,
     message: "Couldn't reach your ring. Keep it close and try again.",
     success: false,
     duration: const Duration(seconds: 6),
     action: SnackBarAction(
       label: 'Ring screen',
-      onPressed: () => unawaited(openScanner(context, c)),
+      onPressed: () => unawaited(openScanner(host, c)),
     ),
   );
 }
@@ -104,33 +110,38 @@ Future<void> syncRingWithFeedback(
   BuildContext context,
   RingController c,
 ) async {
+  // Item 85 (d): the navigator's own context, which outlives the screen
+  // this was called from. A Retry in a snack bar is tapped seconds later,
+  // often after the screen has closed — and a closure holding that screen's
+  // context did nothing at all when pressed. Same fault as bug 52.
+  final host = Navigator.of(context).context;
   // A sync needs a live link; when the ring dropped, reach for it first so
   // "Sync" from the Home pill or banner is one tap, not two.
   if (!c.isConnected) {
     showVyanaSnackBar(
-      context,
+      host,
       message: 'Reaching your ring…',
       icon: 'bluetooth',
       success: true,
       duration: const Duration(seconds: 2),
     );
     final connected = await c.reconnectSavedRing(force: true);
-    if (!context.mounted) return;
+    if (!host.mounted) return;
     if (!connected) {
       showVyanaSnackBar(
-        context,
+        host,
         message: 'Ring not in reach. Bring it closer and try again.',
         success: false,
         action: SnackBarAction(
           label: 'Retry',
-          onPressed: () => unawaited(syncRingWithFeedback(context, c)),
+          onPressed: () => unawaited(syncRingWithFeedback(host, c)),
         ),
       );
       return;
     }
   }
   showVyanaSnackBar(
-    context,
+    host,
     message: 'Updating your health data…',
     icon: 'refresh',
     success: true,
@@ -139,16 +150,16 @@ Future<void> syncRingWithFeedback(
   final feedback = await c.syncDeviceData();
   // Null here means a sync was already running (a fresh connection starts
   // one on its own) — the pill shows SYNCING, nothing more to say.
-  if (!context.mounted || feedback == null) return;
+  if (!host.mounted || feedback == null) return;
   showVyanaSnackBar(
-    context,
+    host,
     message: feedback.snackMessage,
     success: feedback.success,
     action: feedback.success
         ? null
         : SnackBarAction(
             label: 'Retry',
-            onPressed: () => unawaited(syncRingWithFeedback(context, c)),
+            onPressed: () => unawaited(syncRingWithFeedback(host, c)),
           ),
   );
 }
@@ -182,6 +193,11 @@ Future<void> openPrivacy(BuildContext context) {
   ).push<void>(MaterialPageRoute(builder: (_) => const AppPrivacyScreen()));
 }
 
+/// The route name an activity's detail screen is pushed under, so another
+/// screen can tell whether that practice's detail is already open.
+String activityDetailRouteName(String activityId) =>
+    'activity-detail/$activityId';
+
 Future<void> openActivityDetail(
   BuildContext context,
   Activity activity, {
@@ -189,6 +205,9 @@ Future<void> openActivityDetail(
 }) {
   return Navigator.of(context).push<void>(
     MaterialPageRoute(
+      // Item 85 (h): named so a screen that wants to *return* to an open
+      // detail can find it instead of pushing a second copy.
+      settings: RouteSettings(name: activityDetailRouteName(activity.id)),
       builder: (_) => ActivityDetailScreen(activity: activity, minutes: minutes),
     ),
   );
@@ -205,6 +224,8 @@ class YouScreen extends ConsumerWidget {
     final t = context.vyana;
     final c = ref.watch(ringControllerProvider);
     final mode = ref.watch(themeModeProvider);
+    final ai = ref.watch(aiBackendProvider);
+    final voiceSvc = ref.watch(guideVoiceServiceProvider);
     final displayScale = ref.watch(displayScaleProvider);
     final profile = ref
         .watch(userProfileProvider)
@@ -312,6 +333,17 @@ class YouScreen extends ConsumerWidget {
                 // that screen, beside the ring they act on.
                 onTap: c.isReady ? () => openScanner(context, c) : null,
               ),
+              // Item 85 (i): a greyed-out Scan & pair with no explanation
+              // reads as a broken app. When the SDK did not start, say so
+              // and offer another go.
+              if (!c.isReady && c.sdkFailure != null)
+                SettingsRow(
+                  icon: 'alert',
+                  iconColor: t.gold,
+                  label: 'Retry ring service',
+                  subtitle: c.sdkFailure,
+                  onTap: () => unawaited(c.retrySdkInit()),
+                ),
               // Two screens with near-identical "every N minutes" steppers
               // became one: the ring's own interval and Vyana's collection
               // interval read as a pair, which is the only way either makes
@@ -400,7 +432,8 @@ class YouScreen extends ConsumerWidget {
               icon: 'ring',
               iconColor: t.heading,
               label: 'Buy a PRANA ring',
-              subtitle: 'Another size, or one for someone else',
+              // Item 61: says where it goes, because it leaves the app.
+              subtitle: 'Opens seeknirvana.com — another size, or a gift',
               onTap: () => openRingOrder(context),
             ),
             if (orders.isNotEmpty)
@@ -415,29 +448,63 @@ class YouScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 18),
         // ── Nova ──────────────────────────────────────────────────────────
-        const _YouHeading('Nova', 'Your private guide'),
+        const _YouHeading('Nova', 'Where she thinks, and how she sounds'),
         SettingsGroup(
           rows: [
+            // This row claimed "On-device model · nothing leaves the phone"
+            // whatever the user had actually chosen, so someone running
+            // their own endpoint was told the opposite of what was
+            // happening. It reads the backend now, and says which.
             SettingsRow(
-              icon: 'brain',
+              icon: ai.backend == AiBackend.cloud ? 'cloud' : 'brain',
               iconColor: t.heading,
-              label: 'On-device model',
-              subtitle: guideState.isReady
-                  ? 'Installed · nothing leaves the phone'
-                  : 'Not installed · runs entirely on this phone',
+              label: 'Thinking',
+              subtitle: novaThinkingSubtitle(
+                backend: ai.backend,
+                endpoint: ai.endpoint,
+                localReady: guideState.isReady,
+              ),
               trailing: Text(
-                guideState.isReady
-                    ? kGuideModelSizeLabel
-                    : guideState.statusLabel.toUpperCase(),
+                novaThinkingTrailing(
+                  backend: ai.backend,
+                  endpoint: ai.endpoint,
+                  localReady: guideState.isReady,
+                  localStatus: guideState.statusLabel,
+                ),
                 style: VyanaType.mono10.copyWith(color: t.textMuted),
               ),
-              onTap: () => openNovaFootprint(context),
+              onTap: () => openAiSetup(context),
             ),
+            // Nova's voice had no entry in You at all — it was reachable
+            // only through Practice, behind the guide store, inside a card
+            // named after something else. "Where is the audio model in
+            // settings" had no good answer.
             SettingsRow(
               icon: 'speaker',
               iconColor: t.heading,
+              label: 'Nova\'s voice',
+              subtitle: novaVoiceRowSubtitle(
+                installed: voiceSvc.novaVoiceReady,
+                available: voiceSvc.novaVoiceAvailableToInstall,
+                size: voiceSvc.novaVoiceDownloadSize,
+              ),
+              trailing: Text(
+                voiceSvc.novaVoiceReady
+                    ? 'INSTALLED'
+                    : (voiceSvc.novaVoiceAvailableToInstall
+                        ? voiceSvc.novaVoiceDownloadSize.toUpperCase()
+                        : 'UNAVAILABLE'),
+                style: VyanaType.mono10.copyWith(color: t.textMuted),
+              ),
+              onTap: () => openAiSetup(context),
+            ),
+            SettingsRow(
+              icon: 'waveform',
+              iconColor: t.heading,
               label: 'Voice cues',
-              subtitle: 'Nova speaks during sessions · tap to preview',
+              subtitle: voiceSvc.novaVoiceReady
+                  ? 'Nova speaks during sessions · tap to preview'
+                  : "Silent until Nova's voice is installed",
               chevron: false,
               trailing: VSwitch(
                 on: ref.watch(voiceCuesEnabledProvider),
@@ -551,6 +618,19 @@ class YouScreen extends ConsumerWidget {
         const _YouHeading('Your data', 'Export and sovereignty'),
         SettingsGroup(
           rows: [
+            // Item 53: the one row that says where history lives, above
+            // the exports — a backup is the thing that comes back, and an
+            // export is not, so it goes first.
+            SettingsRow(
+              icon: 'shield',
+              iconColor: t.heading,
+              label: 'Your data',
+              // Item 53: says how long it has been, but only once that is
+              // fair to mention — and in the row's own grey, never a badge.
+              subtitle: ref.watch(backupRowSubtitleProvider).valueOrNull ??
+                  'Back up, restore, and exports',
+              onTap: () => openYourData(context),
+            ),
             SettingsRow(
               icon: 'download',
               iconColor: t.heading,
@@ -574,23 +654,12 @@ class YouScreen extends ConsumerWidget {
               subtitle: 'Machine-readable archive',
               onTap: () => openExports(context, ref, section: ExportSection.archive),
             ),
-            SettingsRow(
-              icon: 'shield',
-              iconColor: t.heading,
-              label: 'Cloud sync',
-              subtitle: 'Opt-in backup · not yet live, nothing leaves this phone',
-              chevron: false,
-              trailing: VSwitch(
-                on: ref.watch(sessionSyncEnabledProvider),
-                color: t.green,
-                onTap: () => ref
-                    .read(sessionSyncEnabledProvider.notifier)
-                    .set(!ref.read(sessionSyncEnabledProvider)),
-              ),
-              onTap: () => ref
-                  .read(sessionSyncEnabledProvider.notifier)
-                  .set(!ref.read(sessionSyncEnabledProvider)),
-            ),
+            // Item 88: the Cloud sync row is gone. It was a switch that
+            // looked like it worked, with no backend behind it — and
+            // "not yet live" under a switch somebody has turned on is a
+            // thing they will reasonably forget they read. Backing up is
+            // Vyana's own encrypted file now (item 53), which is a real
+            // answer to the question this row was pretending to answer.
           ],
         ),
         const _YouHeading('Vyana', 'About & privacy'),

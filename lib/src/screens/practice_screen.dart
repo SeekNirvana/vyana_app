@@ -38,6 +38,8 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     final searching = _query.trim().isNotEmpty;
     final activities =
         searching ? searchActivities(_query) : allActivitiesByCat(_cat);
+    // Item 56: pinned first, in the user's own pin order, then the rest.
+    final split = splitByPins(activities, pins);
     final moment = homeMomentAt(DateTime.now());
     // Bug 45: the same rule as Home, so "Suggested today" here and the card
     // on Home can never be two different practices.
@@ -54,6 +56,9 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       ],
       todaysFinished: todaysFinishedSessions(sessions),
       plan: ref.watch(weeklyPlanProvider),
+      // Item 94: what has been stood down for today, so both screens agree
+      // about which planned practice is on offer.
+      skippedToday: ref.watch(plannedSkipsProvider.notifier).today,
     );
     final suggested = suggestion.activity;
     final look = scoreLook(
@@ -154,6 +159,11 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
           meta: suggestion.meta,
           offerPin: suggestion.offerPin,
           setsTarget: suggestion.setsTarget,
+          // Item 84 (bug 45): the same line Home shows. Both screens read
+          // one suggestion, so showing the alternative on one and not the
+          // other meant the plan was offered a gentler option in one place
+          // and presented flat in the other.
+          footnote: _LowReadinessAlternative(suggestion: suggestion),
           onPin: () => unawaited(
             ref
                 .read(pinnedPracticesProvider.notifier)
@@ -238,7 +248,12 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
             onPick: (id) => setState(() => _cat = id),
           ),
           const SizedBox(height: 12),
-          MonoEyebrow(category.eyebrow, size: 11, spacing: 0.9),
+          // Item 56: the category's own eyebrow still heads the list when
+          // nothing here is pinned. With pins, PINNED and ALL head the two
+          // groups instead — three eyebrows stacked would be noise, and the
+          // category is already named by the control just above.
+          if (split.pinned.isEmpty)
+            MonoEyebrow(category.eyebrow, size: 11, spacing: 0.9),
         ] else
           MonoEyebrow(
             activities.isEmpty
@@ -249,16 +264,21 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
             spacing: 0.9,
           ),
         const SizedBox(height: 8),
-        for (final a in activities)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 7),
-            child: _CatalogueRow(
-              activity: a,
-              pinned: pins.contains(a.id),
-              onPin: () =>
-                  ref.read(pinnedPracticesProvider.notifier).toggle(a.id),
-            ),
-          ),
+        // Searching stays one flat list: a match is a match, and grouping
+        // results by pin would bury the thing someone just typed.
+        if (searching)
+          for (final a in activities) _row(ref, a, pins)
+        else ...[
+          if (split.pinned.isNotEmpty) ...[
+            const MonoEyebrow('PINNED', size: 11, spacing: 0.9),
+            const SizedBox(height: 8),
+            for (final a in split.pinned) _row(ref, a, pins),
+            const SizedBox(height: 6),
+            const MonoEyebrow('ALL', size: 11, spacing: 0.9),
+            const SizedBox(height: 8),
+          ],
+          for (final a in split.rest) _row(ref, a, pins),
+        ],
         // Last row of Movement, and the fallback when search finds nothing.
         if (searching || _cat == 'sport')
           Padding(
@@ -275,6 +295,17 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       ],
     );
   }
+
+  /// One catalogue row, used by both groups and by search, so they cannot
+  /// drift apart in how a row looks or what pinning does.
+  Widget _row(WidgetRef ref, Activity a, List<String> pins) => Padding(
+        padding: const EdgeInsets.only(bottom: 7),
+        child: _CatalogueRow(
+          activity: a,
+          pinned: pins.contains(a.id),
+          onPin: () => ref.read(pinnedPracticesProvider.notifier).toggle(a.id),
+        ),
+      );
 
   Future<void> _openPinPicker(BuildContext context) {
     return showModalBottomSheet<void>(
@@ -1216,7 +1247,8 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                     hint: _onMyOwn
                         ? 'Start and end. No voice or cues. The ring still '
                             'measures how it helps.'
-                        : "Vyana's voice, pacer and cues lead the practice.",
+                        // Item 89: the voice is Nova's, not the app's.
+                        : "Nova's voice, pacer and cues lead the practice.",
                     onPick: (value) async {
                       setState(() => _onMyOwn = value);
                       final prefs = await SharedPreferences.getInstance();
@@ -1241,8 +1273,26 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
 
   Future<void> _begin(BuildContext context) async {
     final controller = ref.read(sessionControllerProvider);
-    // If a session is already running, just jump back into it rather than
-    // erroring (only one runs at a time).
+    // Item 85 (g): a session already running is a different practice, and
+    // tapping Begin on this one used to open that one — so Begin on a Walk
+    // silently opened a Run that had been going since this morning. Only
+    // one runs at a time, so the choice is the person's to make.
+    final running = controller.activity;
+    if (controller.active && running != null && running.id != widget.activity.id) {
+      final end = await showVyanaConfirmDialog<bool>(
+        context: context,
+        title: '${running.name} is still running',
+        message: 'Only one practice runs at a time. End ${running.name} and '
+            'start ${widget.activity.name}?',
+        confirmLabel: 'End and start',
+        cancelLabel: 'Keep ${running.name}',
+      );
+      if (end != true) return;
+      if (!context.mounted) return;
+      await controller.end();
+      if (!context.mounted) return;
+    }
+    // If the same practice is already running, jump back into it.
     if (!controller.active) {
       // Bug 12: the chosen length now reaches the session, so a suggested
       // three minutes counts down and ends instead of running forever.
@@ -1266,7 +1316,10 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
     if (!context.mounted) return;
     await Navigator.of(
       context,
-    ).push<void>(MaterialPageRoute(builder: (_) => const LiveSessionScreen()));
+    ).push<void>(MaterialPageRoute(
+      settings: const RouteSettings(name: kLiveSessionRouteName),
+      builder: (_) => const LiveSessionScreen(),
+    ));
   }
 }
 
@@ -1572,6 +1625,7 @@ Future<void> showAddYourOwnSportSheet(
   final t = context.vyana;
   final name = TextEditingController(text: prefill);
   var icon = 'sports';
+  var saving = false;
 
   return showModalBottomSheet<void>(
     context: context,
@@ -1584,9 +1638,14 @@ Future<void> showAddYourOwnSportSheet(
       ),
       child: StatefulBuilder(
         builder: (context, setState) {
+          // Item 73: the id is minted from the clock, so two taps make two
+          // sports with the same name rather than one — and the second pop
+          // closes whatever came up after the sheet.
           Future<void> add(String kind) async {
+            if (saving) return;
             final label = name.text.trim();
             if (label.isEmpty) return;
+            setState(() => saving = true);
             final navigator = Navigator.of(sheetContext);
             await ref.read(databaseProvider).upsertUserActivity(
                   id: 'user_${DateTime.now().microsecondsSinceEpoch}',
@@ -1682,7 +1741,9 @@ Future<void> showAddYourOwnSportSheet(
                 const SizedBox(height: 10),
                 Panel(
                   pad: 13,
-                  onTap: name.text.trim().isEmpty ? null : () => add('gps'),
+                  onTap: name.text.trim().isEmpty || saving
+                      ? null
+                      : () => add('gps'),
                   child: Row(
                     children: [
                       VyanaIcon('mapPin', size: 17, color: t.mutedInk),
@@ -1699,7 +1760,9 @@ Future<void> showAddYourOwnSportSheet(
                 const SizedBox(height: 8),
                 Panel(
                   pad: 13,
-                  onTap: name.text.trim().isEmpty ? null : () => add('indoor'),
+                  onTap: name.text.trim().isEmpty || saving
+                      ? null
+                      : () => add('indoor'),
                   child: Row(
                     children: [
                       VyanaIcon('dumbbell', size: 17, color: t.mutedInk),
@@ -1950,9 +2013,21 @@ class _ActivityHistory extends StatelessWidget {
         if (s.startedAt.isAfter(cutoff)) s,
     ];
     var totalMinutes = 0;
+    var totalSeconds = 0;
     final hrs = <int>[];
     for (final s in recent) {
-      totalMinutes += s.endedAt!.difference(s.startedAt).inMinutes;
+      // Item 80: active minutes, rounded, so fifty-second sessions add up
+      // to something rather than each truncating to nothing.
+      totalMinutes += sessionMinutes(
+        summaryJson: s.summaryJson,
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+      );
+      totalSeconds += sessionSeconds(
+        summaryJson: s.summaryJson,
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+      );
       final hr = _avgHrOf(s);
       if (hr != null) hrs.add(hr);
     }
@@ -1968,7 +2043,13 @@ class _ActivityHistory extends StatelessWidget {
           children: [
             _HistoryTile(label: 'SESSIONS', value: '${recent.length}'),
             const SizedBox(width: 8),
-            _HistoryTile(label: 'TOTAL', value: '${totalMinutes}m'),
+            // Item 80: "under 1m" rather than "0m". Three fifty-second
+            // practices are not nothing, and a screen saying 0 about them
+            // is simply wrong.
+            _HistoryTile(
+              label: 'TOTAL',
+              value: minutesLabel(totalMinutes, seconds: totalSeconds),
+            ),
             const SizedBox(width: 8),
             _HistoryTile(
               label: 'AVG HR',
@@ -2059,7 +2140,11 @@ class _ActivitySessionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
-    final minutes = row.endedAt!.difference(row.startedAt).inMinutes;
+    final minutes = sessionMinutes(
+      summaryJson: row.summaryJson,
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
+    );
     final avg = _avgHrOf(row);
     final max = _maxHrOf(row);
     return HairlineCard(

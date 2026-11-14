@@ -10,7 +10,6 @@ class HomeDashboard {
     required this.todayActiveMinutes,
     required this.lastSleepDuration,
     required this.readinessScore,
-    required this.readinessLabel,
     required this.readinessDelta,
     required this.drivers,
     required this.insights,
@@ -30,7 +29,6 @@ class HomeDashboard {
   final int todayActiveMinutes;
   final String? lastSleepDuration;
   final int? readinessScore;
-  final String readinessLabel;
   final int? readinessDelta;
   final List<ReadinessDriver> drivers;
   final List<HomeInsight> insights;
@@ -80,7 +78,7 @@ class HomeDashboard {
     final history = controller.history;
     final vitals = controller.vitals;
     final stepDays = stepDaySummaries(history.steps);
-    final sleepDays = sleepDaySummaries(history.sleep);
+    final sleepDays = history.sleepNights;
     final today = DateTime.now();
     final todayDay = DateTime(today.year, today.month, today.day);
     final todaySteps = stepDayForDate(history.steps, todayDay);
@@ -206,7 +204,6 @@ class HomeDashboard {
               : durationText(tonight.breakdown.asleepSeconds))
           : durationText(usableNight.breakdown.asleepSeconds),
       readinessScore: readiness,
-      readinessLabel: _readinessLabel(readiness),
       readinessDelta: delta,
       drivers: drivers,
       insights: insights,
@@ -218,14 +215,6 @@ class HomeDashboard {
       overnightHrv: overnightHrv,
       syncPending: pending,
     );
-  }
-
-  static String _readinessLabel(int? score) {
-    if (score == null) return 'Sync ring';
-    if (score >= 80) return 'Primed';
-    if (score >= 65) return 'Steady';
-    if (score >= 50) return 'Moderate';
-    return 'Recover';
   }
 
   static String _sleepLabel(int score) {

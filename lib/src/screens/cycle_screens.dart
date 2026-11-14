@@ -7,8 +7,22 @@ part of '../../main.dart';
 
 // ── 13a · Opt-in sheet ───────────────────────────────────────────────────
 
-Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
-  final profile = ref.read(userProfileProvider).valueOrNull;
+/// Item 52 — this takes a [BuildContext], never a [WidgetRef].
+///
+/// It is opened from the profile editor *after* that editor has been popped,
+/// and then waits for a tap that may come seconds later. A `WidgetRef`
+/// belongs to a widget: once the editor was disposed, every
+/// `ref.read(...)` in here threw "Cannot use ref after the widget was
+/// disposed", and the exception ended the handler before the save and before
+/// the pop. From outside, all four options did nothing and the sheet stayed
+/// open — on a fresh install, with the cycle question the only thing between
+/// the user and the app.
+///
+/// The provider container is owned by the ProviderScope at the root, so it
+/// outlives any screen. Read it from the context that is still mounted.
+Future<void> offerCycleTracking(BuildContext context) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final profile = container.read(userProfileProvider).valueOrNull;
   if (profile == null || !profile.shouldOfferCycleSheet) return;
   final t = context.vyana;
   CycleMode? chosen;
@@ -53,8 +67,15 @@ Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
                   pad: 13,
                   onTap: () async {
                     chosen = mode;
-                    await ref.read(userProfileProvider.notifier).save(
-                          profile.copyWith(
+                    // Read the profile again rather than writing back the
+                    // snapshot taken when the sheet opened: the same reason
+                    // the ref could not be held across that gap applies to
+                    // the value it fetched.
+                    final current =
+                        container.read(userProfileProvider).valueOrNull ??
+                            profile;
+                    await container.read(userProfileProvider.notifier).save(
+                          current.copyWith(
                             cycleMode: mode,
                             cycleSheetSeen: true,
                           ),
@@ -86,14 +107,15 @@ Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
   // started from nothing — day 1, phase and next-period date all blank until
   // the user happened to log a start. One optional question fixes that.
   if (chosen == CycleMode.tracking && context.mounted) {
-    await _askLastPeriodStart(context, ref);
+    await _askLastPeriodStart(context);
   }
 }
 
 /// "When did your last period start?" — a date picker and a way out. A picked
 /// day is logged as a period start with the length left unconfirmed, so the
 /// §14b predictions work from day one and the calendar can correct it later.
-Future<void> _askLastPeriodStart(BuildContext context, WidgetRef ref) async {
+Future<void> _askLastPeriodStart(BuildContext context) async {
+  final container = ProviderScope.containerOf(context, listen: false);
   final t = context.vyana;
 
   await showModalBottomSheet<void>(
@@ -136,9 +158,9 @@ Future<void> _askLastPeriodStart(BuildContext context, WidgetRef ref) async {
                   helpText: 'First day of your last period',
                 );
                 if (picked == null) return;
-                await ref
-                    .read(databaseProvider)
-                    .addCycleDay(picked);
+                // Same again: the date picker is another await the editor
+                // does not survive.
+                await container.read(databaseProvider).addCycleDay(picked);
                 if (sheetContext.mounted) Navigator.of(sheetContext).pop();
               },
               child: Row(
@@ -548,12 +570,15 @@ class CycleCalendarScreen extends ConsumerStatefulWidget {
 class _CycleCalendarScreenState extends ConsumerState<CycleCalendarScreen> {
   late DateTime _month;
 
-  /// Whether the user changed any logged day on this visit. Bug 34: editing
-  /// the dates *is* the answer to "did your period end on …?", so Done
-  /// confirms the run — but only when something was actually edited, so
-  /// simply looking at the calendar cannot close a period that is still
-  /// running.
-  bool _edited = false;
+  /// Which logged days the user changed on this visit. Bug 34: editing the
+  /// dates *is* the answer to "did your period end on …?", so Done confirms
+  /// the run — but only when something was actually edited, so simply
+  /// looking at the calendar cannot close a period that is still running.
+  ///
+  /// Item 84 (bug 34): the days, not a flag. A flag meant editing *any*
+  /// month confirmed the latest period, so correcting a date from two years
+  /// ago silently closed the run that ended last week.
+  final Set<DateTime> _editedDays = {};
 
   @override
   void initState() {
@@ -569,19 +594,29 @@ class _CycleCalendarScreenState extends ConsumerState<CycleCalendarScreen> {
     } else {
       await db.addCycleDay(day);
     }
-    if (mounted) setState(() => _edited = true);
+    if (mounted) setState(() => _editedDays.add(day));
   }
 
   /// Bug 34: the calendar only ever added and removed days, so correcting the
   /// dates yourself left the question in place for good. On Done, a latest run
   /// whose last day is already past is a finished run — record it as one.
   Future<void> _confirmEditedRun() async {
-    if (!_edited) return;
+    if (_editedDays.isEmpty) return;
     final rows = ref.read(cycleDaysProvider).valueOrNull ?? const [];
     final runs = periodRuns(rows);
     if (runs.isEmpty) return;
     final latest = runs.first;
     if (latest.endConfirmed) return;
+    // Item 84 (bug 34): the edit has to be about this run. One day's slack
+    // past the end, because removing the final day is exactly the edit that
+    // answers "did it end?" — and that day sits just outside the run it
+    // shortened.
+    final touchesLatest = _editedDays.any(
+      (d) =>
+          !d.isBefore(latest.start) &&
+          !d.isAfter(latest.end.add(const Duration(days: 1))),
+    );
+    if (!touchesLatest) return;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     // Still running if it reaches today: there is nothing to confirm yet.
@@ -1097,11 +1132,22 @@ Future<void> showCycleModeSheet(BuildContext context, WidgetRef ref) {
   final t = context.vyana;
   final profile =
       ref.read(userProfileProvider).valueOrNull ?? const UserProfile();
+  // Item 73: a flag the rows share, so a second tap cannot run while the
+  // first is still saving. Picking Pregnant twice was the sharpest version
+  // of the double-tap fault: the first tap saved, popped the sheet and
+  // opened the due-date picker, and the second tap's pop then landed on
+  // the picker and dismissed it — leaving pregnancy mode on with no due
+  // date, which is the one state it cannot say anything in. `canPop()` was
+  // no defence, because by then there genuinely was something to pop; it
+  // was just not the sheet.
+  var saving = false;
+
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (sheetContext) => Padding(
+    builder: (sheetContext) => StatefulBuilder(
+      builder: (sheetContext, setSheetState) => Padding(
       padding: EdgeInsets.fromLTRB(
         16, 0, 16, 16 + MediaQuery.paddingOf(sheetContext).bottom,
       ),
@@ -1129,21 +1175,28 @@ Future<void> showCycleModeSheet(BuildContext context, WidgetRef ref) {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Panel(
                   pad: 13,
-                  onTap: () async {
-                    final navigator = Navigator.of(sheetContext);
-                    await ref.read(userProfileProvider.notifier).save(
-                          profile.copyWith(
-                            cycleMode: mode,
-                            cycleSheetSeen: true,
-                            clearDueDate: mode != CycleMode.pregnant,
-                          ),
-                        );
-                    if (navigator.canPop()) navigator.pop();
-                    // Pregnancy needs a due date before it can say anything.
-                    if (mode == CycleMode.pregnant && context.mounted) {
-                      await openPregnancyDueDate(context, ref);
-                    }
-                  },
+                  onTap: saving
+                      ? null
+                      : () async {
+                          setSheetState(() => saving = true);
+                          final navigator = Navigator.of(sheetContext);
+                          await ref
+                              .read(userProfileProvider.notifier)
+                              .save(
+                                profile.copyWith(
+                                  cycleMode: mode,
+                                  cycleSheetSeen: true,
+                                  clearDueDate: mode != CycleMode.pregnant,
+                                ),
+                              );
+                          if (navigator.canPop()) navigator.pop();
+                          // Pregnancy needs a due date before it can say
+                          // anything.
+                          if (mode == CycleMode.pregnant &&
+                              context.mounted) {
+                            await openPregnancyDueDate(context, ref);
+                          }
+                        },
                   child: Row(
                     children: [
                       Expanded(
@@ -1164,6 +1217,7 @@ Future<void> showCycleModeSheet(BuildContext context, WidgetRef ref) {
               ),
           ],
         ),
+      ),
       ),
     ),
   );

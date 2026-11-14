@@ -836,11 +836,10 @@ class _MealCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.vyana;
     final ink = t.jMeal;
-    final photoPath = meal.photoPath;
-    final hasPhoto =
-        photoPath != null &&
-        photoPath.isNotEmpty &&
-        File(photoPath).existsSync();
+    // Item 59: resolved rather than trusted — the stored path is absolute
+    // and the storage root moved under it.
+    final photo = resolveMealPhoto(meal.photoPath);
+    final hasPhoto = photo != null;
 
     return HairlineCard(
       padding: const EdgeInsets.fromLTRB(13, 12, 13, 13),
@@ -905,7 +904,7 @@ class _MealCard extends ConsumerWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Image.file(
-                File(photoPath),
+                photo,
                 width: 56,
                 height: 56,
                 fit: BoxFit.cover,
@@ -922,9 +921,8 @@ class _MealCard extends ConsumerWidget {
 /// delete. Keeps the journal list itself quiet.
 Future<void> _showMealSheet(BuildContext context, WidgetRef ref, MealRow meal) {
   final t = context.vyana;
-  final photoPath = meal.photoPath;
-  final hasPhoto =
-      photoPath != null && photoPath.isNotEmpty && File(photoPath).existsSync();
+  final photo = resolveMealPhoto(meal.photoPath);
+  final hasPhoto = photo != null;
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -946,7 +944,7 @@ Future<void> _showMealSheet(BuildContext context, WidgetRef ref, MealRow meal) {
               GestureDetector(
                 onTap: () => Navigator.of(context).push<void>(
                   MaterialPageRoute(
-                    builder: (_) => MealPhotoViewer(path: photoPath),
+                    builder: (_) => MealPhotoViewer(path: photo.path),
                   ),
                 ),
                 child: ClipRRect(
@@ -955,7 +953,7 @@ Future<void> _showMealSheet(BuildContext context, WidgetRef ref, MealRow meal) {
                     alignment: Alignment.bottomRight,
                     children: [
                       Image.file(
-                        File(photoPath),
+                        photo,
                         height: 220,
                         width: double.infinity,
                         fit: BoxFit.cover,
@@ -1043,7 +1041,7 @@ Future<void> _showMealSheet(BuildContext context, WidgetRef ref, MealRow meal) {
                 await ref.read(databaseProvider).deleteMeal(meal.id);
                 if (hasPhoto) {
                   try {
-                    await File(photoPath).delete();
+                    await photo.delete();
                   } catch (_) {
                     // Photo file already gone — nothing to clean up.
                   }

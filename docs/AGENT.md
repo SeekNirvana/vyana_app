@@ -6,7 +6,7 @@ Vyana is a sovereign wellness companion built for the **PRANA Smart Ring** by **
 
 ## 1. Core Tenets & System Overview
 
-- **Sovereign & Local-First**: All sensitive biometric data, GPS traces, journal entries, and AI interactions remain exclusively on the user's device in an encrypted local database (`Drift` / SQLite). No mandatory user accounts, no cloud telemetry, and no external AI server dependencies.
+- **Sovereign & Local-First**: All sensitive biometric data, GPS traces, journal entries, and AI interactions remain exclusively on the user's device in a local database (`Drift` / SQLite) held in app-private storage, readable by no other app. It is not encrypted at rest — the protection is the sandbox, not a cipher — so say "private", not "encrypted". No mandatory user accounts, no cloud telemetry, and no external AI server dependencies.
 - **Biometric Intelligence**: Continuous background monitoring and on-demand spot measurements via Bluetooth Low Energy (BLE) using the PRANA Ring SDK (`vyana_sdk`).
 - **Sadhana Practice Hub**: Active session tracking for 25+ activities spanning mindfulness, movement, and wellness/recovery with live telemetry, visual breath pacers, GPS mapping, and voice coaching.
 - **Private On-Device AI Guides**: Local LLM execution using `flutter_gemma` (Gemma 2B) with specialized personas (Luna, Nova, Maya, Aran, Ravi, Tara) augmented with real-time biometric context.

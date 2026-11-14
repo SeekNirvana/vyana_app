@@ -52,10 +52,14 @@ class _BaselineQuestionCardState extends ConsumerState<BaselineQuestionCard> {
 
   Future<void> _answer(BaselineAnswer answer) async {
     final controller = ref.read(personalBaselinesProvider.notifier);
-    await controller.answer(widget.question.vital, answer);
+    // Item 85 (c): read before the await, not after. Answering the question
+    // dismisses the card, and this ref dies with it — so the sleep target
+    // that the answer was supposed to set was never updated, and nothing
+    // said so. Same shape as bug 52.
     final ring = ref.read(ringControllerProvider);
+    await controller.answer(widget.question.vital, answer);
     final nights = averageableNights(
-      sleepDaySummaries(ring.history.sleep),
+      ring.history.sleepNights,
       history: ring.history,
     );
     controller.applySleepTarget([
@@ -162,7 +166,7 @@ BaselineQuestion? dueBaselineQuestion({
 
   // Sleep first: it is the question users most often have an answer to.
   final nights = averageableNights(
-    sleepDaySummaries(history.sleep),
+    history.sleepNights,
     history: history,
   );
   if (baselines.recordFor(BaselineVital.sleep).askable &&
@@ -225,6 +229,68 @@ String baselineSummaryLine(PersonalBaselinesState baselines) {
   return 'Your own range for ${adopted.join(' · ')}';
 }
 
+/// "yours about 72 bpm, typical 50–70", or null when there is no average
+/// to report yet.
+///
+/// Item 95: a vital is only shown here once Metrics has asked about it,
+/// which means it sat outside the typical band — so this is the line that
+/// says by how much, and against what.
+String? _baselineNumbersLine(WidgetRef ref, BaselineVital vital) {
+  final history = ref.read(ringControllerProvider).history;
+  final profile = ref.read(userProfileProvider).valueOrNull;
+  final band = vital.typicalRangeFor(
+    TrainingFrequencyX.fromName(profile?.trainingFrequency),
+  );
+
+  double? yours;
+  switch (vital) {
+    case BaselineVital.hrv:
+      yours = _meanOf(vitalHistoryPoints(history, VitalsMetricKind.hrv));
+    case BaselineVital.restingHr:
+      yours =
+          _meanOf(vitalHistoryPoints(history, VitalsMetricKind.heartRate));
+    case BaselineVital.sleep:
+      final nights = averageableNights(
+        history.sleepNights,
+        history: history,
+      ).take(kBaselineLearningDays).toList();
+      if (nights.isNotEmpty) {
+        yours = nights
+                .map((n) => n.breakdown.asleepSeconds / 3600)
+                .reduce((a, b) => a + b) /
+            nights.length;
+      }
+    case BaselineVital.stress:
+      yours = _meanOf(vitalHistoryPoints(history, VitalsMetricKind.stress));
+  }
+  if (yours == null) return null;
+
+  final unit = vital.unit;
+  final suffix = unit.isEmpty ? '' : ' $unit';
+  final mine = vital == BaselineVital.sleep
+      ? yours.toStringAsFixed(1)
+      : yours.round().toString();
+  final low = band.low == band.low.roundToDouble()
+      ? band.low.round().toString()
+      : band.low.toStringAsFixed(1);
+  final high = band.high == band.high.roundToDouble()
+      ? band.high.round().toString()
+      : band.high.toStringAsFixed(1);
+  return 'Yours about $mine$suffix, typical $low–$high$suffix';
+}
+
+double? _meanOf(List<VitalHistoryPoint> points) {
+  final since = DateTime.now().subtract(
+    const Duration(days: kBaselineWindowDays),
+  );
+  final values = [
+    for (final p in points)
+      if (p.time.isAfter(since)) p.value,
+  ];
+  if (values.isEmpty) return null;
+  return values.reduce((a, b) => a + b) / values.length;
+}
+
 /// §14: "Answers editable in You beside How often do you train?". Changing an
 /// answer here re-applies the sleep target immediately, so a score never
 /// disagrees with the setting that produced it.
@@ -255,21 +321,48 @@ Future<void> showBaselineAnswersSheet(BuildContext context, WidgetRef ref) {
                       .copyWith(color: t.text, fontSize: 21),
                 ),
                 const SizedBox(height: 6),
+                // Item 95: what this screen is, before any choices. On a
+                // fresh install it listed Sleep, Resting HR and HRV each
+                // with three options, no numbers, and nothing to say what
+                // was being agreed to — for vitals Metrics had never asked
+                // about.
                 Text(
-                  'Nova asks about the feeling, never the number. Saying a '
-                  'reading is normal for you changes what counts as low — the '
-                  'typical range stays visible either way, and SpO₂, an '
-                  'irregular rhythm and a very high heart rate are never '
-                  'personalised.',
+                  'Vyana learns your usual sleep, heart rate and HRV. If '
+                  'yours sit outside the typical range, we\'ll ask whether '
+                  "that's normal for you.",
                   style:
                       VyanaType.caption.copyWith(color: t.textSec, height: 1.4),
                 ),
                 const SizedBox(height: 14),
+                // Still learning: there is nothing to decide yet, so the
+                // screen says where it has got to and stops.
+                if (baselines.learningDay case final day?)
+                  Text(
+                    'Learning your normal · day $day of '
+                    '$kBaselineLearningDays',
+                    style: VyanaType.label.copyWith(color: t.textSec),
+                  )
+                else
                 for (final vital in const [
                   BaselineVital.sleep,
                   BaselineVital.restingHr,
                   BaselineVital.hrv,
                 ])
+                  // Only a vital Metrics actually asked about. Anything
+                  // still unasked has nothing for the person to change, and
+                  // offering the choice invited them to answer a question
+                  // they had never been put.
+                  if (baselines.recordFor(vital).answer == BaselineAnswer.none)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        '${vital.label} · within the typical range, nothing '
+                        'to decide.',
+                        style: VyanaType.caption
+                            .copyWith(color: t.textSec, height: 1.4),
+                      ),
+                    )
+                  else
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Panel(
@@ -281,6 +374,18 @@ Future<void> showBaselineAnswersSheet(BuildContext context, WidgetRef ref) {
                             vital.label,
                             style: VyanaType.label.copyWith(color: t.text),
                           ),
+                          // Item 95: the numbers behind the question. Three
+                          // options with no values gave nobody a way to tell
+                          // what they would be agreeing to.
+                          if (_baselineNumbersLine(ref, vital)
+                              case final line?) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              line,
+                              style: VyanaType.caption
+                                  .copyWith(color: t.textSec, height: 1.4),
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 7,
@@ -306,7 +411,7 @@ Future<void> showBaselineAnswersSheet(BuildContext context, WidgetRef ref) {
                                         ref.read(ringControllerProvider);
                                     controller.applySleepTarget([
                                       for (final n in averageableNights(
-                                        sleepDaySummaries(ring.history.sleep),
+                                        ring.history.sleepNights,
                                         history: ring.history,
                                       ).take(14))
                                         n.breakdown.asleepSeconds,

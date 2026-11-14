@@ -155,6 +155,81 @@ class CloudEndpoint {
       );
 }
 
+/// What identifies a server, for deciding what may be sent to it.
+///
+/// Item 69: scheme, host and port, and nothing after them. A key and a
+/// disclosure both belong to a *server*, not to a URL — changing `/v1` to
+/// `/v1/` or swapping the model is the same server, while a different port
+/// is a different process and a different scheme is a different channel.
+/// Returns null for anything that is not a usable address, and null is
+/// never equal to anything, so an unparseable URL inherits no trust.
+String? endpointOrigin(String baseUrl) {
+  final uri = Uri.tryParse(baseUrl.trim());
+  if (uri == null || !uri.hasScheme || uri.host.isEmpty) return null;
+  // Uri.port fills in 80/443, so http://h and http://h:80 agree.
+  return '${uri.scheme}://${uri.host.toLowerCase()}:${uri.port}';
+}
+
+/// Whether a key saved for [from] may be sent to [to].
+///
+/// Item 69: it used to be, always. Editing the address and leaving the key
+/// field blank reused the stored key, so the secret for one server was
+/// handed to whatever host was typed next — the fastest way to leak an API
+/// key is to point the app at a machine you do not own and let it
+/// introduce itself.
+bool keyTravelsTo({required String from, required String to}) {
+  final origin = endpointOrigin(from);
+  if (origin == null) return false;
+  return origin == endpointOrigin(to);
+}
+
+/// Whether the person still has to be told what goes to [baseUrl].
+///
+/// Keyed by origin rather than by a single "already warned" flag, because
+/// connecting a *different* server is a new disclosure: the data now goes
+/// somewhere else, and having agreed once about a machine on the home
+/// network is not agreement about a host on the internet.
+bool needsEndpointNotice({
+  required String baseUrl,
+  required Iterable<String> told,
+}) {
+  final origin = endpointOrigin(baseUrl);
+  if (origin == null) return false;
+  return !told.contains(origin);
+}
+
+/// The one line shown before the first message to a server.
+///
+/// Said plainly and once per server. It names both halves of what travels,
+/// because the surprising half is not the question someone typed — it is
+/// the DATA block of their own vitals that Vyana adds underneath it.
+const String kEndpointNoticeTitle = 'This leaves your phone';
+
+String endpointNoticeBody(String baseUrl) {
+  final origin = endpointOrigin(baseUrl) ?? baseUrl.trim();
+  return 'Your messages and a summary of your ring data go to $origin. '
+      'Nova answers on that server, not on this phone.';
+}
+
+/// The messages sent to an OpenAI-compatible endpoint.
+///
+/// Item 69: the endpoint used to be sent the user turn alone. It got the
+/// DATA block of someone's vitals — that rides along inside the prompt —
+/// but none of Nova's instructions, so the server was handed the health
+/// figures and no guidance about what to do with them, and answered as a
+/// stock assistant. The system turn comes first, as the API expects.
+List<Map<String, String>> endpointMessages({
+  required String prompt,
+  String? systemPrompt,
+}) {
+  final system = systemPrompt?.trim();
+  return [
+    if (system != null && system.isNotEmpty)
+      {'role': 'system', 'content': system},
+    {'role': 'user', 'content': prompt},
+  ];
+}
+
 /// Validates an endpoint URL before anything is sent to it.
 ///
 /// Cleartext is allowed to the phone and to the local network, because that
@@ -206,6 +281,11 @@ class AiBackendStore {
   static const _modelKey = 'vyana.ai.endpoint_model_v1';
   static const _secureKeyName = 'vyana.ai.endpoint_api_key_v1';
 
+  /// Origins whose disclosure the person has already seen. Plain
+  /// preferences on purpose: it holds no secret, only the fact that a
+  /// sentence was shown, and it must survive the keystore being unreadable.
+  static const _toldOriginsKey = 'vyana.ai.endpoint_told_origins_v1';
+
   // Android's default is the plugin's own ciphers now that Jetpack Security
   // is deprecated; iOS keeps the key out of reach until the phone has been
   // unlocked once since boot, which is as early as Nova ever needs it.
@@ -236,6 +316,26 @@ class AiBackendStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_baseUrlKey, endpoint.baseUrl.trim());
     await prefs.setString(_modelKey, endpoint.model.trim());
+  }
+
+  Future<List<String>> readToldOrigins() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_toldOriginsKey) ?? const [];
+  }
+
+  /// Remembers that the notice was shown for [baseUrl]'s server.
+  ///
+  /// Kept as a list of origins rather than one flag, so connecting a
+  /// different server asks again. Nothing is ever removed: a server someone
+  /// has already agreed to does not need re-agreeing to because they went
+  /// away and came back.
+  Future<void> addToldOrigin(String baseUrl) async {
+    final origin = endpointOrigin(baseUrl);
+    if (origin == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final told = prefs.getStringList(_toldOriginsKey) ?? const <String>[];
+    if (told.contains(origin)) return;
+    await prefs.setStringList(_toldOriginsKey, [...told, origin]);
   }
 
   Future<String?> readKey() async {
@@ -326,9 +426,16 @@ class CloudInferenceClient {
     final body = await response.transform(utf8.decoder).join();
     if (response.statusCode == HttpStatus.unauthorized ||
         response.statusCode == HttpStatus.forbidden) {
-      throw const EndpointRejected(
-        'The server refused the key. Check it, or clear it if the server '
-        'does not need one.',
+      // Which of these it is matters more since item 69: a key is no
+      // longer carried over to a new host, so the first save against a
+      // server that wants one arrives with none. Telling that person to
+      // "check the key" sends them looking at a field they left empty for
+      // a reason.
+      throw EndpointRejected(
+        apiKey == null || apiKey.isEmpty
+            ? 'This server wants an API key. Add the one it expects.'
+            : 'The server refused the key. Check it, or clear it if the '
+                'server does not need one.',
       );
     }
     if (response.statusCode == HttpStatus.notFound) {
@@ -352,14 +459,23 @@ class CloudInferenceClient {
     required String model,
     required String prompt,
     String? apiKey,
+    String? systemPrompt,
+    double? temperature,
+    int? maxTokens,
   }) async* {
     final request = await _open(baseUrl, '/chat/completions', apiKey)
         .timeout(connectTimeout);
     request.add(utf8.encode(jsonEncode({
       'model': model,
-      'messages': [
-        {'role': 'user', 'content': prompt},
-      ],
+      'messages': endpointMessages(
+        prompt: prompt,
+        systemPrompt: systemPrompt,
+      ),
+      // Sent when the persona has them, so the response length and
+      // temperature someone set in Guide settings mean the same thing on
+      // their own server as they do on the phone.
+      'temperature': ?temperature,
+      'max_tokens': ?maxTokens,
       'stream': true,
     })));
 
@@ -483,9 +599,23 @@ class AiBackendController extends ChangeNotifier {
           'Name the model as your server knows it, for example llama3.1:8b.',
         );
       }
-      final key = clearKey ? null : (apiKey?.trim().isNotEmpty ?? false)
-          ? apiKey!.trim()
-          : await _store.readKey();
+      // Item 69: a stored key is only reused when the server is the same
+      // one it was stored for. Before this, editing the address and
+      // leaving the key field empty sent the old server's secret to the
+      // new host — during the connection test, before anyone could see
+      // where it had gone.
+      final typed = apiKey?.trim() ?? '';
+      final sameServer = keyTravelsTo(from: _endpoint.baseUrl, to: baseUrl);
+      final String? key;
+      if (clearKey) {
+        key = null;
+      } else if (typed.isNotEmpty) {
+        key = typed;
+      } else if (sameServer) {
+        key = await _store.readKey();
+      } else {
+        key = null;
+      }
 
       await _client.testConnection(
         baseUrl: baseUrl,
@@ -493,8 +623,17 @@ class AiBackendController extends ChangeNotifier {
         apiKey: key,
       );
 
-      if (clearKey || (apiKey?.trim().isNotEmpty ?? false)) {
-        await _store.writeKey(clearKey ? null : apiKey!.trim());
+      // Only now that the address has answered. Withholding the old key
+      // from the request above is the security fix; deleting it is a
+      // change to stored state, and this function's promise is that a
+      // failed test changes nothing — so a typo in the host must not cost
+      // someone the key for the server they are still using.
+      if (clearKey || typed.isNotEmpty) {
+        await _store.writeKey(clearKey ? null : typed);
+      } else if (!sameServer) {
+        // Moving to a different server: the old server's key does not stay
+        // behind to be picked up by a later save.
+        await _store.writeKey(null);
       }
       final saved = CloudEndpoint(
         baseUrl: baseUrl.trim(),
@@ -538,13 +677,34 @@ class AiBackendController extends ChangeNotifier {
   }
 
   /// Streams a reply from the configured endpoint.
-  Stream<String> streamFromEndpoint(String prompt) async* {
+  Stream<String> streamFromEndpoint(
+    String prompt, {
+    String? systemPrompt,
+    double? temperature,
+    int? maxTokens,
+  }) async* {
     final key = await _store.readKey();
     yield* _client.stream(
       baseUrl: _endpoint.baseUrl,
       model: _endpoint.model,
       prompt: prompt,
       apiKey: key,
+      systemPrompt: systemPrompt,
+      temperature: temperature,
+      maxTokens: maxTokens,
+    );
+  }
+
+  /// Records that the person has been told what goes to the current server.
+  Future<void> rememberEndpointNoticeShown() =>
+      _store.addToldOrigin(_endpoint.baseUrl);
+
+  /// Whether the notice is still owed for the current server.
+  Future<bool> endpointNoticeDue() async {
+    if (!_endpoint.isComplete) return false;
+    return needsEndpointNotice(
+      baseUrl: _endpoint.baseUrl,
+      told: await _store.readToldOrigins(),
     );
   }
 

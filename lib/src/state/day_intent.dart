@@ -296,9 +296,10 @@ class HomeSuggestion {
     required this.activityId,
     required this.heading,
     required this.reason,
-    required this.minutes,
+    this.minutes,
     this.meta,
     this.offerPin = false,
+    this.canSkipToday = false,
     this.setsTarget = true,
     this.lowReadinessAlternative,
   });
@@ -313,7 +314,9 @@ class HomeSuggestion {
 
   /// What the card opens with. The morning slot is capped at
   /// [kSuggestedMaxMinutes]; the others use the practice's own length.
-  final int minutes;
+  /// Item 93: null when the app does not know a length for this practice.
+  /// The card shows no minutes rather than a borrowed number.
+  final int? minutes;
 
   /// The mono line in the card — "YOUR USUAL · 32 MIN", "PLANNED · 2 OF 3".
   final String? meta;
@@ -321,6 +324,11 @@ class HomeSuggestion {
   /// Bug 45: shown when the suggestion came from a fallback rather than a
   /// pin, so the user can make it a pin in one tap.
   final bool offerPin;
+
+  /// Item 94: whether this is a planned practice that can be stood down for
+  /// today. Only the Planned card offers it — "Not today" on an ordinary
+  /// suggestion would be refusing something nobody asked for.
+  final bool canSkipToday;
 
   /// The day slot opens the practice with no target set.
   final bool setsTarget;
@@ -364,28 +372,90 @@ bool _fitsIntent(Activity a, DayIntent intent, int? readiness) {
 
 /// The mindfulness practice each intent falls back to when the user has no
 /// history to suggest from. Catalogue length, catalogue practice.
-String _mindfulnessFallback(DayIntent intent, int? readiness) {
-  if (readiness != null && readiness < kGentleOnlyReadiness) return 'bodyScan';
-  return switch (intent) {
-    DayIntent.recover => 'bodyScan',
-    DayIntent.perform => 'hrvBreathing',
-    DayIntent.settle => 'walkingMed',
-  };
+/// Item 84 (bug 45): [todaysFinished] so the last resort does not suggest
+/// the practice that was just finished. The others all check; this one did
+/// not, and it is the one reached when nothing else fits.
+String _mindfulnessFallback(
+  DayIntent intent,
+  int? readiness,
+  List<SessionRow> todaysFinished,
+) {
+  final done = {for (final s in todaysFinished) s.vyanaActivityType};
+  final preferred = readiness != null && readiness < kGentleOnlyReadiness
+      ? 'bodyScan'
+      : switch (intent) {
+          DayIntent.recover => 'bodyScan',
+          DayIntent.perform => 'hrvBreathing',
+          DayIntent.settle => 'walkingMed',
+        };
+  if (!done.contains(preferred)) return preferred;
+  // Anything gentle that has not been done yet, then the preferred one
+  // again — suggesting a repeat is better than suggesting nothing.
+  for (final id in kGentlePracticeIds) {
+    if (!done.contains(id)) return id;
+  }
+  return preferred;
 }
 
 /// "YOUR USUAL · 32 MIN" — the median of the user's last five sessions of
 /// this practice, or the catalogue default when they have never done it.
-int usualMinutesFor(String activityId, List<SessionRow> history) {
+/// How many finished sessions make a habit worth calling "your usual".
+///
+/// Item 93: three. Below that there is no usual, and the catalogue number
+/// that used to stand in for one claimed a habit the person did not have —
+/// "YOUR USUAL · 15 MIN" for a practice never done once.
+const int kUsualMinutesNeedsSessions = 3;
+
+/// The median length of the last few sessions of [activityId], or null.
+///
+/// Item 93: null, not a catalogue fallback. A length shown on a card reads
+/// as something the app knows about you, so it has to be something the app
+/// knows about you. [lengthLabelFor] is what decides what to show instead.
+int? usualMinutesFor(String activityId, List<SessionRow> history) {
   final durations = <int>[
     for (final s in history)
       if (s.vyanaActivityType == activityId && s.endedAt != null)
-        s.endedAt!.difference(s.startedAt).inMinutes,
+        // Item 80: the same minutes every other screen reports, so "your
+        // usual" cannot be longer than the sessions it was taken from.
+        sessionMinutes(
+          summaryJson: s.summaryJson,
+          startedAt: s.startedAt,
+          endedAt: s.endedAt,
+        ),
   ].where((m) => m > 0).take(5).toList()
     ..sort();
-  if (durations.isEmpty) {
-    return activityById(activityId)?.dur ?? kSuggestedMaxMinutes;
-  }
+  if (durations.length < kUsualMinutesNeedsSessions) return null;
   return durations[durations.length ~/ 2];
+}
+
+/// The length to show beside a practice, or null for none at all.
+///
+/// Item 93: three cases, in order.
+///
+/// * A timed practice — guided audio, a breath pacer, a guided sequence —
+///   always shows its own length. That is a fact about the practice, not a
+///   claim about the person: a fifteen-minute body scan is fifteen minutes
+///   whether or not anyone has ever done it.
+/// * Otherwise, the person's own usual, once there are enough sessions to
+///   mean it.
+/// * Otherwise nothing. No minutes is honest; a borrowed number is not.
+String? lengthLabelFor(String activityId, List<SessionRow> history) {
+  final activity = activityById(activityId);
+  if (activity != null && activity.isTimed) {
+    final fixed = activity.dur;
+    if (fixed > 0) return '$fixed MIN';
+  }
+  final usual = usualMinutesFor(activityId, history);
+  return usual == null ? null : 'YOUR USUAL · $usual MIN';
+}
+
+/// The minutes to open a practice with, or null to leave it open-ended.
+int? openWithMinutesFor(String activityId, List<SessionRow> history) {
+  final activity = activityById(activityId);
+  if (activity != null && activity.isTimed && activity.dur > 0) {
+    return activity.dur;
+  }
+  return usualMinutesFor(activityId, history);
 }
 
 /// The wind-down practice for [now]. Rotates day by day so the evening is not
@@ -404,17 +474,23 @@ String windDownFor(DateTime now) {
 
 /// A gentler practice to offer beside a planned one on a low-readiness day
 /// (item 46). Uses the same gentle rule as the day slot.
+/// [besides] is the practice already being offered. Item 79: without it the
+/// alternative could be the planned practice itself, so a planned Walk on a
+/// low-readiness day came with "Try Walk instead?" underneath — which reads
+/// as a mistake, because it is one.
 String? _gentleAlternativeFor(
   DayIntent intent,
   List<String> pins,
-  List<SessionRow> todaysFinished,
-) {
+  List<SessionRow> todaysFinished, {
+  String? besides,
+}) {
   final done = {for (final s in todaysFinished) s.vyanaActivityType};
+  bool usable(String id) => id != besides && !done.contains(id);
   for (final id in pins) {
-    if (kGentlePracticeIds.contains(id) && !done.contains(id)) return id;
+    if (kGentlePracticeIds.contains(id) && usable(id)) return id;
   }
   for (final id in kGentlePracticeIds) {
-    if (!done.contains(id)) return id;
+    if (usable(id)) return id;
   }
   return null;
 }
@@ -430,6 +506,9 @@ HomeSuggestion homeSuggestionFor({
   required int? readiness,
   required HomeMoment moment,
   required DateTime now,
+  /// Item 94: planned practices stood down for today. The plan is
+  /// unchanged; these are simply not on offer.
+  Set<String> skippedToday = const <String>{},
   List<String> pins = const [],
   List<SessionRow> history = const [],
   List<SessionRow> todaysFinished = const [],
@@ -443,21 +522,30 @@ HomeSuggestion homeSuggestionFor({
     now: now,
     todaysFinished: todaysFinished,
     history: history,
+    skippedToday: skippedToday,
   );
   if (planned != null) {
-    final usual = usualMinutesFor(planned.activityId, history);
     final gentle = readiness != null && readiness < kGentleOnlyReadiness
-        ? _gentleAlternativeFor(intent, pins, todaysFinished)
+        ? _gentleAlternativeFor(
+            intent,
+            pins,
+            todaysFinished,
+            besides: planned.activityId,
+          )
         : null;
     return HomeSuggestion(
       activityId: planned.activityId,
       heading: 'Planned today',
       reason: suggestedReasonFor(intent, readiness),
-      minutes: usual,
-      meta: planned.meta(usual),
+      minutes: openWithMinutesFor(planned.activityId, history),
+      // Item 93: "PLANNED · 2 OF 3" on its own when there is no length to
+      // give. The plan stores no length, and a number beside it read as if
+      // it did.
+      meta: planned.meta(lengthLabelFor(planned.activityId, history)),
       setsTarget: false,
       // Never swapped silently: the plan stands, with one line underneath.
       lowReadinessAlternative: gentle,
+      canSkipToday: true,
     );
   }
 
@@ -498,8 +586,8 @@ HomeSuggestion homeSuggestionFor({
             activityId: id,
             heading: 'Suggested activity',
             reason: suggestedReasonFor(intent, readiness),
-            minutes: usualMinutesFor(id, history),
-            meta: 'YOUR USUAL · ${usualMinutesFor(id, history)} MIN',
+            minutes: openWithMinutesFor(id, history),
+            meta: lengthLabelFor(id, history),
             offerPin: offerPin,
             // The day slot opens the practice with no target set.
             setsTarget: false,
@@ -517,13 +605,24 @@ HomeSuggestion homeSuggestionFor({
         if (usable(id)) return day(id, offerPin: true);
       }
       // 3 · a mindfulness practice from the catalogue, at its own length.
-      final id = _mindfulnessFallback(intent, readiness);
+      //
+      // Item 84 (bug 45): the catalogue one, and not called "your usual".
+      // It was labelled "YOUR USUAL · 15 MIN" for a practice the person had
+      // never done once — a number presented as their own history when it
+      // came out of a list. And the fallback ignored what was done today,
+      // so finishing a body scan could be answered by suggesting a body
+      // scan.
+      final id = _mindfulnessFallback(intent, readiness, todaysFinished);
+      // Item 93 supersedes the 45 point in item 84: the same rule as
+      // everywhere else. These are the gentle mindfulness practices, which
+      // are timed, so the fallback does show its length — as a fact about
+      // the practice rather than a claim about the person.
       return HomeSuggestion(
         activityId: id,
         heading: 'Suggested activity',
         reason: suggestedReasonFor(intent, readiness),
-        minutes: activityById(id)?.dur ?? kSuggestedMaxMinutes,
-        meta: 'YOUR USUAL · ${activityById(id)?.dur ?? 0} MIN',
+        minutes: openWithMinutesFor(id, history),
+        meta: lengthLabelFor(id, history),
         offerPin: true,
         setsTarget: false,
       );

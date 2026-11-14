@@ -15,10 +15,15 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Bug 13(a): an outdoor session must keep recording with the phone in a
-         pocket and the screen locked. On Android 10+ that needs background
-         location plus a location-typed foreground service, or the position
-         stream is cut and distance stops growing. -->
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+         pocket and the screen locked. The location-typed foreground service
+         below is what does that, and it is started while the app is in the
+         foreground, so "while using this app" is the only grant it needs.
+         Item 67: ACCESS_BACKGROUND_LOCATION used to be declared here as
+         well. It bought nothing — a foreground service started from the
+         foreground keeps delivering fixes without it — while costing a
+         second, frightening "Allow all the time" prompt and a common
+         reason for Play Store rejection. It is not declared on purpose;
+         re-adding it is a regression, and the permissions test says so. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
@@ -28,11 +33,15 @@
          so it could never survive a night, which is the whole point of it.
          remoteMessaging went with it: nothing declares that type any more. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-    <!-- Not ours: background_downloader (pulled in by flutter_gemma for the
-         Nova model download) declares a dataSync service, and on API 34+ a
-         typed service without its permission throws at start. Checked in the
-         merged manifest, not assumed. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Item 87: FOREGROUND_SERVICE_DATA_SYNC used to be declared here for
+         background_downloader's UIDTJobService, which flutter_gemma pulls in
+         transitively. Nothing in this app uses that downloader — the Nova
+         model and the voice both install from a file we fetch ourselves — so
+         the permission was being asked for a service that never starts.
+         The service is removed below and the permission with it; the two go
+         together, because on API 34+ a typed service without its permission
+         throws the moment it starts. Verified in the merged manifest of a
+         built APK, not assumed. -->
     <!-- On-device AI guides: voice prompts (mic), keep awake during model
          downloads, and download-complete notifications. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -42,7 +51,19 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Bug 21: lets the scheduled ring alerts survive a reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Item 87: SCHEDULE_EXACT_ALARM is no longer declared here. Every
+         schedule this app makes is inexactAllowWhileIdle, so asking for it
+         was asking for a right we never use.
+         It is still in the merged manifest, and deliberately so: the
+         merger report blames AliAgent-release-4.2.1, part of the YCBT ring
+         SDK, which declares it for itself. Forcing it out with
+         tools:node="remove" would leave a vendor blob calling setExact
+         without the permission, which throws — and that blob is the ring
+         connection. Not worth a SecurityException inside the one component
+         nobody here can debug, for a permission the user is not prompted
+         about on the versions this app targets.
+         Checked with: aapt2 dump permissions, plus
+         build/app/outputs/logs/manifest-merger-dappStore-debug-report.txt -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
@@ -50,7 +71,11 @@
         android:label="Vyana"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        tools:replace="android:label">
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupOnly="false"
+        tools:replace="android:label,android:allowBackup">
         <!-- The status bar masks a small icon to its alpha and tints it, so
              the full-colour launcher icon came out as a solid white blob.
              These point every notification at the white-on-transparent
@@ -105,6 +130,13 @@
         <service
             android:name="com.realsil.sdk.dfu.DfuService"
             android:exported="false" />
+
+        <!-- Item 87: background_downloader's dataSync service, which arrives
+             through flutter_gemma and is never started by this app. Removed
+             so the manifest asks for nothing on its behalf. -->
+        <service
+            android:name="com.bbflight.background_downloader.UIDTJobService"
+            tools:node="remove" />
 
         <!-- Foreground service for continuous ring vitals tracking. Typed
              connectedDevice (bug 44(a)): a BLE wearable connection, with no

@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 import 'nova_voice_assets.dart';
+import 'spoken_text.dart';
 
 /// Nova's own voice, generated on the phone — and the only voice she has.
 ///
@@ -76,14 +77,18 @@ class NovaVoiceService {
       }
 
       final dir = await novaVoiceDirectory();
-      final dataDir = p.join(dir, kNovaVoiceDataDir);
       final config = sherpa.OfflineTtsConfig(
         model: sherpa.OfflineTtsModelConfig(
           kokoro: sherpa.OfflineTtsKokoroModelConfig(
             model: p.join(dir, kNovaVoiceModelFile),
             voices: p.join(dir, kNovaVoiceVoicesFile),
             tokens: p.join(dir, kNovaVoiceTokensFile),
-            dataDir: dataDir,
+            // Not `dataDir`. sherpa-onnx 2.0.1 tokenises Kokoro through the
+            // lexicon only: with an espeak directory and no lexicon every
+            // sentence fails with "No lexicon available" and generate()
+            // hands back an empty waveform — silence that looks like a
+            // working voice. See nova_voice_assets.dart.
+            lexicon: p.join(dir, kNovaVoiceLexiconFile),
           ),
           numThreads: 2,
           debug: false,
@@ -114,7 +119,11 @@ class NovaVoiceService {
   Future<void> speak(String text, {double rate = 1.0}) async {
     final tts = _tts;
     if (tts == null) throw StateError('Nova voice is not loaded');
-    final normalized = text.trim();
+    // The one place text becomes speech, so the one place numbers become
+    // words. Kokoro's lexicon has no entry for any digit and skips what it
+    // cannot find, which turned "Halfway. 5 minutes." into "Halfway.
+    // minutes." — see spoken_text.dart.
+    final normalized = speakableText(text);
     if (normalized.isEmpty) return;
 
     await stop();

@@ -37,11 +37,18 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (await isSolanaMobileDevice()) return;
-      if (!mounted) return;
-      ref.read(reownWalletProvider.notifier).initIfNeeded(context);
-    });
+    // Item 66: WalletConnect is deliberately *not* started here. Launching
+    // the app used to initialise Reown on every non-Solana phone, which
+    // opened relay connections, fetched the wallet directory and asked
+    // Reown's API whether to send analytics — telling it the project id and
+    // this phone's IP before anyone had been near the Wallet screen, while
+    // the privacy screen said it happens "only if you connect".
+    //
+    // The Wallet screen initialises it when it opens, which is the moment
+    // the person asked for it. Nothing else needs it: a connected address
+    // is read back from preferences by the wallet controller, not from a
+    // live session, and since item 61 buying a ring is a browser handoff
+    // to the website that touches no wallet at all.
     _listenForWidgetLaunch();
   }
 
@@ -55,7 +62,36 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final uri = await HomeWidgetService.instance.initialLaunchUri();
       _handleWidgetUri(uri);
+      unawaited(_runWeeklyBackupIfDue());
+      // Item 79: one reminder is scheduled at a time, and it was only
+      // re-armed by finishing a session or opening My week. Someone who did
+      // neither — which is to say, someone the reminder was for — got one
+      // and then silence. Launching re-arms it, so every planned day keeps
+      // its reminder whether or not the plan screen is ever opened again.
+      if (!mounted) return;
+      unawaited(
+        ref.read(weeklyPlanReminderProvider.notifier).reschedule(),
+      );
     });
+  }
+
+  /// Item 53: the weekly backup, when it is on and one is due.
+  ///
+  /// On launch rather than in the background. A true scheduled job would
+  /// need WorkManager on Android and a background refresh task on iOS,
+  /// neither of which runs reliably enough to be the only chance a backup
+  /// gets — and both of which would mean the app writing the user's data
+  /// to a folder while they are not looking. "Every week, the next time
+  /// you open Vyana" is a weaker promise, and it is one that can be kept.
+  Future<void> _runWeeklyBackupIfDue() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      await ref
+          .read(backupServiceProvider)
+          .runAutoBackupIfDue(appVersion: info.version);
+    } on Object catch (error) {
+      debugPrint('[Backup] weekly check failed: $error');
+    }
   }
 
   void _handleWidgetUri(Uri? uri) {
@@ -68,7 +104,43 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
   void _showProfileLaunchSheet() {
     if (!mounted || _profilePromptShown) return;
     _profilePromptShown = true;
-    showModalBottomSheet<void>(
+    unawaited(_offerRestoreThenProfile());
+  }
+
+  /// Item 53: the one moment restoring is obvious, and the only one where
+  /// it costs nothing.
+  ///
+  /// Offered before profile setup, and only when the vault is empty —
+  /// someone arriving on a new phone has a backup and no history, and
+  /// nothing here can overwrite anything. Later, in Your data, the same
+  /// act replaces a phone's worth of records and asks first.
+  Future<void> _offerRestoreThenProfile() async {
+    final empty = await ref.read(databaseProvider).isEmptyOfUserData();
+    if (!mounted) return;
+
+    if (empty) {
+      final restored = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        isDismissible: false,
+        enableDrag: false,
+        backgroundColor: Colors.transparent,
+        builder: (sheetContext) => _RestoreLaunchSheet(
+          onChoose: () => Navigator.of(sheetContext).pop(true),
+          onFresh: () => Navigator.of(sheetContext).pop(false),
+        ),
+      );
+      if (!mounted) return;
+      if (restored == true) {
+        final done = await runRestoreFlow(context, ref);
+        // A restore brings the profile with it, so asking for one now
+        // would be asking for something they already have.
+        if (done || !mounted) return;
+      }
+    }
+
+    if (!mounted) return;
+    unawaited(showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -79,7 +151,7 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
         },
         onLater: () => Navigator.of(sheetContext).pop(),
       ),
-    );
+    ));
   }
 
   @override
@@ -122,7 +194,7 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
       // §14: the learning phase counts from the oldest day the ring actually
       // covers, and the sleep score's duration target follows the user's own
       // nights once they have said a shorter night leaves them rested.
-      final nights = sleepDaySummaries(c.history.sleep);
+      final nights = c.history.sleepNights;
       if (nights.isNotEmpty) {
         final baselines = ref.read(personalBaselinesProvider.notifier);
         unawaited(baselines.noteDataStart(nights.last.day));
@@ -155,6 +227,10 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
           RingUiState.stale,
           RingUiState.disconnected,
           RingUiState.connecting,
+          // The radio being off belongs here most of all: it is the one of
+          // these the user can fix in a single tap, and leaving it out left
+          // the banner written and never shown on the screen it was for.
+          RingUiState.bluetoothOff,
         }.contains(ringUiStateOf(ring));
     return PopScope(
       canPop: false,
@@ -264,7 +340,12 @@ class SessionResumeBar extends ConsumerWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: () => Navigator.of(context).push<void>(
-          MaterialPageRoute(builder: (_) => const LiveSessionScreen()),
+          MaterialPageRoute(
+            // Item 85 (h): named, so the post-session history button can
+            // pop past it and no further.
+            settings: const RouteSettings(name: kLiveSessionRouteName),
+            builder: (_) => const LiveSessionScreen(),
+          ),
         ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -433,6 +514,55 @@ class _ProfileLaunchSheet extends StatelessWidget {
             Cta(label: 'Set up profile', icon: 'user', onTap: onSetUp),
             const SizedBox(height: 10),
             Cta(label: 'Not now', icon: 'chevR', solid: false, onTap: onLater),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Item 53: offered on a phone with nothing on it, before anything else.
+///
+/// Worded as a question rather than a warning: on a new phone there is no
+/// risk in either answer, and "Start fresh" is a perfectly good one.
+class _RestoreLaunchSheet extends StatelessWidget {
+  const _RestoreLaunchSheet({required this.onChoose, required this.onFresh});
+
+  final VoidCallback onChoose;
+  final VoidCallback onFresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        0,
+        16,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Panel(
+        pad: 20,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Restore from a backup?',
+              style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 22),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'If you have a Vyana backup from another phone, this is the '
+              'moment to bring it over. You will need the passphrase it was '
+              'made with.',
+              style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45),
+            ),
+            const SizedBox(height: 18),
+            Cta(label: 'Choose backup', icon: 'db', onTap: onChoose),
+            const SizedBox(height: 10),
+            Cta(label: 'Start fresh', icon: 'chevR', solid: false,
+                onTap: onFresh),
           ],
         ),
       ),

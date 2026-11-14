@@ -63,8 +63,13 @@ class _MetricsScreenState extends ConsumerState<MetricsScreen> {
     final band = TrainingFrequencyX.fromName(profile?.trainingFrequency);
     final patterns = ref.watch(patternsProvider).valueOrNull ?? const [];
     final pattern = currentPatternFor(patterns, 'metrics');
-    final stale = ringUiStateOf(c) == RingUiState.stale ||
-        ringUiStateOf(c) == RingUiState.disconnected;
+    final ringState = ringUiStateOf(c);
+    // The radio being off belongs in the banner's set as much as a stale or
+    // disconnected ring: leaving it out of both this and the Home slot left
+    // the Bluetooth banner written and shown nowhere.
+    final stale = ringState == RingUiState.stale ||
+        ringState == RingUiState.disconnected ||
+        ringState == RingUiState.bluetoothOff;
 
     ref.listen<RingController>(ringControllerProvider, (prev, next) {
       if (prev?.history.totalRecords != next.history.totalRecords) {
@@ -179,7 +184,7 @@ List<({DateTime day, int score})> readinessSeries(
       .subtract(Duration(days: days - 1));
   final hrvPoints = vitalHistoryPoints(history, VitalsMetricKind.hrv);
   final out = <({DateTime day, int score})>[];
-  for (final night in sleepDaySummaries(history.sleep).reversed) {
+  for (final night in history.sleepNights.reversed) {
     if (night.day.isBefore(since)) continue;
     // Bug 14(c): a truncated night is a gap, not a low score — including it
     // dragged both the chart and the average that Home compares against.
@@ -892,7 +897,7 @@ List<_VitalRowData> _buildVitalRows(
   // measurement replaced the morning's recovery numbers here too. Both now
   // read the day's value, the same one Home and readiness use. Spot readings
   // stay available in each vital's detail list.
-  final nights = sleepDaySummaries(history.sleep);
+  final nights = history.sleepNights;
   final tonight = sleepNightForToday(nights);
 
   final hrvPoints = vitalHistoryPoints(history, VitalsMetricKind.hrv);
@@ -903,7 +908,7 @@ List<_VitalRowData> _buildVitalRows(
   )?.toDouble();
 
   final sleepPoints = [
-    for (final d in sleepDaySummaries(history.sleep).reversed)
+    for (final d in history.sleepNights.reversed)
       VitalHistoryPoint(
         time: d.day,
         value: d.breakdown.asleepSeconds / 3600,

@@ -157,6 +157,15 @@ class RingForegroundService {
   static Future<DateTime?> lastHeartbeat() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Item 63: the heartbeat is written by the service isolate and read
+      // by the app. Without a reload a long-running app keeps reading the
+      // value it cached at launch, sees a widening gap, and claims Android
+      // stopped Vyana while the service was running the whole time.
+      try {
+        await prefs.reload();
+      } on Object catch (_) {
+        // Fall through to the cached value rather than report nothing.
+      }
       final ms = prefs.getInt(_heartbeatKey);
       return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
     } on Object catch (_) {
@@ -198,11 +207,21 @@ class RingForegroundService {
 
   /// Opens the OS screen where the user can let Vyana keep running. Never
   /// asked up front, and never during ring setup.
-  static Future<void> requestBatteryExemption() async {
-    if (!Platform.isAndroid) return;
+  /// Opens the battery-optimisation settings, reporting whether it worked.
+  ///
+  /// Item 85 (f): it returned void and swallowed the failure, so the card
+  /// dismissed itself forever whether or not anything had opened. Someone
+  /// on a phone where that screen cannot be reached lost the card and the
+  /// explanation with it.
+  static Future<bool> requestBatteryExemption() async {
+    if (!Platform.isAndroid) return false;
     try {
       await FlutterForegroundTask.openIgnoreBatteryOptimizationSettings();
-    } on Object catch (_) {}
+      return true;
+    } on Object catch (error) {
+      debugPrint('RING_FOREGROUND_BATTERY_SETTINGS_FAILED: $error');
+      return false;
+    }
   }
 
   /// Default background heartbeat cadence (minutes) when no interval is passed.
@@ -244,6 +263,12 @@ class RingForegroundService {
         showWhen: false,
         showBadge: false,
         onlyAlertOnce: true,
+        // Item 81: the ongoing notification carries HR, SpO2 and HRV, and
+        // the plugin's default is VISIBILITY_PUBLIC — so a locked phone on
+        // a table showed someone's heart rate to whoever walked past.
+        // Private keeps the notification there and hides its content until
+        // the phone is unlocked.
+        visibility: NotificationVisibility.VISIBILITY_PRIVATE,
       ),
       iosNotificationOptions: const IOSNotificationOptions(
         showNotification: false,
@@ -254,19 +279,44 @@ class RingForegroundService {
     _initialized = true;
   }
 
+  /// The interval the running service was last told about, so it is not
+  /// told again for no reason.
+  static int? _appliedRepeatMinutes;
+
+  /// Asks for notification permission, once, where asking makes sense.
+  ///
+  /// Item 62: this used to live inside [start], which the connection poll
+  /// reached every two seconds — so anyone who tapped "Don't allow" was
+  /// asked again, and again. Permission belongs to pairing: the one moment
+  /// the person has just said they want a ring watched.
+  static Future<void> ensureNotificationPermission() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final permission =
+          await FlutterForegroundTask.checkNotificationPermission();
+      if (permission != NotificationPermission.granted) {
+        await FlutterForegroundTask.requestNotificationPermission();
+      }
+    } on Object catch (error) {
+      debugPrint('RING_FOREGROUND_PERMISSION_FAILED: $error');
+    }
+  }
+
   static Future<void> start({int? intervalMinutes}) async {
     if (!Platform.isAndroid) return;
     if (intervalMinutes != null) _repeatMinutes = intervalMinutes;
     _ensureInitialized();
 
-    final permission = await FlutterForegroundTask.checkNotificationPermission();
-    if (permission != NotificationPermission.granted) {
-      await FlutterForegroundTask.requestNotificationPermission();
-    }
-
     if (await FlutterForegroundTask.isRunningService) {
-      // Already running — just make sure the heartbeat cadence is current.
-      await setRepeatInterval(_repeatMinutes);
+      // Already running. Item 62: this used to re-apply the repeat
+      // interval every time, and `start` was reached every two seconds
+      // from the connection poll — so the twenty-minute heartbeat's timer
+      // was restarted before it could ever elapse. Only a real change
+      // touches it now.
+      if (_appliedRepeatMinutes != _repeatMinutes) {
+        await setRepeatInterval(_repeatMinutes);
+        _appliedRepeatMinutes = _repeatMinutes;
+      }
       return;
     }
 
@@ -291,6 +341,8 @@ class RingForegroundService {
 
     if (result is ServiceRequestFailure) {
       debugPrint('RING_FOREGROUND_SERVICE_START_FAILED: ${result.error}');
+    } else {
+      _appliedRepeatMinutes = _repeatMinutes;
     }
   }
 
@@ -331,4 +383,33 @@ class RingForegroundService {
     if (_initialized) return;
     init();
   }
+}
+
+/// What the foreground service is being asked for.
+///
+/// Item 62: a value rather than four fields compared by hand, so "has
+/// anything actually changed" is one question with one answer, and the
+/// two-second poll can be told from a real change.
+@immutable
+class ForegroundServiceIntent {
+  const ForegroundServiceIntent({
+    required this.shouldRun,
+    required this.intervalMinutes,
+  });
+
+  final bool shouldRun;
+  final int intervalMinutes;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ForegroundServiceIntent &&
+      other.shouldRun == shouldRun &&
+      other.intervalMinutes == intervalMinutes;
+
+  @override
+  int get hashCode => Object.hash(shouldRun, intervalMinutes);
+
+  @override
+  String toString() =>
+      'ForegroundServiceIntent(run: $shouldRun, every: ${intervalMinutes}m)';
 }

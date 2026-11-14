@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_startup_service.dart';
 import 'nova_voice_assets.dart';
+import 'on_device_models.dart';
 import 'vyana_storage_service.dart';
 
 /// On-device guide personas. Each maps to a string id used by the Vyana guide
@@ -85,19 +86,62 @@ class GuidePersonaDefinition {
 // Every persona uses the same Gemma E2B litert-lm bundle; the persona's
 // `systemPrompt` is what gives each guide its voice. Downloading once makes
 // every guide usable.
-const String _kSharedModelLabel = 'Gemma E2B · on-device';
-
-/// Approximate download size of the shared Gemma bundle, shown wherever the
-/// app asks the user to install Nova. One constant so the pill, the store
-/// and You never disagree.
+/// The model the user picked, as the download, the validator, the spec and
+/// every label all read it.
 ///
+/// Module-level and mutable, which is unusual here and deliberate: the
+/// persona definitions are `const` and carry Nova's words, while the model
+/// is a setting that changes under them. The alternative was threading a
+/// model through a dozen helpers that only ever have a definition to hand,
+/// which spreads the question "which model is this?" rather than answering
+/// it once. [GuideModelManager] keeps it in step with the stored choice.
+OnDeviceModel _activeOnDeviceModel =
+    onDeviceModelById(kDefaultOnDeviceModelId);
+
+OnDeviceModel get activeOnDeviceModel => _activeOnDeviceModel;
+
+void setActiveOnDeviceModel(OnDeviceModel model) {
+  _activeOnDeviceModel = model;
+}
+
+const String _kSharedModelLabel = 'Gemma E2B';
+
+/// Exact download size of the model now selected, in bytes.
+///
+/// Was a const tied to Gemma; it follows the picker now.
+///
+/// A byte count rather than a hand-typed string because the string was
+/// wrong: it read "3.1 GB" against a file of 2,586,706,331 bytes — half a
+/// gigabyte of overstatement on the one number that decides whether someone
+/// starts the download at all. It had also been "3.2 GB" at one point, to
+/// fold in a voice that was never part of this file.
+///
+/// Confirmed with `curl -sIL` against the Hugging Face URL below; re-check
+/// it when [_kSharedModelUrl] changes.
+int get kGuideModelBytes => activeOnDeviceModel.bytes;
+
+/// That size, said the way the UI should say it.
+String get kGuideModelSizeLabel => formatDownloadSize(kGuideModelBytes);
+
+/// Download sizes in the units people read them in: GB to one decimal above
+/// a gigabyte, whole MB below. Decimal, like every download manager and
+/// every store listing — not the 1024-based figure, which would call this
+/// file 2.4 GB and disagree with the phone.
+String formatDownloadSize(int bytes) {
+  if (bytes <= 0) return '0 MB';
+  const mb = 1000 * 1000;
+  if (bytes >= 1000 * mb) {
+    return '${(bytes / (1000 * mb)).toStringAsFixed(1)} GB';
+  }
+  return '${(bytes / mb).round()} MB';
+}
+
 /// **Nova's voice is not in this figure.** It used to be: the voice was
-/// folded into the same install step at an estimated 90 MB. The real pack is
-/// 355 MB of full-precision weights, which is too much to add to someone's
-/// download without asking, so it is its own opt-in in Guides › Vani Voice
-/// and advertises its own size ([novaVoiceApproxSizeLabel]). Nova works
-/// without it; she just does not read her replies aloud.
-const String kGuideModelSizeLabel = '3.1 GB';
+/// folded into the same install step at an estimated 90 MB. It is its own
+/// opt-in now and advertises its own size ([novaVoiceApproxSizeLabel]).
+/// Nova works without it; she just does not read her replies aloud.
+const String kGuideModelSizeNote =
+    "Nova's voice is a separate download.";
 
 /// Item 51 — Nova's instructions. Roughly 150 tokens, about half the length
 /// of the prompt it replaces, because the cap it shares with the data blocks
@@ -142,7 +186,7 @@ List<GuideKind> guideKindsSharingBundle(GuidePersonaDefinition definition) {
 }
 
 String guideInstalledModelFileName(GuidePersonaDefinition definition) {
-  return Uri.parse(definition.modelDownloadUrl).pathSegments.last;
+  return Uri.parse(activeOnDeviceModel.url).pathSegments.last;
 }
 
 String guideInstalledModelName(GuidePersonaDefinition definition) {
@@ -166,8 +210,8 @@ InferenceModelSpec guideInferenceModelSpec(GuidePersonaDefinition definition) {
   return InferenceModelSpec.fromLegacyUrl(
     name: guideInstalledModelName(definition),
     modelUrl: 'file://$targetPath',
-    modelType: definition.flutterGemmaModelType,
-    fileType: definition.modelFileType,
+    modelType: activeOnDeviceModel.modelType,
+    fileType: activeOnDeviceModel.fileType,
     replacePolicy: ModelReplacePolicy.keep,
   );
 }
@@ -184,10 +228,25 @@ String? guidePrimaryModelPathFromFileMap(
   return filePaths[primaryKey] ?? filePaths.values.first;
 }
 
+/// Whether the bundle at [filePath] is whole enough to hand to the native
+/// parser.
+///
+/// [expectedBytes] is what the model is supposed to weigh. It used to be a
+/// flat `> 1.5 GB`, with a comment saying "Gemma models are typically
+/// > 1.5GB" — true of Gemma and of nothing else. A 614 MB Qwen bundle
+/// downloaded perfectly and was then deleted as corrupt, which is a hard
+/// failure to read from the outside: the download bar fills and the model
+/// never appears.
+///
+/// A truncated file is still rejected, and more precisely than before: the
+/// point of the check is that a half-written bundle crashes the C++
+/// FlatBuffer parser with EXC_BAD_ACCESS, and 2% short of the expected size
+/// catches that far better than a threshold borrowed from a different model.
 Future<bool> validateGuideBundleFile(
   String? filePath,
-  ModelFileType fileType,
-) async {
+  ModelFileType fileType, {
+  required int expectedBytes,
+}) async {
   if (filePath == null || filePath.isEmpty) {
     return false;
   }
@@ -199,10 +258,11 @@ Future<bool> validateGuideBundleFile(
 
   if (fileType != ModelFileType.task) {
     final fileLength = await file.length();
-    // Gemma models are typically > 1.5GB. A 1MB check would let severely
-    // truncated files pass, which causes EXC_BAD_ACCESS in the C++ FlatBuffer
-    // parser.
-    return fileLength > 1500 * 1024 * 1024;
+    if (expectedBytes > 0) {
+      return fileLength >= (expectedBytes * 0.98).floor();
+    }
+    // No expectation recorded: fall back to "not obviously truncated".
+    return fileLength > 1024 * 1024;
   }
 
   final raf = await file.open();
@@ -229,7 +289,8 @@ Future<String?> resolveInstalledGuideModelPath(
     final vyanaPath = guideModelTargetPath(definition);
     if (await validateGuideBundleFile(
       vyanaPath,
-      definition.modelFileType,
+      activeOnDeviceModel.fileType,
+      expectedBytes: activeOnDeviceModel.bytes,
     )) {
       return vyanaPath;
     }
@@ -245,7 +306,11 @@ Future<bool> validateInstalledGuideModel(
   GuidePersonaDefinition definition,
 ) async {
   final path = await resolveInstalledGuideModelPath(definition);
-  return validateGuideBundleFile(path, definition.modelFileType);
+  return validateGuideBundleFile(
+    path,
+    activeOnDeviceModel.fileType,
+    expectedBytes: activeOnDeviceModel.bytes,
+  );
 }
 
 /// Removes flutter_gemma registry entries and the Vyana on-disk bundle.
@@ -413,6 +478,25 @@ class GuideModelManager extends ChangeNotifier {
     return _initFuture ??= _initialize();
   }
 
+  /// Re-register and re-check after the user picks a different model.
+  ///
+  /// The spec carries the file name, type and url of whichever model is
+  /// active, so a change invalidates both the registration and every cached
+  /// "installed" answer.
+  Future<void> onActiveModelChanged() async {
+    if (_initFuture == null) return;
+    try {
+      await _initFuture;
+      for (final kind in activeGuideKinds) {
+        await ensureGuideModelRegistered(guidePersonaDefinitions[kind]!);
+        await recheckModelStatus(kind);
+      }
+    } on Object catch (error) {
+      debugPrint('[GuideModel] Switching model failed: $error');
+    }
+    notifyListeners();
+  }
+
   Future<void> _initialize() async {
     try {
       await VyanaStorageService.instance.ensureReady();
@@ -523,7 +607,7 @@ class GuideModelManager extends ChangeNotifier {
     notifyListeners();
 
     debugPrint('Starting download for ${definition.name}');
-    debugPrint('URL: ${definition.modelDownloadUrl}');
+    debugPrint('URL: ${activeOnDeviceModel.url}');
 
     // Bug 42: Nova's voice installs with Nova, in the same step. The voice is
     // a rounding error beside the model, so the bar stays on the model and
@@ -766,7 +850,8 @@ Future<void> downloadGuideModelFile(
   await targetFile.parent.create(recursive: true);
 
   if (await targetFile.exists() &&
-      await validateGuideBundleFile(targetPath, definition.modelFileType)) {
+      await validateGuideBundleFile(targetPath, activeOnDeviceModel.fileType,
+          expectedBytes: activeOnDeviceModel.bytes)) {
     onProgress?.call(1);
     return;
   }
@@ -777,7 +862,7 @@ Future<void> downloadGuideModelFile(
 
   final client = HttpClient();
   try {
-    final request = await client.getUrl(Uri.parse(definition.modelDownloadUrl));
+    final request = await client.getUrl(Uri.parse(activeOnDeviceModel.url));
     final token = definition.huggingFaceToken?.trim();
     if (token != null && token.isNotEmpty) {
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
@@ -787,7 +872,7 @@ Future<void> downloadGuideModelFile(
     if (response.statusCode != HttpStatus.ok) {
       throw HttpException(
         'Model download failed with status ${response.statusCode}',
-        uri: Uri.parse(definition.modelDownloadUrl),
+        uri: Uri.parse(activeOnDeviceModel.url),
       );
     }
 
@@ -806,7 +891,8 @@ Future<void> downloadGuideModelFile(
     await sink.flush();
     await sink.close();
 
-    if (!await validateGuideBundleFile(targetPath, definition.modelFileType)) {
+    if (!await validateGuideBundleFile(targetPath, activeOnDeviceModel.fileType,
+        expectedBytes: activeOnDeviceModel.bytes)) {
       await targetFile.delete();
       throw StateError('Downloaded model failed validation.');
     }
@@ -836,8 +922,8 @@ Future<void> registerGuideModelAtPath(GuidePersonaDefinition definition) async {
   }
 
   final installed = await FlutterGemma.installModel(
-    modelType: definition.flutterGemmaModelType,
-    fileType: definition.modelFileType,
+    modelType: activeOnDeviceModel.modelType,
+    fileType: activeOnDeviceModel.fileType,
   ).fromFile(targetPath).install();
 
   // Keep the active spec aligned with the FileSource path used at install time.
@@ -852,7 +938,8 @@ Future<void> ensureGuideModelRegistered(GuidePersonaDefinition definition) async
 
   if (!await validateGuideBundleFile(
     targetPath,
-    definition.modelFileType,
+    activeOnDeviceModel.fileType,
+    expectedBytes: activeOnDeviceModel.bytes,
   )) {
     return;
   }
@@ -868,6 +955,27 @@ final guideModelManagerProvider = ChangeNotifierProvider<GuideModelManager>((
   ref,
 ) {
   final manager = GuideModelManager();
+
+  // The picker writes the chosen model to [onDeviceModelProvider]. Everything
+  // that downloads, validates, registers and loads reads [activeOnDeviceModel]
+  // instead — and nothing connected the two, so the picker was decorative:
+  // choosing Qwen3 1.7B showed "Install Qwen3 1.7B · 977 MB" on the button
+  // and then fetched gemma-4-E2B-it.litertlm. Caught by looking at the file
+  // on the phone while the screen said it was downloading the other one.
+  //
+  // One writer, here, so the two cannot drift again. The stored choice
+  // arrives a moment after this provider is built, which is why the listener
+  // matters as much as the initial read.
+  setActiveOnDeviceModel(ref.read(onDeviceModelProvider));
+  ref.listen<OnDeviceModel>(onDeviceModelProvider, (previous, next) {
+    if (previous?.id == next.id) return;
+    setActiveOnDeviceModel(next);
+    // Installed-or-not is a question about a particular file, so the answer
+    // changes with the model. recheckModelStatus, not _checkModelStatus,
+    // which short-circuits while the previous model is ready.
+    unawaited(manager.onActiveModelChanged());
+  });
+
   manager.init();
   return manager;
 });

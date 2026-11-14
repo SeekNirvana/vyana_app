@@ -71,7 +71,11 @@ String? pinMetaFor(List<SessionRow> sessions, String activityId) {
     if (s.vyanaActivityType != activityId || s.endedAt == null) continue;
     final day = const ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][
         s.startedAt.weekday - 1];
-    final minutes = s.endedAt!.difference(s.startedAt).inMinutes;
+    final minutes = sessionMinutes(
+      summaryJson: s.summaryJson,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+    );
     int? avgHr;
     final raw = s.summaryJson;
     if (raw != null) {
@@ -87,4 +91,33 @@ String? pinMetaFor(List<SessionRow> sessions, String activityId) {
     return parts.join(' · ');
   }
   return null;
+}
+
+/// Item 56: one category's practices, split into the pinned ones and the rest.
+///
+/// With many pins the rail at the top becomes a scroll hunt, and the list
+/// below shows every practice in catalogue order with the pinned ones mixed
+/// in — so finding one you had deliberately marked still meant scrolling
+/// past the ones you hadn't.
+///
+/// [pinned] comes back in the user's own pin order, the same order the rail
+/// uses, so the two readings of "your pins" agree. [rest] stays in catalogue
+/// order. A practice appears in exactly one of them.
+({List<Activity> pinned, List<Activity> rest}) splitByPins(
+  List<Activity> activities,
+  List<String> pinOrder,
+) {
+  final byId = {for (final a in activities) a.id: a};
+  final pinnedHere = <Activity>[
+    for (final id in pinOrder)
+      if (byId[id] != null) byId[id]!,
+  ];
+  final pinnedIds = {for (final a in pinnedHere) a.id};
+  return (
+    pinned: pinnedHere,
+    rest: [
+      for (final a in activities)
+        if (!pinnedIds.contains(a.id)) a,
+    ],
+  );
 }

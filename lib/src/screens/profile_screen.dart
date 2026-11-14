@@ -48,35 +48,77 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     _initialized = true;
   }
 
+  /// The range the height field accepts. Nothing computes from height — it
+  /// is shown on the You row and nowhere else — but a row that reads
+  /// "17 cm" is a typo the screen agreed to, and it stays there looking like
+  /// data until somebody notices.
+  static const double _minHeightCm = 50;
+  static const double _maxHeightCm = 250;
+  static const double _minWeightKg = 20;
+  static const double _maxWeightKg = 350;
+
+  /// null when the field is blank, which is allowed; a value only when it is
+  /// one a person could have.
+  static double? _plausible(String raw, double min, double max) {
+    final value = double.tryParse(raw.trim());
+    if (value == null) return null;
+    return value >= min && value <= max ? value : null;
+  }
+
+  static bool _fieldOk(String raw, double min, double max) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return true;
+    final value = double.tryParse(trimmed);
+    return value != null && value >= min && value <= max;
+  }
+
   bool get _canSave {
     final first = _firstName.text.trim();
     final age = int.tryParse(_age.text.trim());
-    return first.isNotEmpty && age != null && age >= 1 && age <= 120;
+    return first.isNotEmpty &&
+        age != null &&
+        age >= 1 &&
+        age <= 120 &&
+        // Blocked rather than quietly dropped, the way an out-of-range age
+        // already is: Save greys out and the caption under the field says
+        // what it wants.
+        _fieldOk(_height.text, _minHeightCm, _maxHeightCm) &&
+        _fieldOk(_weight.text, _minWeightKg, _maxWeightKg);
   }
 
   Future<void> _save() async {
+    if (!_canSave) return;
     final first = _firstName.text.trim();
     final last = _lastName.text.trim();
     final age = int.tryParse(_age.text.trim());
     if (first.isEmpty || age == null || age < 1 || age > 120) return;
 
-    final height = double.tryParse(_height.text.trim());
-    final weight = double.tryParse(_weight.text.trim());
+    final height = _plausible(_height.text, _minHeightCm, _maxHeightCm);
+    final weight = _plausible(_weight.text, _minWeightKg, _maxWeightKg);
 
     final before = ref.read(userProfileProvider).valueOrNull;
+    // copyWith, not a fresh UserProfile.
+    //
+    // This used to build the whole profile from the five fields on screen
+    // and carry the rest over by hand, with a comment saying so. It carried
+    // the three cycle fields and missed `trainingFrequency`, which was added
+    // later — so saving the profile silently wiped the one behaviour answer
+    // behind the personal resting-HR band, and the band fell back to the
+    // clinical 60–100 with nothing said. Anyone whose gender is female walks
+    // straight from this save into the cycle sheet, so that is the path it
+    // happened on. Copying from the stored profile means a field added after
+    // this screen cannot be dropped by it again.
     await ref.read(userProfileProvider.notifier).save(
-          UserProfile(
+          (before ?? const UserProfile()).copyWith(
             firstName: first,
             lastName: last,
             age: age,
             gender: _gender,
-            heightCm: height != null && height > 0 ? height : null,
-            weightKg: weight != null && weight > 0 ? weight : null,
-            // copyWith is not used here, so the §14b fields have to be
-            // carried over by hand or saving the profile would reset them.
-            cycleMode: before?.cycleMode ?? CycleMode.off,
-            cycleSheetSeen: before?.cycleSheetSeen ?? false,
-            dueDate: before?.dueDate,
+            clearGender: _gender == null,
+            heightCm: height,
+            clearHeightCm: height == null,
+            weightKg: weight,
+            clearWeightKg: weight == null,
           ),
         );
     if (!mounted) return;
@@ -86,15 +128,26 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     // would dismiss the sheet the instant it appeared. Age is deliberately
     // not a condition: the offer used to wait for isWellnessReady, so with an
     // empty age it never appeared at all.
-    final offerCycle = _gender == UserGender.female &&
-        !(before?.cycleSheetSeen ?? false);
+    //
+    // Item 78: on the *change* to female, not on every save while female.
+    // cycleSheetSeen is only set by answering, so swiping the sheet away
+    // left it false and the question came back at every later save — on a
+    // screen somebody opened to fix their height. Swiping away is an answer
+    // too: not now, and not again from this screen. Changing gender away and
+    // back asks once more, which is the one case where asking is right.
+    final becameFemale = _gender == UserGender.female &&
+        before?.gender != UserGender.female;
+    final offerCycle =
+        becameFemale && !(before?.cycleSheetSeen ?? false);
     final navigator = Navigator.of(context);
     final shellContext = navigator.context;
     navigator.pop();
     if (!offerCycle) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (shellContext.mounted) {
-        unawaited(offerCycleTracking(shellContext, ref));
+        // Item 52: not this screen's `ref` — it is disposed by the pop
+        // above, and the sheet waits for a tap long after that.
+        unawaited(offerCycleTracking(shellContext));
       }
     });
   }
@@ -103,12 +156,36 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final profileAsync = ref.watch(userProfileProvider);
+    // Item 91: both of these had no way back. Setup cannot be backed out of
+    // by a swipe, so a profile that will not load — or is slow to — left
+    // the person on a screen with nothing on it and nowhere to go.
     return profileAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      loading: () => Scaffold(
+        appBar: AppBar(
+          leading: IconBtn(
+            icon: 'chevL',
+            onTap: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
       ),
       error: (error, _) => Scaffold(
-        body: Center(child: Text('Could not load profile: $error')),
+        appBar: AppBar(
+          leading: IconBtn(
+            icon: 'chevL',
+            onTap: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Could not load your profile. $error',
+              textAlign: TextAlign.center,
+              style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
+            ),
+          ),
+        ),
       ),
       data: (profile) {
         _seedFrom(profile);
@@ -205,6 +282,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                 ),
               ),
             ),
+            if (!_fieldOk(_height.text, _minHeightCm, _maxHeightCm))
+              _fieldNote('Between ${_minHeightCm.round()} and '
+                  '${_maxHeightCm.round()} cm, or leave it blank.'),
             const SizedBox(height: 12),
             _profileLabel('Weight (kg)'),
             _FieldBox(
@@ -221,9 +301,23 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                 ),
               ),
             ),
+            if (!_fieldOk(_weight.text, _minWeightKg, _maxWeightKg))
+              _fieldNote('Between ${_minWeightKg.round()} and '
+                  '${_maxWeightKg.round()} kg, or leave it blank.'),
           ],
         );
       },
+    );
+  }
+
+  Widget _fieldNote(String text) {
+    final t = context.vyana;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, left: 2),
+      child: Text(
+        text,
+        style: VyanaType.caption.copyWith(color: t.vit('hr')),
+      ),
     );
   }
 

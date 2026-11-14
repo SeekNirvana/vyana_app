@@ -105,6 +105,11 @@ class VitalsNotificationService {
           _channelId,
           _channelName,
           channelDescription: _channelDescription,
+          // Item 81: alerts name values - a low battery percentage, a
+          // resting heart rate, a readiness score. Private, so a locked
+          // phone shows that Vyana has something to say without saying
+          // it to the room.
+          visibility: NotificationVisibility.private,
           icon: kNotificationIconName,
           color: kNotificationAccent,
           importance: Importance.high,
@@ -224,6 +229,24 @@ class VitalsNotificationService {
     } on Object catch (_) {}
   }
 
+  /// Takes back every ring alert already handed to the OS.
+  ///
+  /// Item 64: a scheduled notification outlives the thing it is about. The
+  /// ring can be unpaired, reset, or given away, and the OS will still
+  /// deliver "Nothing is reading you right now" at the appointed hour
+  /// unless it is told otherwise.
+  Future<void> cancelRingAlerts() async {
+    await cancelStaleRingAlert();
+    await cancelRingOfflineAlert();
+    for (final id in const [4301, 4302, 4303, 4306, 4307]) {
+      try {
+        await _plugin.cancel(id);
+      } on Object catch (_) {
+        // One that was never scheduled is not an error.
+      }
+    }
+  }
+
   Future<void> cancelRingOfflineAlert() async {
     try {
       await _plugin.cancel(_ringOfflineId);
@@ -301,6 +324,11 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        // Item 81: alerts name values - a low battery percentage, a
+        // resting heart rate, a readiness score. Private, so a locked
+        // phone shows that Vyana has something to say without saying
+        // it to the room.
+        visibility: NotificationVisibility.private,
         icon: kNotificationIconName,
         color: kNotificationAccent,
         importance: Importance.low,
@@ -338,6 +366,11 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        // Item 81: alerts name values - a low battery percentage, a
+        // resting heart rate, a readiness score. Private, so a locked
+        // phone shows that Vyana has something to say without saying
+        // it to the room.
+        visibility: NotificationVisibility.private,
         icon: kNotificationIconName,
         color: kNotificationAccent,
         importance: Importance.high,
@@ -359,6 +392,11 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        // Item 81: alerts name values - a low battery percentage, a
+        // resting heart rate, a readiness score. Private, so a locked
+        // phone shows that Vyana has something to say without saying
+        // it to the room.
+        visibility: NotificationVisibility.private,
         icon: kNotificationIconName,
         color: kNotificationAccent,
         importance: Importance.high,
@@ -385,6 +423,11 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        // Item 81: alerts name values - a low battery percentage, a
+        // resting heart rate, a readiness score. Private, so a locked
+        // phone shows that Vyana has something to say without saying
+        // it to the room.
+        visibility: NotificationVisibility.private,
         icon: kNotificationIconName,
         color: kNotificationAccent,
         importance: Importance.high,

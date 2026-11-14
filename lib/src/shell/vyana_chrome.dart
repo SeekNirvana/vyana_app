@@ -243,9 +243,11 @@ class NovaPill extends ConsumerWidget {
     // the on-device model happens to be installed. Someone running their
     // own endpoint should never be told to download a 3.1 GB model they
     // have no use for.
-    final ready = ai.backend == AiBackend.cloud
-        ? ai.cloudReady
-        : manager.modelReady;
+    final ready = novaCanAnswer(
+      backend: ai.backend,
+      cloudReady: ai.cloudReady,
+      localReady: manager.modelReady,
+    );
     final tint = t.mutedInk;
     final bright = t.heading;
 
@@ -336,6 +338,11 @@ enum RingUiState {
 
   /// Bug 48: a reconnect the user asked for, in flight.
   connecting,
+
+  /// The phone's Bluetooth radio is off. Distinct from [disconnected]:
+  /// reconnecting cannot work and the fix is one tap, so saying "Reconnect"
+  /// here is an instruction that fails every time it is followed.
+  bluetoothOff,
 }
 
 RingUiState ringUiStateOf(RingController c) {
@@ -343,6 +350,9 @@ RingUiState ringUiStateOf(RingController c) {
   // leaving the pill on CONNECT while the attempt runs.
   if (c.isUserReconnecting) return RingUiState.connecting;
   if (c.isSyncing) return RingUiState.syncing;
+  // Before every other not-connected state: with the radio off they are all
+  // true and only this one can be acted on.
+  if (c.bluetoothIsOff && c.hasRingContext) return RingUiState.bluetoothOff;
   // Bug 43: the state existed and the mock had it, but nothing ever returned
   // it, so a charging ring showed a plain percentage. The SDK reports the
   // status; this is the one place that has to read it.
@@ -380,6 +390,10 @@ String _agoLabel(DateTime at) {
       return (text: 'SYNCING YOUR RING', color: t.gold, pulse: true);
     case RingUiState.disconnected:
       return (text: 'RING NOT CONNECTED', color: t.qPoor, pulse: false);
+    case RingUiState.bluetoothOff:
+      // Not "NOT CONNECTED": that reads as a ring problem and sends people
+      // looking at the ring. The phone's radio is off and it is one tap.
+      return (text: 'BLUETOOTH IS OFF', color: t.qPoor, pulse: false);
     case RingUiState.stale:
       return (
         text: last == null ? 'NOT SYNCED YET' : 'LAST SYNC ${_agoLabel(last)}',
@@ -519,6 +533,95 @@ class _ReachingRingBanner extends StatelessWidget {
   }
 }
 
+/// "Bluetooth is off" with the one tap that fixes it.
+///
+/// The app detected this already and said nothing: the pill offered
+/// Reconnect, every tap started a connection that could not succeed, and the
+/// two-second poll retried for as long as the screen was open. Telling
+/// somebody to reconnect when the radio is off is an instruction that fails
+/// every time it is followed.
+class _BluetoothOffBanner extends StatefulWidget {
+  const _BluetoothOffBanner({required this.controller, required this.margin});
+
+  final RingController controller;
+  final EdgeInsets margin;
+
+  @override
+  State<_BluetoothOffBanner> createState() => _BluetoothOffBannerState();
+}
+
+class _BluetoothOffBannerState extends State<_BluetoothOffBanner> {
+  bool _asking = false;
+
+  Future<void> _ask() async {
+    if (_asking) return;
+    setState(() => _asking = true);
+    try {
+      await widget.controller.askToEnableBluetooth();
+    } finally {
+      if (mounted) setState(() => _asking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final tone = t.vit('hr');
+    return Padding(
+      padding: widget.margin,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(13, 10, 13, 10),
+        decoration: BoxDecoration(
+          color: tone.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: tone.withValues(alpha: 0.32)),
+        ),
+        child: Row(
+          children: [
+            VyanaIcon('bluetooth', size: 17, color: tone),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Bluetooth is off',
+                    style: VyanaType.caption.copyWith(
+                      color: t.text,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    Platform.isIOS
+                        ? 'Your ring needs it. Turn it on in Settings.'
+                        : 'Your ring needs it to reach the phone.',
+                    style: VyanaType.caption.copyWith(color: t.textSec),
+                  ),
+                ],
+              ),
+            ),
+            if (!Platform.isIOS) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _asking ? null : _ask,
+                child: Text(
+                  _asking ? 'Opening…' : 'Turn on',
+                  style: VyanaType.label.copyWith(
+                    color: tone,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// An icon turning once a second — a ring-sync state in motion. Gold by
 /// default, because that is what reaching or syncing a ring looks like.
 class SpinningIcon extends StatefulWidget {
@@ -589,6 +692,9 @@ class RingStaleBanner extends StatelessWidget {
     if (state == RingUiState.connecting) {
       return _ReachingRingBanner(margin: margin);
     }
+    if (state == RingUiState.bluetoothOff) {
+      return _BluetoothOffBanner(controller: c, margin: margin);
+    }
     if (state != RingUiState.stale && state != RingUiState.disconnected) {
       return const SizedBox.shrink();
     }
@@ -599,7 +705,7 @@ class RingStaleBanner extends StatelessWidget {
         ? 'Nothing is reading you right now'
         : last == null
         ? 'Today is missing'
-        : 'Today is missing ${DateTime.now().difference(last).inHours} hours';
+        : 'Today is missing ${staleGapLabel(DateTime.now().difference(last))}';
     final line =
         body ??
         (error
@@ -936,23 +1042,22 @@ class PatternCard extends StatelessWidget {
   VyanaColors t, {
   bool hrvOnly = false,
 }) {
+  // Item 74: the state word comes from readinessStateWord, in
+  // wellness_state.dart, which the notification and the home-screen widget
+  // also read. Only the colours and the short badge word are decided here.
+  final state = readinessStateWord(score, hrvOnly: hrvOnly);
   if (score == null) {
     // No score is not a verdict: neutral grey, not the amber band.
-    return (hue: t.mutedInk, soft: t.mutedInk, word: '—', state: 'No read yet');
+    return (hue: t.mutedInk, soft: t.mutedInk, word: '—', state: state);
   }
   if (hrvOnly) {
-    return (
-      hue: t.mutedInk,
-      soft: t.mutedInk,
-      word: 'HRV',
-      state: 'Partial read',
-    );
+    return (hue: t.mutedInk, soft: t.mutedInk, word: 'HRV', state: state);
   }
-  if (score >= 70) {
-    return (hue: t.qGood, soft: t.qGoodSoft, word: 'READY', state: 'Ready');
+  if (score >= kReadinessReadyFrom) {
+    return (hue: t.qGood, soft: t.qGoodSoft, word: 'READY', state: state);
   }
-  if (score >= 50) {
-    return (hue: t.qLevel, soft: t.qLevelSoft, word: 'FAIR', state: 'Balanced');
+  if (score >= kReadinessBalancedFrom) {
+    return (hue: t.qLevel, soft: t.qLevelSoft, word: 'FAIR', state: state);
   }
-  return (hue: t.qPoor, soft: t.qPoorSoft, word: 'LOW', state: 'Depleted');
+  return (hue: t.qPoor, soft: t.qPoorSoft, word: 'LOW', state: state);
 }

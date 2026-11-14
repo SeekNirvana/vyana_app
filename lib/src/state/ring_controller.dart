@@ -153,7 +153,48 @@ class RingController extends ChangeNotifier {
   RingRepository get repo => _repo;
   SavedPranaRing? get pairedRing => _pairedRing;
   bool get isReady => _isReady;
+
+  /// Why the ring SDK did not start, when it did not.
+  ///
+  /// Item 85 (i): the failure only reached [status], which nothing beside
+  /// the greyed-out Pair row shows. So on a phone where the SDK will not
+  /// start, Scan & pair was simply dead — no reason, no way to try again,
+  /// and no way to tell it from a bug in the app.
+  String? get sdkFailure => _sdkFailure;
+  String? _sdkFailure;
+
+  /// Tries the SDK again, for the Retry beside [sdkFailure].
+  Future<void> retrySdkInit() async {
+    if (_isReady) return;
+    _set(() => _sdkFailure = null);
+    await initialize();
+  }
   bool get isConnecting => _isConnecting;
+
+  /// Whether the phone's Bluetooth radio is off.
+  ///
+  /// The app knew this already — _applyBluetoothStateToModel has set the
+  /// status string "Bluetooth is off" for a long time — but nothing read it,
+  /// so the pill kept saying CONNECT, every tap started a connection that
+  /// could not succeed, and the poll quietly retried forever. Nothing on
+  /// screen said the one thing that would have fixed it in a tap.
+  bool get bluetoothIsOff => _bluetoothIsOff;
+  bool _bluetoothIsOff = false;
+
+  /// Ask the system to turn Bluetooth on.
+  ///
+  /// Android shows its own "an app wants to turn on Bluetooth" dialog, or
+  /// the Bluetooth settings screen where that is not permitted. iOS allows
+  /// neither, so there this returns false and the caller says what to do.
+  Future<bool> askToEnableBluetooth() async {
+    final shown = await _repo.requestEnableBluetooth();
+    if (!shown) {
+      _set(() => _status = Platform.isIOS
+          ? 'Turn Bluetooth on in Settings, then come back.'
+          : 'Could not open Bluetooth settings.');
+    }
+    return shown;
+  }
   bool get isSyncing => _isSyncing;
   bool get isMeasuring => _isMeasuring;
   bool get isConnected => _isConnected;
@@ -202,6 +243,10 @@ class RingController extends ChangeNotifier {
       temperature: _vitals.temperature,
       stressIndex: _vitals.pressure,
       readinessScore: dashboard.readinessScore,
+      // Item 74: passed on, so a score built from HRV with no night behind
+      // it reads as "Partial read" in the notification and the widget too,
+      // rather than earning a verdict the screen would not give it.
+      readinessIsHrvOnly: dashboard.readinessIsHrvOnly,
     );
   }
 
@@ -247,6 +292,19 @@ class RingController extends ChangeNotifier {
   /// screen, so a ring out of reach failed silently.
   bool get isUserReconnecting => _isUserReconnecting;
 
+  /// Stops claiming a user-driven reconnect is still being waited for.
+  ///
+  /// Item 84 (bug 48): reconnectWithFeedback gives up after twenty seconds,
+  /// but the BLE attempt underneath can run far longer — and the pill, the
+  /// eyebrow and the banner all read this flag, so they went on saying
+  /// CONNECTING after the person had already been told it failed. The
+  /// attempt is left to finish on its own; only the claim that we are still
+  /// waiting is withdrawn.
+  void giveUpUserReconnect() {
+    if (!_isUserReconnecting) return;
+    _set(() => _isUserReconnecting = false);
+  }
+
   /// The outcome of the most recent one-shot measurement, kept after it ends
   /// so the detail screen can show success or failure instead of dropping
   /// back to its default subtitle (bug 15). Cleared when a new one starts.
@@ -262,7 +320,7 @@ class RingController extends ChangeNotifier {
   /// "Synced" means complete, so the eyebrow must not say so until this is
   /// true (bug 17).
   bool get hasTonightSleep {
-    final nights = sleepDaySummaries(_history.sleep);
+    final nights = _history.sleepNights;
     return sleepNightForToday(nights) != null;
   }
 
@@ -300,7 +358,7 @@ class RingController extends ChangeNotifier {
 
   /// Why last night is missing or partial, for Home and for Nova (item 51).
   MissingNightReason get missingNightReason {
-    final nights = sleepDaySummaries(_history.sleep);
+    final nights = _history.sleepNights;
     final night = sleepNightForToday(nights);
     return missingNightReasonFor(
       status: sleepNightStatus(night, history: _history),
@@ -340,8 +398,18 @@ class RingController extends ChangeNotifier {
   /// ring on its charger often drops out of range; it is still off the
   /// finger on purpose, so the low-battery and out-of-reach alerts have
   /// nothing to warn about (bug 43).
-  bool get wasChargingWhenLastSeen =>
-      normalizedBatteryStatus(batteryStatus) == 'charging';
+  bool get wasChargingWhenLastSeen {
+    if (normalizedBatteryStatus(batteryStatus) != 'charging') return false;
+    if (_isConnected) return true;
+    // Item 84 (bug 43, second half): believed for a while, not forever. A
+    // ring is full inside two hours, so a status that still says "charging"
+    // long after the ring went out of reach is a stale reading — and
+    // believing it muted every battery and out-of-reach alert indefinitely,
+    // which is the opposite of what bug 43 was for.
+    final seen = _lastConnectionConfirmedAt;
+    if (seen == null) return false;
+    return DateTime.now().difference(seen) <= kChargingBelievedFor;
+  }
 
   /// Battery percent from the newest source that reported one.
   int? get batteryPercent {
@@ -373,7 +441,14 @@ class RingController extends ChangeNotifier {
     if (battery == null ||
         battery <= 0 ||
         battery > kBatteryRecoveredPercent ||
-        _pairedRing == null) {
+        _pairedRing == null ||
+        // Item 84 (bug 47): a ring on its charger is on its way up by
+        // choice. The live Android check already declines in that case;
+        // the scheduled one did not, so an iPhone could be told at nine in
+        // the evening about a battery that had been charging since seven.
+        // Cancelling rather than skipping also withdraws one scheduled
+        // before the ring went on charge.
+        wasChargingWhenLastSeen) {
       await notify.cancelOvernightBattery();
       return;
     }
@@ -538,7 +613,12 @@ class RingController extends ChangeNotifier {
       }
     } on Object catch (error) {
       if (_disposed) return;
-      _set(() => _status = 'SDK unavailable: $error');
+      _set(() {
+        _status = 'SDK unavailable: $error';
+        // Item 85 (i): kept where a screen can read it, so the dead Pair
+        // row can say why it is dead and offer another go.
+        _sdkFailure = 'The ring service would not start on this phone. $error';
+      });
     }
   }
 
@@ -673,6 +753,7 @@ class RingController extends ChangeNotifier {
     final failedConnectionEvent =
         bluetoothState == BluetoothState.connectFailed;
     final bluetoothOffEvent = bluetoothState == BluetoothState.off;
+    _bluetoothIsOff = bluetoothOffEvent;
     final disconnectedEvent =
         bluetoothState == BluetoothState.disconnected || bluetoothOffEvent;
     final bluetoothOnEvent = bluetoothState == BluetoothState.on;
@@ -692,12 +773,16 @@ class RingController extends ChangeNotifier {
       _isConnecting = false;
       _lastConnectionConfirmedAt = DateTime.now();
       _reconnectFailedThisLaunch = false;
-      // Bug 6: re-arm the offline alert from this moment, so two hours out of
-      // reach is announced even if the app never runs again in between.
-      unawaited(
-        VitalsNotificationService.instance
-            .scheduleRingOfflineAlert(DateTime.now()),
-      );
+      // Bug 6: re-arm the offline alert from this moment, so two hours out
+      // of reach is announced even if the app never runs again in between.
+      // Item 64: only where the schedule is the only path. On Android the
+      // service checks it live, and arming both is why it arrived twice.
+      if (!liveChecksRunHere) {
+        unawaited(
+          VitalsNotificationService.instance
+              .scheduleRingOfflineAlert(DateTime.now()),
+        );
+      }
       _resetReconnectBackoff();
       if (deviceInfo != null) {
         _selectedDevice = deviceInfo;
@@ -898,6 +983,19 @@ class RingController extends ChangeNotifier {
         _isConnecting ||
         _isAutoReconnecting) {
       return _isConnected;
+    }
+
+    // With the radio off this can only fail, and failing quietly is what
+    // made it look like the app was trying: the poll called it every two
+    // seconds for as long as the screen was open. Record the state so the
+    // pill and the banner can say so, and stop.
+    if (await _repo.bluetoothState() == BluetoothState.off) {
+      _set(() {
+        _bluetoothIsOff = true;
+        _isUserReconnecting = false;
+        _status = 'Bluetooth is off';
+      });
+      return false;
     }
 
     final now = DateTime.now();
@@ -1219,6 +1317,16 @@ class RingController extends ChangeNotifier {
     await prefs.remove(_healthMonitoringEnabledKey);
     await prefs.remove(_healthMonitoringIntervalKey);
     await prefs.remove(_healthMonitoringAckKey);
+
+    // Item 64: a removed ring must stop being watched. Two separate things
+    // outlived it — notifications already handed to the OS, which arrive
+    // whatever the app thinks, and the flags that decide whether to warn
+    // about a ring at all. Without both, "Nothing is reading you right
+    // now" turned up about a ring that had been unpaired.
+    await VitalsNotificationService.instance.cancelRingAlerts();
+    for (final key in kRingAlertStateKeys) {
+      await prefs.remove(key);
+    }
     await _historyCache?.clearAll();
     await _historyLogger.clear();
     if (_disposed) return;
@@ -1292,7 +1400,14 @@ class RingController extends ChangeNotifier {
     try {
       await cache.save(
         deviceId: deviceId,
-        history: result.history.sanitized(),
+        // Item 83: the merged history, not this sync's. An overnight sync
+        // deliberately does not ask for sleep (bug 19), so result.history
+        // has none — and saving that blanked the nights the cache already
+        // held. Close the app before morning, open it before the morning
+        // sync, and past nights were gone; any night older than the ring
+        // still keeps was gone for good. _history is the one that kept
+        // them, and it is already sanitised where it is assigned.
+        history: _history,
         vitals: result.vitals.merge(_vitals),
         basicInfo: result.basicInfo,
       );
@@ -1309,7 +1424,7 @@ class RingController extends ChangeNotifier {
     // for everything except sleep; the night is fetched on the first sync
     // after wake. An explicit sync (the user tapping Sync now) always asks.
     final fetchSleep = includeSleep ??
-        !isLikelyAsleep(DateTime.now(), sleepDaySummaries(_history.sleep));
+        !isLikelyAsleep(DateTime.now(), _history.sleepNights);
     final retainedSleep = _history.sleep;
     final wantsTonight = !hasTonightSleep &&
         DateTime.now().hour < kTonightSleepGiveUpHour;
@@ -1380,10 +1495,12 @@ class RingController extends ChangeNotifier {
       // Bug 6 (2): the 24-hour stale alert is handed to the OS, so it arrives
       // even if the app never runs again before then. Re-armed here, which is
       // the only place a sync is known to have succeeded.
-      unawaited(
-        VitalsNotificationService.instance
-            .scheduleStaleRingAlert(DateTime.now()),
-      );
+      if (!liveChecksRunHere) {
+        unawaited(
+          VitalsNotificationService.instance
+              .scheduleStaleRingAlert(DateTime.now()),
+        );
+      }
       unawaited(_persistHistoryToCache(result));
       final deviceForStore = _selectedDevice ?? _pairedRing?.toDeviceMap();
       if (deviceForStore != null) {
@@ -1409,6 +1526,11 @@ class RingController extends ChangeNotifier {
           _status = 'Sync failed: $error';
         }
       });
+      // Item 84 (bug 36): also on the way out. Waiting for last night only
+      // stops when this runs, so a failed sync left "Reading last night…"
+      // on Home until noon — a spinner standing in for an error nobody was
+      // told about.
+      _evaluateTonightSleep();
       _publishMeasurementSnapshot();
     } finally {
       if (!_disposed) {
@@ -1555,6 +1677,25 @@ class RingController extends ChangeNotifier {
     }
     await _persistRingOnboarding();
     _set(() {});
+    // Item 62: asked here, once, and only when the person has just said
+    // they want this ring watched — not from inside the service start that
+    // the two-second poll reached, where "Don't allow" was answered with
+    // the same question two seconds later.
+    if (enableForegroundService) {
+      await RingForegroundService.ensureNotificationPermission();
+    } else {
+      // Item 76: the alert switches are on by default on every platform, so
+      // consent is owed on every platform. iOS was only ever asked on a
+      // toggle or a Monitor-all run, so until someone happened to do one of
+      // those, every alert the app had been told to send was dropped in
+      // silence — the switches said yes and nothing arrived.
+      //
+      // ensureNotificationPermission above returns immediately off Android,
+      // which is why this is the other branch rather than an extra call:
+      // asking twice in a row on Android is a second dialog about a
+      // decision already made.
+      await VitalsNotificationService.instance.requestPermissions();
+    }
     _syncForegroundService();
   }
 
@@ -1714,22 +1855,50 @@ class RingController extends ChangeNotifier {
     _set(() => _status = response);
   }
 
-  Future<void> renameRing(String name) async {
-    if (!_isConnected) return;
+  /// Renames the connected ring, and says what happened.
+  ///
+  /// Item 60: this used to return void and, when the ring was not connected,
+  /// return having changed nothing at all — no status, no error, no signal
+  /// of any kind. Setup's first step read the status string to guess whether
+  /// it had worked, so a failure left the button doing nothing and a
+  /// disconnected ring let it walk straight past the step it had not done.
+  /// The result is the answer now; nobody has to infer it.
+  Future<RingNameUpdateResult> renameRing(String name) async {
+    if (!_isConnected) {
+      const message =
+          'Your ring is not connected, so it cannot be renamed yet.';
+      _set(() => _status = message);
+      return const RingNameUpdateResult(
+        successful: false,
+        name: '',
+        message: message,
+      );
+    }
     final validationError = validateRingName(name);
     if (validationError != null) {
       _set(() => _status = validationError);
-      return;
+      return RingNameUpdateResult(
+        successful: false,
+        name: '',
+        message: validationError,
+      );
     }
     _set(() => _status = 'Updating ring name');
     final result = await _repo.renameConnectedRing(name);
-    if (_disposed) return;
+    if (_disposed) {
+      return const RingNameUpdateResult(
+        successful: false,
+        name: '',
+        message: 'Renaming was cancelled.',
+      );
+    }
     if (result.successful && _pairedRing != null) {
       final updated = _pairedRing!.copyWith(name: result.name);
       await PranaRingStore.save(updated);
       _set(() => _pairedRing = updated);
     }
     _set(() => _status = result.message);
+    return result;
   }
 
   // ── Measurements & ECG ────────────────────────────────────────────────────
@@ -1840,6 +2009,22 @@ class RingController extends ChangeNotifier {
         _allVitalsMessage =
             'Finish your active session before a full check-in.';
       });
+      return;
+    }
+
+    // Same as the reconnect above: "Check vitals" went straight to
+    // "Connecting to your ring…" and retried against a radio that was off,
+    // which is the other half of the report. Ask for the one thing that
+    // would let it work.
+    if (await _repo.bluetoothState() == BluetoothState.off) {
+      _bluetoothIsOff = true;
+      _set(() {
+        _allVitalsPhase = AllVitalsPhase.failed;
+        _allVitalsMessage = Platform.isIOS
+            ? 'Bluetooth is off. Turn it on in Settings, then try again.'
+            : 'Bluetooth is off — turning it on lets your ring answer.';
+      });
+      unawaited(askToEnableBluetooth());
       return;
     }
 
@@ -2500,8 +2685,31 @@ class RingController extends ChangeNotifier {
     _syncForegroundService();
   }
 
+  /// What the foreground service is being asked for, so a poll that
+  /// changed nothing can be recognised as such.
+  ForegroundServiceIntent? _lastForegroundIntent;
+
   void _syncForegroundService() {
     if (!Platform.isAndroid) return;
+
+    // Item 62: this is reached from _publishMeasurementSnapshot, which the
+    // connection poll calls every two seconds. Each call crossed to the
+    // platform three times — check permission, ask if denied, read whether
+    // the service runs, reset the repeat interval — for a state that had
+    // almost never changed. Battery for nothing, a permission prompt on a
+    // loop for anyone who said no once, and a heartbeat timer restarted
+    // before it could fire.
+    final intent = ForegroundServiceIntent(
+      shouldRun: _foregroundServiceEnabled && _pairedRing != null,
+      intervalMinutes: _periodicSyncIntervalMinutes,
+    );
+    if (intent == _lastForegroundIntent) {
+      // The notification text still follows the ring, which is cheap and
+      // is the part a person actually sees change.
+      if (intent.shouldRun) _updateForegroundNotification();
+      return;
+    }
+    _lastForegroundIntent = intent;
     // Bug 21 (2): this used to require _isConnected, so the moment the ring
     // dropped, the service whose whole job is to reconnect it was shut down
     // — and with it the alert evaluation. A disconnected ring is exactly

@@ -81,7 +81,6 @@ How often you train
 Erases ring data and unpairs
 metrics:hrv-after:
 journal:tag:
-3.1 GB
 
 # v1.1.1 — Ring state you can act on: stale/disconnected pill, alerts persist
 Reaching your ring…
@@ -189,16 +188,25 @@ Display size
 More fits on screen
 DisplayScaleLayer
 Skip — set this later
-kHealthMonitoringApplyTimeout
 Light, dark, or whatever the phone is set to
 kokoro-en-v0_19
-Download Nova's voice
-Nova's voice is not available in this build yet. Replies
-Needs Nova's voice installed
-355 MB
 AudioRouteService
 Your own endpoint
 On this phone
 Test and save
 ic_notification
-kNotificationAccent
+Steady, and the one Nova was written against.
+Her voice
+your voice to text
+replies stay on screen
+Conversations
+New conversation
+Kept on this phone, like everything else.
+Delete every conversation?
+ChatHistoryController
+forgetConversation
+novaChatSubtitle
+Finish setting up your endpoint
+Set up the endpoint
+onActiveModelChanged
+Track my cycle

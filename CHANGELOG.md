@@ -1,5 +1,266 @@
 # Changelog
 
+## v1.1.6 — 2026-11-14 · Which model, where it thinks, and what it costs
+
+Three problems were reported against v1.1.5 and turned out to share a cause:
+screens asserted things the settings below them no longer controlled. Looking
+for that shape on purpose found six more of them, and then the bugs
+underneath — a validator that made any model under 1.5 GB uninstallable, a
+load order that took the whole phone down, a chat an endpoint user could not
+open, and a model picker that downloaded something other than what it named.
+
+Two of those were introduced inside this release and caught before it
+shipped. One claim this entry made about a model's quality turned out to be
+wrong about its cause, and is corrected below rather than quietly dropped.
+Nova's conversations are also kept now, which is the one thing here that is
+a feature rather than a correction.
+
+### Fixed
+
+- **A model smaller than Gemma could never install.** The download validator
+  read `fileLength > 1500 * 1024 * 1024`, commented "Gemma models are
+  typically > 1.5GB" — a floor written for one model and applied to all of
+  them. A 614 MB bundle downloaded perfectly and was then deleted as corrupt,
+  which from outside looked like the progress bar filling and the model
+  simply never appearing. It now checks against the size each model is
+  supposed to be, with 2% of slack; truncated files are still refused, and
+  more precisely than before.
+- **A phone short of memory now tries CPU before GPU.** Loading on the GPU
+  path inflates well past the file's size, and on a 4 GB phone it does not
+  fail politely: the low-memory killer took the app and the system launcher
+  with it. A SIGKILL is not an exception, so the existing GPU→NPU fallback
+  never ran. Phones with memory keep the previous order, and a phone whose
+  RAM could not be measured keeps it too.
+- **The model picker did not change what was downloaded.** It wrote the
+  chosen model to one place and the downloader, validator, registrar and
+  loader all read another, with nothing connecting them — so picking Qwen3
+  1.7B put "Install Qwen3 1.7B · 977 MB" on the button and then fetched
+  `gemma-4-E2B-it.litertlm`. Found by looking at the file on the phone while
+  the screen said it was downloading the other one. There is one writer now,
+  and changing the model re-registers and re-checks what is installed,
+  because "installed" is a question about a particular file. The backend card
+  above the picker also quoted one flat "2.6 GB" beside a row offering
+  977 MB; it reads the chosen model.
+- **Saving your profile wiped the training answer.** The editor rebuilt the
+  whole profile from the five fields on screen and carried the rest over by
+  hand. It carried the three cycle fields and missed `trainingFrequency`,
+  which was added to the profile later — so every save silently dropped the
+  one behaviour answer behind the personal resting-heart-rate band, and the
+  band fell back to the clinical 60–100 with nothing said. Anyone whose
+  gender is female walks straight from that save into the cycle sheet, so
+  that is the path it always happened on. The editor copies from the stored
+  profile now, which means a field added after it cannot be dropped by it
+  again.
+- **The profile accepted a height nobody has.** A mistyped 17 showed on the
+  You row as "17 cm", sitting there looking like a measurement. Nothing
+  computes from height, so nothing broke — it was just wrong in public.
+  Height and weight are now held to a range the fields state, and Save greys
+  out until they are, the way an out-of-range age already did.
+- **An endpoint user could not reach the chat at all.** The Nova pill worked
+  out readiness from the backend the user chose; the chat screen worked it out
+  from `modelReady` alone. So with an endpoint set up and tested the pill said
+  "Ask Nova" and the screen behind it offered a 2.6 GB download instead of a
+  conversation — the endpoint could be configured and then never used. One
+  function answers for both now. The chat's app bar also said "on-device"
+  whatever the backend was, and the gate offered that download to someone
+  whose endpoint was merely half filled in; both read the backend.
+- **Nova in You said "On-device model · nothing leaves the phone"** whatever
+  the user had chosen, so anyone pointing her at their own endpoint was told
+  the opposite of what was happening. It reads the backend now, as does the
+  footprint screen and the guide store's privacy line.
+- **"Where is the audio model in settings" had no answer** — there was no
+  voice row in You at all, only a card under Practice named after something
+  else. There is one, and the voice-cue toggle says it stays silent until the
+  voice is installed rather than promising sound it cannot make.
+- **The footprint screen counted the voice and the listening model as one
+  row.** With the voice never installed, `VOICE (VANI)` showed Whisper's
+  74 MB — the right number against the wrong thing. They are two models doing
+  opposite jobs and are now `LISTENING` and `SPEAKING`.
+- **"Vani Voice" named both and downloaded one**, which is why installing it
+  produced no audio and no explanation.
+- **The install size was wrong.** It read "3.1 GB" against a 2,588,147,712
+  byte file. Sizes come from measured byte counts now, so they cannot drift
+  from the files they describe.
+- **The store hard-coded "Gemma E2B"** rather than reading the model
+  definition, so a build pointed at another model still said Gemma.
+
+### Added
+
+- **Conversations are kept.** The chat lived in the chat screen's own state:
+  leaving the screen dropped every word of it. It is now written to the local
+  vault as it happens, and the chat's app bar opens **Conversations** — each
+  row the question that opened it, the time, and which model answered. Opening
+  one shows the transcript as it was on screen; it can be deleted on its own
+  or all at once. Nothing leaves the phone, and You → Nova now counts them
+  rather than listing only the models.
+- **"New conversation", which the model is told about too.** The screen's
+  messages and the model's own history were two records of one conversation
+  and only one of them was ever cleared — leave the chat and come back and a
+  fresh-looking greeting was answered by a model still carrying the previous
+  conversation. Starting a new one now ends both.
+
+A reopened conversation is for reading, and says so instead of offering a
+"continue" that could not work: the whole context window is 1,024 tokens on
+Android and 512 on iOS, shared between the system prompt, the DATA block of
+the user's own numbers, the question and the reply — replaying a stored
+conversation into that would cost the room the next answer needs.
+
+### Changed
+
+- **One screen for Nova's model, in the order the choices happen.** The AI
+  settings were three screens with overlapping jobs and five doors between
+  them. Your AI is now the whole flow: where she thinks, then — only once
+  "on this phone" is chosen — which model and its install, or the endpoint
+  form; then her voice. The guide store is gone; it was built for a
+  multi-guide world that never arrived and had become the place the model and
+  voice downloads were parked.
+- **The model picker, built — and then stood down to one model, because
+  the second one cannot answer.** Qwen3 4B Instruct (2.7 GB) was never the
+  smaller-phone option it was offered as: larger than Gemma, and more memory
+  than these phones have. Qwen3 1.7B at int4 (977 MB) is the right size and
+  downloads, validates and loads cleanly on a 4 GB phone — and then answers
+  nothing, because the prompt never reaches it. The native prefill log shows
+  378 characters going in and an empty user turn coming out:
+
+        <|im_start|>user
+        <|im_end|>
+
+  Asked "What is 2 plus 2" it replied "Sure! I'm here to help with anything
+  you need." Qwen3-0.6B did the same thing earlier in this release and was
+  read as a model too small to be useful; it was never given the question
+  either. On `.litertlm` the native LiteRT-LM applies the chat template, and
+  under flutter_gemma 0.13.6 the Qwen3 one renders the message away — so no
+  entry in the catalogue can work around it, and none should pretend to.
+
+  There is no ungated small Gemma-family `.litertlm` to put there instead:
+  Gemma3-1B-IT and Gemma2-2B-IT both answer 401 without a Hugging Face
+  licence acceptance this app has no way to carry. flutter_gemma is at
+  1.11.4 against our 0.13.6, so that upgrade is the route to a second model,
+  re-tested against this same prefill log. The picker's plumbing stays; with
+  one model the heading and the rows fold away, and a phone too small for
+  Gemma is served by an endpoint, one tap away on the same screen.
+- **The RAM warning sits on the model row it concerns**, with the phone's
+  measured memory in it, instead of a banner above a screen that also serves
+  people running no local model at all.
+- **Nova's voice can arrive now, and speak when it does.** It had never been
+  downloadable: the pinned list was empty, so v1.1.5 shipped a voice that
+  could not be fetched. The four files are hosted on seeknirvana.com and
+  pinned by SHA-256, checked after download and again before first load.
+- **The voice would not have spoken even once the files were there.** The
+  runtime was handed an espeak-ng directory and no lexicon, which is the one
+  combination sherpa-onnx refuses: every sentence came back as an empty
+  waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
+  less to download — 341 MB, not the 355 MB the prompt used to quote.
+- **Unpairing a ring stops the alerts about it.** Unpair and reset cleared
+  the ring but not the notifications already handed to the OS, nor the
+  flags that decide whether to warn about one — so "Nothing is reading you
+  right now" arrived about a ring that had been removed. Both are cleared
+  now.
+- **The stale and out-of-range alerts stop arriving twice.** Each was both
+  scheduled in advance and checked live, and the scheduled one never
+  recorded that it had fired. One path each now: scheduled on iPhone,
+  which has no background timer, and checked live on Android, which has a
+  service that can see what is actually true.
+- **Overnight alerts work from what is known, not what was true at
+  bedtime.** The background service judged alerts from a snapshot only the
+  app writes, so once your phone suspended Vyana the readings stopped
+  moving: the battery never fell, the ring never went out of range, and a
+  "charging" that was true when you plugged in muted every battery warning
+  until morning. A snapshot older than half an hour is now treated as
+  unknown rather than current — which lets the out-of-range alert fire and
+  stops the others deciding from stale numbers. The 15% warning no longer
+  fires between 22:00 and 07:00, when there is nothing to be done about it;
+  the evening check that catches it in time still does.
+- **Vyana stops claiming Android killed it when it did not.** The app read
+  the background heartbeat from a cache it filled at launch, so the longer
+  it stayed open the larger the gap appeared.
+- **The background service stops being restarted every two seconds.** The
+  connection poll reached it on every tick: re-checking notification
+  permission — and re-asking anyone who had tapped "Don't allow" — reading
+  whether the service was running, and resetting the twenty-minute
+  heartbeat's timer before it could ever elapse. It is touched only when
+  something it depends on actually changes now, and permission is asked
+  once, at pairing.
+- **Your data: back up, restore, and a plain word about where history
+  lives.** Everything Vyana holds is on your phone, so deleting the app
+  deletes it — and neither Android nor iPhone warns an app it is being
+  removed, so there was never a moment to say so. You → Your data says it,
+  and answers it: one encrypted file holding the vault, your settings and
+  your meal photos, saved wherever you choose through the system sheet.
+  Restoring asks for the passphrase and puts it all back. A new phone is
+  offered the restore before anything else, and after thirty days the row
+  quietly says how long it has been — in grey, with no notification.
+  Without the passphrase a backup cannot be opened, by anyone, including
+  us.
+- **Pinned practices come first in their category.** With a few pins, the
+  rail at the top became a scroll hunt and the list below still showed every
+  practice in catalogue order with your pinned ones mixed in — so finding one
+  you had deliberately marked meant scrolling past the ones you hadn't. Each
+  category now leads with PINNED, in your own pin order, then ALL. Nothing
+  appears twice, and searching stays one flat list.
+- **Two labels in Wallet stop pretending to be buttons.** The currency beside
+  your address and a row's status badge rippled under a finger and did
+  nothing. They are text, and are drawn as text now.
+- **Android no longer copies your health data to Google Drive.** The manifest
+  set no backup attribute, and Android's default is on — so the vault, with
+  ring history, journal entries and cycle days, could be uploaded to your
+  Drive. Nobody chose that, it contradicts "on this phone only", and on the
+  14 Nov reinstall nothing came back from it anyway. Cloud backup is off and
+  every data domain excluded; a phone-to-phone transfer is still allowed,
+  because that never leaves your own hands.
+- **Buying a ring happens on seeknirvana.com now, on every phone.** The
+  in-app checkout wrote your shipping country and a free-text message into
+  the Solana memo — public and permanent, and where people reasonably typed
+  their address — while collecting no name, address or phone, so an order
+  could be paid for and undeliverable. The website already takes card and
+  USDC on Solana or Base and asks for everything needed, privately. Orders
+  placed before this release stay under Your orders; the app no longer
+  creates any.
+- **Ring setup no longer offers to erase your ring by default.** "Erase what
+  the ring stored" arrived switched on, with the main button reading "Wipe
+  ring data", so a first pairing erased the readings held on the ring itself
+  — which after a reinstall is the only copy of them left. It starts off now,
+  and switches on only when you are replacing a different ring, which is the
+  case it was meant for. Its caption said Vyana would "start fresh from your
+  first sync"; the sync had already happened.
+- **A ring that will not take a name no longer traps setup on its first
+  step.** The step decided whether the rename had worked by looking for the
+  word "failed" in a status line, so a failure worded any other way read as
+  success — and a ring that was merely out of range walked straight past the
+  step without renaming anything. The rename reports its own result now, the
+  reason appears under the field, and because setup cannot be backed out of
+  there is a "Skip, keep current name".
+- **She says the numbers.** Kokoro has no lexicon entry for any digit, and a
+  word it cannot find is skipped rather than mispronounced, so every figure
+  came out as a hole in the sentence: "Halfway. 5 minutes." was spoken as
+  "Halfway. minutes.", and "Your HRV is 48 milliseconds" as "Your HRV is
+  milliseconds". A cue whose only content is the number said nothing at all.
+  Numbers become words now, at the one point text turns into speech.
+- **She can say "Vyana".** A word the lexicon doesn't carry is skipped
+  silently, and the lexicon carried neither our name nor most of our
+  catalogue: "Try the Nadi Shodhana pranayama for seven cycles" would have
+  spoken as "Try the for seven cycles". Twenty-three entries added — the
+  product names, the Sanskrit practice names, breathwork, physiotherapy,
+  padel, HIIT, and HRV, ECG and BPM as spoken letters.
+
+- **The chat's app bar plus no longer opens the AI settings.** It was a
+  leftover from the guide library and the fourth way into a screen You already
+  offers twice; it opens Conversations now, where starting a new one also
+  lives.
+- **A size under a megabyte reads in kilobytes.** The footprint screen
+  rounded everything to megabytes, so the stored conversations would have read
+  "0 MB" — which is not nothing, and is the sort of number that gets believed.
+
+### Known
+
+- Nova's voice is mirrored but not yet pinned: run **Actions → Mirror Nova's
+  voice** once, then paste the printed list into `kNovaVoiceFiles`. Until
+  then Speaking reads "Not in this build yet" and replies stay on screen.
+- Gemma E2B wants 6 GB of memory and is the only on-device model this
+  release ships. On a smaller phone the endpoint is the honest answer, and
+  the screen says so on the row that offers the download. A second, smaller
+  model waits on the flutter_gemma upgrade described above.
+
 ## v1.1.5 — 2026-11-13 · Last night, the day's shape, and Nova with her eyes open
 
 The 13 Nov handover in full: five bugs that made the app misread its own

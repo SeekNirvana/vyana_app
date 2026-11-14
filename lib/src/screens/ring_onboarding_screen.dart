@@ -27,6 +27,19 @@ double onboardingRingBox(double space) {
 /// .currentRingNeedsOnboarding decides, so re-pairing a ring you already
 /// named comes straight back to You, while a ring this phone has not seen
 /// gets its own setup.
+/// Whether "Erase what the ring stored" should start switched on.
+///
+/// Item 60: it used to start on, always. On a first pairing that erases the
+/// ring's own stored history — which, after a reinstall, is the only copy of
+/// it left anywhere — because the main button happened to be labelled "Wipe
+/// ring data" and the switch was already set. Nobody chose that.
+///
+/// Replacing a ring is the one case where erasing is the point: two rings'
+/// readings in one chart is the wrongness nobody goes looking for.
+bool wipeRingDefaultFor({required int previousRingRows}) {
+  return previousRingRows > 0;
+}
+
 class RingOnboardingScreen extends ConsumerStatefulWidget {
   const RingOnboardingScreen({super.key, required this.controller});
 
@@ -60,10 +73,14 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
   int _monitorInterval = kHealthMonitoringDefaultInterval;
   String? _monitorMessage;
 
+  /// Set when a rename came back unsuccessful, so the way out appears only
+  /// once there is something to get out of.
+  bool _renameFailed = false;
+
   // Step 3: start fresh
   String? _wipeMessage;
   bool _wipeSuccess = false;
-  bool _wipeRing = true;
+  bool _wipeRing = wipeRingDefaultFor(previousRingRows: 0);
   bool _wipeApp = false;
   int _previousRingRows = 0;
 
@@ -104,6 +121,7 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
     setState(() {
       _previousRingRows = rows;
       _wipeApp = rows > 0;
+      _wipeRing = wipeRingDefaultFor(previousRingRows: rows);
     });
   }
 
@@ -116,19 +134,15 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
     super.dispose();
   }
 
+  /// Item 60: this used to decide whether the rename had worked by looking
+  /// for words in the controller's status string — "Ring renamed",
+  /// "required", "characters", "only contain". Any failure phrased some
+  /// other way read as success, and the step moved on from work it had not
+  /// done. [renameRing] returns its result now, so there is nothing left to
+  /// infer; this just keeps the screen in step with the ring.
   void _onControllerChanged() {
     if (!mounted) return;
-    final status = widget.controller.status;
-    if (_nameBusy && (status.startsWith('Ring renamed') || status.contains('required') || status.contains('characters') || status.contains('only contain'))) {
-      setState(() {
-        _nameBusy = false;
-        _nameError = (status.contains('required') ||
-                status.contains('characters') ||
-                status.contains('only contain'))
-            ? status
-            : null;
-      });
-    }
+    setState(() {});
   }
 
   void _validateName(String value) {
@@ -137,6 +151,27 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
       _name = clean ?? '';
       _nameError = validateRingName(value);
     });
+  }
+
+  /// Whether setup shows the "Keep Vyana running" step.
+  ///
+  /// Item 75: Android only. The step promises that vitals keep syncing in
+  /// the background and points at an Android foreground-service setting,
+  /// neither of which exists on iPhone — so on iOS it was a promise the app
+  /// could not keep, next to a switch that did nothing.
+  bool get _hasForegroundStep => !kIsWeb && Platform.isAndroid;
+
+  int get _pageCount => _hasForegroundStep ? 4 : 3;
+
+  /// Where leaving the wipe step goes. On iPhone the wipe step is the last
+  /// one, so leaving it ends setup — four separate `_goTo(3)` calls used to
+  /// say "past the wipe step" and there is no page 3 to go to now.
+  void _afterWipe() {
+    if (_hasForegroundStep) {
+      _goTo(3);
+    } else {
+      unawaited(_onFinish());
+    }
   }
 
   void _goTo(int page) {
@@ -150,14 +185,30 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
   Future<void> _onRenameContinue() async {
     if (_nameError != null || _name.isEmpty || _nameBusy) return;
     setState(() => _nameBusy = true);
-    await widget.controller.renameRing(_name);
+    // Item 60: the result, not the status string. Reading status for the
+    // word "failed" meant a failure with any other wording looked like a
+    // success, and a ring that was not connected looked like one too.
+    final result = await widget.controller.renameRing(_name);
     if (!mounted) return;
-    if (_nameError == null &&
-        !widget.controller.status.contains('failed') &&
-        !widget.controller.status.contains('unavailable')) {
-      _goTo(1);
-    }
-    setState(() => _nameBusy = false);
+    setState(() {
+      _nameBusy = false;
+      _nameError = result.successful ? null : result.message;
+      _renameFailed = !result.successful;
+    });
+    if (result.successful) _goTo(1);
+  }
+
+  /// Leaves the ring called whatever it is already called.
+  ///
+  /// The name is a convenience, not a requirement — nothing else in setup
+  /// depends on it — so a ring that will not accept one must not be able to
+  /// hold a person on the first screen of a flow they cannot back out of.
+  void _skipRename() {
+    setState(() {
+      _nameError = null;
+      _renameFailed = false;
+    });
+    _goTo(1);
   }
 
   Future<void> _onMonitorContinue() async {
@@ -192,7 +243,7 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
   Future<void> _onWipeContinue() async {
     if (_wipeBusy || _wipeDone) return;
     if (!_wipeRing && !_wipeApp) {
-      _goTo(3);
+      _afterWipe();
       return;
     }
     setState(() {
@@ -233,14 +284,17 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
               'cycle are untouched.'
           : failure;
     });
-    if (ok) _goTo(3);
+    if (ok) _afterWipe();
   }
 
   Future<void> _onFinish() async {
     if (_finishBusy) return;
     setState(() => _finishBusy = true);
     await widget.controller.completeRingOnboarding(
-      enableForegroundService: _foregroundEnabled,
+      // Item 75/76: false where there is no foreground step, so the switch
+      // that was never shown cannot stand for an answer — and so pairing
+      // takes the branch that asks iOS for notification permission.
+      enableForegroundService: _hasForegroundStep && _foregroundEnabled,
     );
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -596,10 +650,10 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
               ? 'This is not the ring Vyana was using. Choose what to clear '
                   'so one chart does not end up holding two rings\' readings. '
                   'Your journal, practices and cycle are never touched.'
-              : 'Optional: erase any previous health data stored on the ring '
-                  'so Vyana starts fresh from your first sync. If this is a '
-                  'new ring, you can skip this and keep whatever it already '
-                  'recorded.',
+              : 'Optional, and usually not what you want: erase the health '
+                  'data stored on the ring itself. Vyana has already synced '
+                  'it, but the ring\'s copy is the only other one — so if '
+                  'you reinstall, this is what you would be restoring from.',
           t,
         ),
         const SizedBox(height: 24),
@@ -792,14 +846,14 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
                           _buildRenameStep(t),
                           _buildHealthMonitoringStep(t),
                           _buildWipeStep(t),
-                          _buildForegroundStep(t),
+                          if (_hasForegroundStep) _buildForegroundStep(t),
                         ])
                           SingleChildScrollView(child: step),
                       ],
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _dots(4, _page, t),
+                  _dots(_pageCount, _page, t),
                   const SizedBox(height: 24),
                   if (_page == 0)
                     _continueButton(t, 'Continue', _onRenameContinue, busy: _nameBusy)
@@ -809,14 +863,25 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
                     _continueButton(
                       t,
                       _wipeDone || (!_wipeRing && !_wipeApp)
-                          ? 'Continue'
+                          ? (_hasForegroundStep ? 'Continue' : "Let's Go!")
                           : 'Wipe ring data',
-                      _wipeDone ? () => _goTo(3) : _onWipeContinue,
-                      busy: _wipeBusy,
+                      _wipeDone ? _afterWipe : _onWipeContinue,
+                      busy: _wipeBusy || _finishBusy,
                     )
                   else
                     _continueButton(t, "Let's Go!", _onFinish, busy: _finishBusy),
                   const SizedBox(height: 10),
+                  // Item 60: setup cannot be backed out of (canPop is
+                  // false), so a step that can fail needs a door. A ring
+                  // that will not take a name keeps the one it has.
+                  if (_page == 0 && _renameFailed && !_nameBusy)
+                    TextButton(
+                      onPressed: _skipRename,
+                      child: Text(
+                        'Skip, keep current name',
+                        style: VyanaType.label.copyWith(color: t.textSec),
+                      ),
+                    ),
                   if (_page == 1 && !_monitorBusy)
                     TextButton(
                       onPressed: () => _goTo(2),
@@ -827,7 +892,7 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
                     ),
                   if (_page == 2 && !_wipeDone && (_wipeRing || _wipeApp))
                     TextButton(
-                      onPressed: _wipeBusy ? null : () => _goTo(3),
+                      onPressed: _wipeBusy ? null : _afterWipe,
                       child: Text(
                         'Skip — keep existing data',
                         style: VyanaType.label.copyWith(color: t.textSec),

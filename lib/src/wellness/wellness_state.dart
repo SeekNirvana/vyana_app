@@ -9,6 +9,78 @@ library;
 
 enum WellnessTone { good, steady, watch, unknown }
 
+// ── Readiness words ────────────────────────────────────────────────────────
+//
+// Item 74: there were two vocabularies with different cut-offs. The app said
+// Ready >= 70 / Balanced >= 50 / Depleted; the notification and the
+// home-screen widget said Primed >= 80 / Steady >= 65 / Settled >= 50 /
+// Recovering. So a 68 was "Balanced" on the screen and "Steady" in the
+// notification about the same reading, and nothing in the app could tell you
+// which it meant.
+//
+// These live here, in a library both the screens and the background services
+// can import, because a word about someone's body must not depend on which
+// surface is saying it.
+
+/// How long the ring has been quiet, for the stale banner.
+///
+/// Item 91: it was always hours, so a ring left in a drawer over a long
+/// weekend produced "Today is missing 50 hours" — a true number that reads
+/// as a fault in the app rather than a ring nobody has worn. Past a day it
+/// counts days, which is how anyone would say it.
+String staleGapLabel(Duration gap) {
+  if (gap.inHours < 24) {
+    final hours = gap.inHours;
+    return hours <= 1 ? 'an hour' : '$hours hours';
+  }
+  final days = gap.inDays;
+  return days == 1 ? 'a day' : '$days days';
+}
+
+/// At or above this, a readiness score reads as Ready.
+const int kReadinessReadyFrom = 70;
+
+/// At or above this (and below [kReadinessReadyFrom]), Balanced.
+const int kReadinessBalancedFrom = 50;
+
+/// The state word for a readiness score: Ready / Balanced / Depleted.
+///
+/// [hrvOnly] is a score built from HRV with no night behind it (bug 36). It
+/// is half a reading, so it never earns a verdict - and "Depleted" in
+/// particular must never come from a missing night.
+String readinessStateWord(int? score, {bool hrvOnly = false}) {
+  if (score == null) return 'No read yet';
+  if (hrvOnly) return 'Partial read';
+  if (score >= kReadinessReadyFrom) return 'Ready';
+  if (score >= kReadinessBalancedFrom) return 'Balanced';
+  return 'Depleted';
+}
+
+/// The colour band that goes with [readinessStateWord], so the word and the
+/// colour can never disagree.
+WellnessTone readinessTone(int? score, {bool hrvOnly = false}) {
+  if (score == null || hrvOnly) return WellnessTone.unknown;
+  if (score >= kReadinessReadyFrom) return WellnessTone.good;
+  if (score >= kReadinessBalancedFrom) return WellnessTone.steady;
+  return WellnessTone.watch;
+}
+
+/// One sentence to go under the word, in the same bands.
+String readinessSummary(int? score, {bool hrvOnly = false}) {
+  if (score == null) return 'Sync your ring to see where you are.';
+  if (hrvOnly) {
+    return 'Only HRV came through - last night is missing, so this is half '
+        'a reading.';
+  }
+  if (score >= kReadinessReadyFrom) {
+    return 'You are well recovered and ready for the day.';
+  }
+  if (score >= kReadinessBalancedFrom) {
+    return 'You are in a balanced place - ease into anything hard.';
+  }
+  return 'Your body is asking for rest. Be gentle today.';
+}
+
 /// A single plain-language signal, e.g. Heart rate → "Elevated".
 class WellnessSignal {
   const WellnessSignal({
@@ -82,6 +154,7 @@ class WellnessState {
     double? temperature,
     double? stressIndex,
     int? readinessScore,
+    bool readinessIsHrvOnly = false,
   }) {
     final signals = <WellnessSignal>[];
 
@@ -181,29 +254,19 @@ class WellnessState {
     // Prefer readiness (sleep + HRV trend) for the headline when we have it;
     // otherwise summarise the live signals we just took.
     if (readinessScore != null) {
-      final tone = readinessScore >= 65
-          ? WellnessTone.good
-          : readinessScore >= 50
-              ? WellnessTone.steady
-              : WellnessTone.watch;
-      final title = readinessScore >= 80
-          ? 'Primed'
-          : readinessScore >= 65
-              ? 'Steady'
-              : readinessScore >= 50
-                  ? 'Settled'
-                  : 'Recovering';
-      final summary = readinessScore >= 80
-          ? 'You are well recovered and ready for the day.'
-          : readinessScore >= 65
-              ? 'You are balanced and holding well today.'
-              : readinessScore >= 50
-                  ? 'A little below your best — ease into things.'
-                  : 'Your body is asking for rest. Be gentle today.';
+      // Item 74: the same three words, cut-offs and sentence the readiness
+      // ring on Home uses. The notification and the widget read this, so
+      // they can no longer describe a 68 differently from the screen.
       return WellnessState(
-        title: title,
-        summary: summary,
-        tone: tone,
+        title: readinessStateWord(
+          readinessScore,
+          hrvOnly: readinessIsHrvOnly,
+        ),
+        summary: readinessSummary(
+          readinessScore,
+          hrvOnly: readinessIsHrvOnly,
+        ),
+        tone: readinessTone(readinessScore, hrvOnly: readinessIsHrvOnly),
         signals: signals,
         hasData: true,
       );

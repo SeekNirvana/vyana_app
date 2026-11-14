@@ -168,6 +168,9 @@ void main() {
     // v1.1.5: the pill offers the choice, not one of the answers —
     // someone running their own endpoint needs no download.
     expect(chrome, contains('Configure your AI'));
+    final aiSetup = readLib('src/screens/ai_setup_screen.dart');
+    expect(aiSetup, contains('Which model?'));
+    expect(aiSetup, contains('Her voice'));
     expect(chrome, contains("'Ask Nova'"));
     expect(chrome, contains('class PatternCard'));
     expect(chrome, contains('DashedPillPainter'));
@@ -194,7 +197,9 @@ void main() {
     final you = readLib('src/screens/you_screen.dart');
     expect(you, contains('Export and sovereignty'));
     expect(you, contains('How often you train'));
-    expect(you, contains('openNovaFootprint'));
+    // The footprint moved to Your AI, beside the choice whose cost it
+    // reports; You now opens that screen instead.
+    expect(you, contains('openAiSetup'));
 
     final engine = readLib('src/state/pattern_engine.dart');
     expect(engine, contains('journalPatternCandidate'));
@@ -202,7 +207,13 @@ void main() {
 
     final db = readLib('src/data/db.dart');
     expect(db, contains('class Patterns extends Table'));
-    expect(db, contains('int get schemaVersion => 12;'));
+    // Was pinned to `=> 12`, which made every new table a failing release
+    // check — the same shape as the pubspec version this file used to pin.
+    // What matters is that the schema is at or past the one Patterns and
+    // PracticeTargets arrived in, not that it stopped there.
+    final schema = RegExp(r'int get schemaVersion => (\d+);').firstMatch(db);
+    expect(schema, isNotNull, reason: 'the schema version must be readable');
+    expect(int.parse(schema!.group(1)!), greaterThanOrEqualTo(12));
     expect(db, contains('class PracticeTargets extends Table'));
 
     final catalog = readLib('src/data/catalog.dart');
@@ -212,7 +223,46 @@ void main() {
     final manifest = File('scripts/release-manifest.txt').readAsStringSync();
     expect(manifest, contains('NOVA FOUND A PATTERN'));
     expect(manifest, contains('Search entries'));
-    expect(manifest, contains('3.1 GB'));
+    // The size is derived from a byte count now, precisely because a typed
+    // string drifted from the file it described — it read 3.1 GB against a
+    // 2.59 GB download. Assert the derivation exists and the old literal is
+    // gone, rather than pinning a new string that can drift the same way.
+    // The size follows the chosen model now, so the byte count lives in the
+    // catalogue rather than as one constant tied to Gemma. What matters is
+    // that it is a measured number and not a typed string: the label read
+    // "3.1 GB" against a 2.59 GB download before this.
+    //
+    // Pinning each model's literal made every catalogue change a failing
+    // release check, so what is asserted is the property instead: every
+    // model carries a byte count that was measured rather than typed. A
+    // figure somebody rounded by hand lands on an exact multiple of a
+    // million; a Content-Length never does.
+    final models = readLib('src/services/on_device_models.dart');
+    final counts = RegExp(r'bytes: (\d+),')
+        .allMatches(models)
+        .map((m) => int.parse(m.group(1)!))
+        .toList();
+    expect(counts, isNotEmpty, reason: 'Nova needs something to think with');
+    for (final bytes in counts) {
+      expect(bytes, greaterThan(100 * 1000 * 1000),
+          reason: 'a usable model is not under 100 MB');
+      expect(bytes % (1000 * 1000), isNot(0),
+          reason: '$bytes looks rounded by hand, not read off the server');
+    }
+    // And none of them is the 4B that would not fit the phones this runs on.
+    expect(counts.every((b) => b < 2_700_000_000), isTrue);
+
+    // No Qwen3 while the prompt does not reach it. On .litertlm the native
+    // LiteRT-LM applies the chat template, and under flutter_gemma 0.13.6
+    // the Qwen3 one renders an empty user turn: 378 characters in, nothing
+    // out. "What is 2 plus 2" came back "Sure! I'm here to help with
+    // anything you need". Re-test against the RunPrefillAsync log before
+    // putting one back.
+    expect(models, isNot(contains('ModelType.qwen3')),
+        reason: 'a model that is handed an empty prompt is not a choice');
+    final modelManager = readLib('src/services/guide_model_manager.dart');
+    expect(modelManager, contains('activeOnDeviceModel.bytes'));
+    expect(manifest, isNot(contains('3.1 GB')));
   });
 
   test('v1.1.1 ring state you can act on', () {
@@ -417,5 +467,145 @@ void main() {
       isNot(File('assets/app_icon.png').readAsBytesSync()),
       reason: 'the in-app mark and the launcher tile are different images',
     );
+  });
+
+  test('v1.1.6 conversations are stored, and the model is told when one ends',
+      () {
+    final db = readLib('src/data/db.dart');
+    expect(db, contains('class ChatSessions extends Table'));
+    expect(db, contains('class ChatMessages extends Table'));
+    // The cascade is the whole reason deleting a conversation does not leave
+    // turns behind, and it only works with foreign keys on.
+    expect(db, contains('onDelete: KeyAction.cascade'));
+    expect(db, contains('PRAGMA foreign_keys = ON'));
+
+    final state = readLib('src/state/chat_sessions.dart');
+    expect(state, contains('class ChatHistoryController'));
+    expect(state, contains('chatTitleFrom'));
+    expect(state, contains('Future<int> addUserTurn'));
+
+    // The screen's list and the model's own history were two records of one
+    // conversation and only one of them was ever cleared. Starting fresh now
+    // ends both; without this call the old bug is back.
+    expect(state, contains('runtime.forgetConversation()'));
+    final runtime = readLib('src/services/guide_runtime_service.dart');
+    expect(runtime, contains('Future<void> forgetConversation()'));
+    expect(runtime, contains('chat.clearHistory()'));
+
+    final screen = readLib('src/screens/chat_history_screen.dart');
+    expect(screen, contains('openChatHistory'));
+    expect(screen, contains('class ChatTranscriptScreen'));
+    expect(screen, contains("label: 'New conversation'"));
+
+    // The chat reads the stored conversation rather than its own State, so
+    // leaving the screen no longer drops what was said.
+    final chat = readLib('src/screens/guides_screen.dart');
+    expect(chat, contains('chatHistoryProvider'));
+    expect(chat, isNot(contains('final List<GuideMessage> _messages')));
+    expect(chat, contains("IconBtn(icon: 'chats'"));
+
+    final fingerprints =
+        File('scripts/release-manifest.txt').readAsStringSync();
+    for (final line in const [
+      'Conversations',
+      'New conversation',
+      'ChatHistoryController',
+      'forgetConversation',
+    ]) {
+      expect(fingerprints, contains(line));
+    }
+  });
+
+  test('v1.1.6 an endpoint user can actually reach the chat', () {
+    // The pill decided readiness one way and the chat decided it another:
+    // with an endpoint set up and tested the pill said "Ask Nova" and the
+    // screen behind it offered a download instead of a conversation. One
+    // function now answers for both, so they cannot drift apart again.
+    final helpers = readLib('src/screens/ai_setup_screen.dart');
+    expect(helpers, contains('bool novaCanAnswer('));
+    expect(helpers, contains('String novaChatSubtitle('));
+
+    final pill = readLib('src/shell/vyana_chrome.dart');
+    expect(pill, contains('novaCanAnswer('));
+
+    final chat = readLib('src/screens/guides_screen.dart');
+    expect(chat, contains('novaCanAnswer('));
+    expect(chat, contains('novaChatSubtitle('));
+    // The app bar claimed on-device whatever the backend was.
+    expect(chat, isNot(contains("sub: 'on-device")));
+    // And the gate offered a 2.6 GB download to someone whose endpoint was
+    // only half set up.
+    expect(chat, contains("'Finish setting up your endpoint'"));
+    expect(chat, contains("label: 'Set up the endpoint'"));
+  });
+
+  test('v1.1.6 saving the profile keeps the fields it does not show', () {
+    final editor = readLib('src/screens/profile_screen.dart');
+    // The whole-object rebuild is what dropped trainingFrequency when that
+    // field arrived after this screen was written.
+    expect(editor, isNot(contains('UserProfile(\n')));
+    expect(editor, contains('.copyWith('));
+    expect(editor, contains('clearHeightCm:'));
+    expect(editor, contains('clearWeightKg:'));
+    expect(editor, contains('clearGender:'));
+    // And an implausible height is refused at the gate rather than stored
+    // and shown on the You row as though it were a measurement.
+    expect(editor, contains('_minHeightCm'));
+    expect(editor, contains('_fieldOk('));
+  });
+
+  test('v1.1.6 the model picker actually changes what is downloaded', () {
+    // The picker wrote to onDeviceModelProvider; the downloader, validator
+    // and loader all read activeOnDeviceModel; nothing connected the two.
+    // Choosing Qwen3 1.7B put "Install Qwen3 1.7B · 977 MB" on the button
+    // and fetched gemma-4-E2B-it.litertlm.
+    final manager = readLib('src/services/guide_model_manager.dart');
+    expect(manager, contains('setActiveOnDeviceModel(ref.read('));
+    expect(manager, contains('ref.listen<OnDeviceModel>(onDeviceModelProvider'));
+    expect(manager, contains('Future<void> onActiveModelChanged()'));
+    // Re-registration matters as much as the re-check: the spec carries the
+    // file name and type of whichever model is active.
+    expect(manager, contains('ensureGuideModelRegistered(guidePersonaDefinitions[kind]!)'));
+
+    // And the backend card stops quoting one flat size beside a picker.
+    final setup = readLib('src/screens/ai_setup_screen.dart');
+    expect(setup, isNot(contains(r"A $kGuideModelSizeLabel download")));
+    expect(setup, contains('ref.watch(onDeviceModelProvider).bytes'));
+    // "Which model?" over a single row is a question with one answer.
+    expect(setup, contains('kOnDeviceModels.length > 1'));
+  });
+
+  test('#52 the cycle sheet does not hold the profile editor\'s ref', () {
+    final cycle = readLib('src/screens/cycle_screens.dart');
+    // The sheet is opened after the editor has been popped and then waits
+    // for a tap. A WidgetRef belongs to a widget: every read in here threw
+    // "Cannot use ref after the widget was disposed", which ended the
+    // handler before the save and the pop, so all four options did nothing
+    // on a fresh install.
+    expect(cycle, contains('Future<void> offerCycleTracking(BuildContext context)'));
+    expect(cycle, contains('Future<void> _askLastPeriodStart(BuildContext context)'));
+    expect(cycle, contains('ProviderScope.containerOf(context, listen: false)'));
+
+    final profile = readLib('src/screens/profile_screen.dart');
+    expect(profile, contains('offerCycleTracking(shellContext)'));
+    expect(profile, isNot(contains('offerCycleTracking(shellContext, ref)')));
+
+    final fingerprints =
+        File('scripts/release-manifest.txt').readAsStringSync();
+    expect(fingerprints, contains('Track my cycle'));
+  });
+
+  test('#78 the cycle question is asked on the change to female, not forever',
+      () {
+    final profile = readLib('src/screens/profile_screen.dart');
+    // cycleSheetSeen is only set by answering, so swiping the sheet away
+    // left it false and the question came back on every later save — on a
+    // screen somebody opened to correct their height.
+    expect(profile, contains('before?.gender != UserGender.female'));
+    expect(profile, contains('becameFemale'));
+    // Marking it seen on a swipe would be the other way to silence it, and
+    // the wrong one: a swipe is not an answer, and the gender-change path
+    // is the one case where asking again is right.
+    expect(profile, isNot(contains('cycleSheetSeen: true')));
   });
 }

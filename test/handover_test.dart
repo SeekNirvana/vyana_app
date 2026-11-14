@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter_gemma/core/model.dart' show ModelFileType;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyana/main.dart';
@@ -9,6 +10,7 @@ import 'package:vyana/src/services/guide_model_manager.dart';
 import 'package:vyana/src/services/guide_persona_prefs_service.dart';
 import 'package:vyana/src/services/guide_voice_service.dart';
 import 'package:vyana/src/services/nova_voice_assets.dart';
+import 'package:vyana/src/services/nova_budget.dart';
 import 'package:vyana/src/wellness/wellness_state.dart';
 import 'package:vyana_sdk/vyana_sdk.dart';
 
@@ -216,7 +218,6 @@ void main() {
         todayActiveMinutes: 0,
         lastSleepDuration: null,
         readinessScore: 78,
-        readinessLabel: 'Steady',
         readinessDelta: null,
         drivers: const [],
         insights: const [],
@@ -838,7 +839,20 @@ void main() {
     test('no "1 OF 1" when only one is planned', () {
       final s = suggestion(plan: planOn(2, ['yogaFlow']));
       expect(s.meta, isNot(contains('OF')));
-      expect(s.meta, startsWith('PLANNED · YOUR USUAL'));
+      expect(s.meta, startsWith('PLANNED'));
+      // Item 93: Yoga Flow is a guided sequence, so its own length is a
+      // fact about the practice and is shown. It is not called "your
+      // usual", because nobody has done it.
+      expect(s.meta, 'PLANNED · 30 MIN');
+      expect(s.meta, isNot(contains('YOUR USUAL')));
+    });
+
+    test('a planned practice nobody has done shows no length (item 93)', () {
+      // The plan stores no length and a planned practice opens with no
+      // target, so a number beside it read as if the plan set one.
+      final s = suggestion(plan: planOn(2, ['outdoorRun']));
+      expect(s.meta, 'PLANNED');
+      expect(s.minutes, isNull);
     });
 
     test('unplanned practices do not count against the plan', () {
@@ -982,6 +996,41 @@ void main() {
       expect(s.setsTarget, isTrue);
     });
 
+    test('three sessions make a usual, and it is the median (item 93)', () {
+      final s = at(
+        afternoon,
+        intent: DayIntent.perform,
+        pins: const ['outdoorRun'],
+        history: [
+          did('outdoorRun', afternoon.subtract(const Duration(days: 2)),
+              minutes: 38),
+          did('outdoorRun', afternoon.subtract(const Duration(days: 4)),
+              minutes: 40),
+          did('outdoorRun', afternoon.subtract(const Duration(days: 6)),
+              minutes: 42),
+        ],
+      );
+      expect(s.activityId, 'outdoorRun');
+      expect(s.meta, 'YOUR USUAL · 40 MIN');
+    });
+
+    test('two sessions are not enough (item 93)', () {
+      // The boundary: a length shown on a card reads as something the app
+      // knows about you, so two tries do not earn one.
+      final s = at(
+        afternoon,
+        intent: DayIntent.perform,
+        pins: const ['outdoorRun'],
+        history: [
+          did('outdoorRun', afternoon.subtract(const Duration(days: 2)),
+              minutes: 38),
+          did('outdoorRun', afternoon.subtract(const Duration(days: 4)),
+              minutes: 40),
+        ],
+      );
+      expect(s.meta, isNull);
+    });
+
     test('the day suggests a pin that fits the intent', () {
       final s = at(
         afternoon,
@@ -992,12 +1041,30 @@ void main() {
       expect(s.heading, 'Suggested activity');
       // Body Scan is pinned first but is not a Perform practice.
       expect(s.activityId, 'outdoorRun');
-      expect(s.meta, 'YOUR USUAL · 32 MIN');
+      // Item 93: one run is not a habit. Three are.
+      expect(s.meta, isNull);
+      expect(s.minutes, isNull);
       // Opens with no target set — "your usual" describes, it does not set.
       expect(s.setsTarget, isFalse);
       expect(s.offerPin, isFalse);
-      // No 4-minute cap outside the morning.
+    });
+
+    test('no 4-minute cap outside the morning (bug 45)', () {
+      // Kept from the assertion above, which item 93 took the length away
+      // from: the cap is about the morning, so a practice with a known
+      // usual keeps it in the afternoon.
+      final s = at(
+        afternoon,
+        intent: DayIntent.perform,
+        pins: const ['outdoorRun'],
+        history: [
+          for (var i = 2; i <= 6; i += 2)
+            did('outdoorRun', afternoon.subtract(Duration(days: i)),
+                minutes: 32),
+        ],
+      );
       expect(s.minutes, 32);
+      expect(s.minutes, greaterThan(4));
     });
 
     test('low readiness means gentle only, whatever the chip says', () {
@@ -1042,7 +1109,18 @@ void main() {
       expect(at(afternoon, intent: DayIntent.settle).activityId, 'walkingMed');
       final s = at(afternoon, intent: DayIntent.settle);
       expect(s.offerPin, isTrue);
-      expect(s.minutes, activityById('walkingMed')!.dur);
+      // Item 93: Walking Meditation is a GPS practice, so it is open-ended
+      // and carries no length — you walk as long as you walk. The guided
+      // ones do carry theirs, because a six-minute breath pacer is six
+      // minutes whether or not anyone has done it.
+      expect(s.minutes, isNull);
+      expect(s.meta, isNull);
+      final scan = at(afternoon, intent: DayIntent.recover);
+      expect(scan.activityId, 'bodyScan');
+      expect(scan.minutes, activityById('bodyScan')!.dur);
+      expect(scan.meta, '${activityById('bodyScan')!.dur} MIN');
+      final breath = at(afternoon, intent: DayIntent.perform);
+      expect(breath.minutes, activityById('hrvBreathing')!.dur);
     });
 
     test('the evening winds down, rotating day by day', () {
@@ -1079,8 +1157,10 @@ void main() {
           did('walk', afternoon.subtract(Duration(days: m)), minutes: m),
       ];
       expect(usualMinutesFor('walk', history), 30);
-      // Never done it: the catalogue length stands in.
-      expect(usualMinutesFor('walk', const []), activityById('walk')!.dur);
+      // Item 93: never done it, so there is no usual. The catalogue length
+      // used to stand in, which claimed a habit the person did not have.
+      expect(usualMinutesFor('walk', const []), isNull);
+      expect(lengthLabelFor('walk', const []), isNull);
     });
   });
 
@@ -1114,23 +1194,42 @@ void main() {
     });
 
     test('the install prompt states the real size, in MB', () {
-      // 355 MB, not the 90 MB an int8 build would have been. "0.35 GB"
-      // reads as a rounding error, so anything under a gigabyte is MB.
+      // Measured from the files, not estimated: the sum of what is pinned,
+      // so the prompt and the download cannot disagree. "0.34 GB" reads as
+      // a rounding error, so anything under a gigabyte is MB.
       expect(kNovaVoiceApproxBytes, greaterThan(300 * 1024 * 1024));
-      expect(novaVoiceApproxSizeLabel, '355 MB');
+      final pinned = kNovaVoiceFiles.fold<int>(0, (sum, a) => sum + a.bytes);
+      expect(kNovaVoiceApproxBytes, pinned);
+      expect(novaVoiceApproxSizeLabel, endsWith(' MB'));
     });
 
-    test('the voice is only fetched from our own host, by digest', () {
-      expect(kNovaVoiceHost, 'cdn.seeknirvana.app');
-      expect(novaVoiceConfigured, kNovaVoiceFiles.isNotEmpty);
-      for (final asset in kNovaVoiceFiles) {
-        final uri = Uri.parse(asset.url);
-        expect(uri.scheme, 'https');
-        expect(uri.host, kNovaVoiceHost);
-        expect(asset.sha256, matches(RegExp(r'^[0-9a-f]{64}$')));
-        expect(asset.bytes, greaterThan(0));
-      }
+    test('the pinned lexicon is ours, not upstream the way it ships', () {
+      // This is the mistake that cost a round trip: upstream's file was put
+      // on the host and the app refused it, because the pin is for
+      // upstream's bytes PLUS scripts/nova-voice-lexicon-additions.txt.
+      // Without the additions the voice is silent on "Vyana", "pranayama",
+      // "HRV" and most of the practice catalogue — and silent is exactly
+      // what it looks like when the right file is not served.
+      const upstreamLexiconBytes = 6305773;
+      final additions = File('scripts/nova-voice-lexicon-additions.txt');
+      expect(additions.existsSync(), isTrue,
+          reason: 'the additions are part of the hosted file');
+      final lexicon =
+          kNovaVoiceFiles.firstWhere((a) => a.name == kNovaVoiceLexiconFile);
+      expect(lexicon.bytes, upstreamLexiconBytes + additions.lengthSync(),
+          reason: 'pin the concatenated file, not either half of it');
     });
+
+    test('the lexicon is pinned, and espeak-ng data is not', () {
+      // sherpa-onnx 2.0.1 tokenises Kokoro through the lexicon only. Pinning
+      // the espeak directory instead — which is what this did — downloads
+      // 18 MB the runtime never opens and leaves generate() returning an
+      // empty waveform for every sentence.
+      final names = kNovaVoiceFiles.map((a) => a.name).toList();
+      expect(names, contains(kNovaVoiceLexiconFile));
+      expect(names.any((n) => n.contains('espeak')), isFalse);
+    });
+
   });
 
   group('ring screen title (bug 49)', () {
@@ -1651,6 +1750,320 @@ void main() {
       );
       expect(full.isComplete, isTrue);
       expect(full.reach, EndpointReach.onYourNetwork);
+    });
+  });
+
+
+  group("Nova's voice is fetched from one place, by digest", () {
+    test('hosted on our own site', () {
+      expect(kNovaVoiceHost, 'seeknirvana.com');
+      expect(kNovaVoiceBasePath, startsWith('/resources/'));
+      // No trailing slash: the site 308-redirects `/resources/` to
+      // `/resources`, and a download that needs a redirect to start is a
+      // download with one more way to fail.
+      expect(kNovaVoiceBasePath, isNot(endsWith('/')));
+    });
+
+    test('the build actually has a voice to fetch', () {
+      // This was empty for the whole of v1.1.5 and most of v1.1.6, which is
+      // why nothing Vyana said was ever heard.
+      expect(kNovaVoiceFiles, isNotEmpty);
+      expect(novaVoiceConfigured, isTrue);
+    });
+
+    test('every pinned file is on that host, by digest', () {
+      expect(novaVoiceConfigured, kNovaVoiceFiles.isNotEmpty);
+      for (final asset in kNovaVoiceFiles) {
+        final uri = Uri.parse(asset.url);
+        expect(uri.scheme, 'https');
+        expect(uri.host, kNovaVoiceHost);
+        expect(uri.path, startsWith(kNovaVoiceBasePath));
+        expect(uri.path, contains(kNovaVoiceVersion));
+        expect(uri.path, endsWith(asset.name));
+        expect(asset.sha256, matches(RegExp(r'^[0-9a-f]{64}$')));
+        expect(asset.bytes, greaterThan(0));
+      }
+    });
+
+    test('every file the runtime loads is one of the pinned ones', () {
+      // The gap this closes: the config asked for a path that nothing
+      // downloaded, so the voice could never have loaded even once the
+      // files were hosted.
+      final names = kNovaVoiceFiles.map((a) => a.name).toSet();
+      for (final needed in [
+        kNovaVoiceModelFile,
+        kNovaVoiceVoicesFile,
+        kNovaVoiceTokensFile,
+        kNovaVoiceLexiconFile,
+      ]) {
+        expect(names, contains(needed), reason: needed);
+      }
+    });
+  });
+
+
+  group('a downloaded model is judged against its own size', () {
+    late Directory tmp;
+    setUp(() async {
+      tmp = await Directory.systemTemp.createTemp('vyana_bundle_test');
+    });
+    tearDown(() async {
+      if (tmp.existsSync()) await tmp.delete(recursive: true);
+    });
+
+    Future<String> bundleOf(int bytes) async {
+      final f = File('${tmp.path}/model.litertlm');
+      await f.writeAsBytes(List<int>.filled(bytes, 0));
+      return f.path;
+    }
+
+    test('a small model is not corrupt just because it is small', () async {
+      // The check was a flat `> 1.5 GB`, commented "Gemma models are
+      // typically > 1.5GB" — true of Gemma and of nothing else. A 614 MB
+      // Qwen bundle downloaded perfectly and was deleted as corrupt, which
+      // reads from outside as the progress bar filling and the model never
+      // appearing.
+      final path = await bundleOf(1000);
+      expect(
+        await validateGuideBundleFile(
+          path,
+          ModelFileType.litertlm,
+          expectedBytes: 1000,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a truncated file is still refused', () async {
+      // Half a bundle crashes the native FlatBuffer parser, so this is the
+      // case the check exists for.
+      final path = await bundleOf(500);
+      expect(
+        await validateGuideBundleFile(
+          path,
+          ModelFileType.litertlm,
+          expectedBytes: 1000,
+        ),
+        isFalse,
+      );
+    });
+
+    test('a couple of per cent short is tolerated, ten is not', () async {
+      final nearly = await bundleOf(985);
+      expect(
+        await validateGuideBundleFile(nearly, ModelFileType.litertlm,
+            expectedBytes: 1000),
+        isTrue,
+      );
+      final short = await bundleOf(900);
+      expect(
+        await validateGuideBundleFile(short, ModelFileType.litertlm,
+            expectedBytes: 1000),
+        isFalse,
+      );
+    });
+
+    test('a missing file is never valid', () async {
+      expect(
+        await validateGuideBundleFile(
+          '${tmp.path}/absent.litertlm',
+          ModelFileType.litertlm,
+          expectedBytes: 1000,
+        ),
+        isFalse,
+      );
+      expect(
+        await validateGuideBundleFile(null, ModelFileType.litertlm,
+            expectedBytes: 1000),
+        isFalse,
+      );
+    });
+
+    test('the size the UI quotes is the size that is checked', () {
+      // These drifted apart before: the label said 3.1 GB against a
+      // 2.59 GB file, and the validator used a third number entirely.
+      expect(kGuideModelBytes, greaterThan(0));
+      expect(formatDownloadSize(kGuideModelBytes), matches(RegExp(r'^[\d.]+ (MB|GB)$')));
+    });
+  });
+
+  group('ring setup does not erase the ring because a switch was already on',
+      () {
+    test('a first pairing leaves the ring\'s own history alone', () {
+      // Item 60: this defaulted to on. The main button then read "Wipe ring
+      // data", and a first pairing erased the readings the ring had stored
+      // — which after a reinstall is the only copy of them left anywhere.
+      expect(wipeRingDefaultFor(previousRingRows: 0), isFalse);
+    });
+
+    test('replacing a ring turns it on, which is the case it is for', () {
+      // Two rings' readings in one chart is the wrongness nobody goes
+      // looking for, so here erasing is the point.
+      expect(wipeRingDefaultFor(previousRingRows: 1), isTrue);
+      expect(wipeRingDefaultFor(previousRingRows: 240), isTrue);
+    });
+  });
+
+  group('a rename that fails says so', () {
+    test('the result carries the reason, rather than a status to read', () {
+      // Item 60: setup used to guess from the controller's status string,
+      // looking for the word "failed". A failure worded any other way read
+      // as success and the step moved on from work it had not done.
+      const failed = RingNameUpdateResult(
+        successful: false,
+        name: '',
+        message: 'Your ring is not connected, so it cannot be renamed yet.',
+      );
+      expect(failed.successful, isFalse);
+      expect(failed.message, isNotEmpty);
+      // Nothing in the message needs to match a keyword for the screen to
+      // know what happened.
+      expect(failed.message.toLowerCase(), isNot(contains('failed')));
+    });
+
+    test('the step offers a way out, because it cannot be backed out of', () {
+      final onboarding = File.fromUri(
+        Directory.current.uri.resolve(
+          'lib/src/screens/ring_onboarding_screen.dart',
+        ),
+      ).readAsStringSync();
+      expect(onboarding, contains('Skip, keep current name'));
+      // The old guessing is gone with it.
+      expect(onboarding, isNot(contains("status.contains('failed')")));
+    });
+  });
+
+  group('ring orders are placed on the website, not in the app', () {
+    String lib(String relative) => File.fromUri(
+          Directory.current.uri.resolve('lib/src/$relative'),
+        ).readAsStringSync();
+
+    test('buying opens seeknirvana.com over https', () {
+      expect(kRingOrderUrl, 'https://seeknirvana.com/order');
+      expect(Uri.parse(kRingOrderUrl).scheme, 'https');
+    });
+
+    test('the payment and memo code is gone, not merely unreachable', () {
+      // Item 61: the memo is the reason. It is public and permanent, and
+      // the in-app checkout wrote the buyer's shipping country and a free
+      // text message into it — which is where people typed their address —
+      // while collecting no name, address or phone. Leaving the code behind
+      // unreferenced would leave the next person a working path back to it.
+      for (final gone in [
+        'lib/src/services/ring_order_tx_data.dart',
+        'lib/src/services/ring_usdc_payment_service.dart',
+        'lib/src/services/ring_order_pricing.dart',
+        'lib/src/screens/ring_order_screen.dart',
+      ]) {
+        expect(
+          File.fromUri(Directory.current.uri.resolve(gone)).existsSync(),
+          isFalse,
+          reason: '$gone should not exist',
+        );
+      }
+    });
+
+    test('nothing in the app can write a new order', () {
+      // The table stays — orders placed before this release are still
+      // readable — but the only method that inserted into it is gone.
+      expect(lib('data/db.dart'), isNot(contains('insertRingOrder')));
+      final service = lib('services/ring_order_service.dart');
+      expect(service, isNot(contains('savePaidOrder')));
+      expect(service, isNot(contains('saveFailedOrder')));
+      expect(service, contains('watchOrders'));
+    });
+
+    test('orders already on the phone are still readable', () {
+      final screen = lib('screens/ring_orders_screen.dart');
+      expect(screen, contains('class RingOrdersScreen'));
+      expect(screen, contains('Your orders'));
+      expect(screen, contains('ringOrdersProvider'));
+    });
+  });
+
+  group('health data does not go to Google backup', () {
+    String android(String relative) => File.fromUri(
+          Directory.current.uri.resolve('android/app/src/main/$relative'),
+        ).readAsStringSync();
+
+    test('backup is off, not merely unconfigured', () {
+      // Item 54: with no attribute at all Android defaults to ON, so the
+      // vault — ring history, journal, cycle days — could be copied to the
+      // user's Google Drive. "On this phone only" has to be true in the
+      // manifest, not just in the copy.
+      final manifest = android('AndroidManifest.xml');
+      expect(manifest, contains('android:allowBackup="false"'));
+      expect(manifest, contains('android:dataExtractionRules='));
+    });
+
+    test('the library that wants backup on is overridden, not merged', () {
+      // A dependency of the ring SDK declares allowBackup="true". Without
+      // naming it in tools:replace the manifest merger refuses outright —
+      // the whole Android build fails, which is how this was found. Worse
+      // would be a merge that quietly took the library's value and left
+      // the vault going to Drive while the manifest said otherwise.
+      final manifest = android('AndroidManifest.xml');
+      final replace = RegExp(r'tools:replace="([^"]*)"').firstMatch(manifest);
+      expect(replace, isNotNull, reason: 'tools:replace must be present');
+      expect(replace!.group(1), contains('android:allowBackup'));
+    });
+
+    test('the rules send nothing to the cloud, and allow a phone swap', () {
+      // A phone-to-phone transfer never leaves the user's own hands, and
+      // losing years of history on a new handset is its own data loss.
+      final rules = android('res/xml/data_extraction_rules.xml');
+      expect(rules, contains('<cloud-backup>'));
+      for (final domain in ['root', 'file', 'database', 'sharedpref']) {
+        expect(rules, contains('<exclude domain="$domain" />'),
+            reason: '$domain must not reach the cloud');
+      }
+      expect(rules, contains('<device-transfer>'));
+      expect(rules, contains('<include domain="database"'));
+    });
+  });
+
+  group('pinned practices come first in their category', () {
+    List<Activity> movement() => allActivitiesByCat('sport');
+
+    test('pins lead, in the order the user pinned them', () {
+      // Item 56: the rail at the top uses pin order, so the list below has
+      // to agree — two readings of "your pins" in two orders is worse than
+      // not grouping at all.
+      final all = movement();
+      final second = all[1].id;
+      final fifth = all[4].id;
+      final split = splitByPins(all, [fifth, second]);
+
+      expect(split.pinned.map((a) => a.id), [fifth, second]);
+      expect(split.rest.map((a) => a.id), isNot(contains(fifth)));
+      expect(split.rest.map((a) => a.id), isNot(contains(second)));
+    });
+
+    test('a practice appears exactly once', () {
+      final all = movement();
+      final split = splitByPins(all, [all.first.id, all.last.id]);
+      final seen = [...split.pinned, ...split.rest].map((a) => a.id).toList();
+      expect(seen.length, all.length);
+      expect(seen.toSet().length, all.length, reason: 'no repeats');
+    });
+
+    test('the rest stays in catalogue order', () {
+      final all = movement();
+      final split = splitByPins(all, [all[3].id]);
+      final expected = [
+        for (final a in all)
+          if (a.id != all[3].id) a.id,
+      ];
+      expect(split.rest.map((a) => a.id), expected);
+    });
+
+    test('no pins in this category means no Pinned group', () {
+      final all = movement();
+      // A pin that belongs to another category must not create an empty
+      // group here, or head a list it has nothing in.
+      final split = splitByPins(all, ['not-a-movement-practice']);
+      expect(split.pinned, isEmpty);
+      expect(split.rest.length, all.length);
     });
   });
 }

@@ -534,14 +534,18 @@ List<HomeMetricCardData> homeMetricCards(
     baselines: baselines,
     personalAverage: _baseline(hrvPoints, kBaselineWindowDays),
   );
+  // Item 89: "Steady", not "Balanced". Balanced is readiness's middle word,
+  // and the HRV chip sits right beside the readiness ring — so a depleted
+  // morning could read "Depleted" in the ring and "Balanced" underneath it,
+  // about the same body, with nothing to say which was meant.
   final (hrvVerdict, hrvQ) = verdictFor(
     value: hrv,
     base: hrvBase,
-    words: ('Recovered', 'Balanced', 'Take it easy'),
+    words: ('Recovered', 'Steady', 'Take it easy'),
   );
 
   // ── Sleep: only last night, and only when it is real (bug 14) ───────────
-  final nights = sleepDaySummaries(history.sleep);
+  final nights = history.sleepNights;
   final night = sleepNightForToday(nights, now: DateTime.now());
   final usable = dashboard.sleepStatus == SleepNightStatus.complete;
   final sleepHours =
@@ -720,7 +724,7 @@ class _SleptOnPrompt extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final answered = ref.watch(sleepExtensionProvider);
     final history = controller.history;
-    final night = sleepNightForToday(sleepDaySummaries(history.sleep));
+    final night = sleepNightForToday(history.sleepNights);
     if (night == null) return const SizedBox.shrink();
     if (answered.isAnswered(night.day)) return const SizedBox.shrink();
     final until = sleptOnAfter(night, history);
@@ -867,6 +871,7 @@ class SuggestedPracticeBlock extends StatelessWidget {
     this.setsTarget = true,
     this.footnote,
     this.onPin,
+    this.onSkipToday,
   });
 
   final DayIntent intent;
@@ -894,6 +899,10 @@ class SuggestedPracticeBlock extends StatelessWidget {
   final Widget? footnote;
 
   final VoidCallback? onPin;
+
+  /// Item 94: shown as "Not today" when this is a planned practice. Null
+  /// on an ordinary suggestion, which there is nothing to stand down from.
+  final VoidCallback? onSkipToday;
 
   /// §3: once the suggestion itself has been done, the play button becomes a
   /// grey tick — the card stays tappable, to do it again.
@@ -1041,6 +1050,34 @@ class SuggestedPracticeBlock extends StatelessWidget {
           ),
         ),
       ],
+      // Item 94: a planned practice could only be changed by editing My
+      // week, which changes it every week. Someone who simply cannot run
+      // today had the choice of looking at it until the evening or
+      // rewriting their week.
+      if (onSkipToday case final skip?) ...[
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: skip,
+          borderRadius: BorderRadius.circular(6),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 36),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                VyanaIcon('x', size: 13, color: t.mutedInk),
+                const SizedBox(width: 5),
+                Text(
+                  'Not today',
+                  style: VyanaType.caption.copyWith(
+                    color: t.textSec,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     ];
     if (compact) {
       if (extras.isEmpty) return card;
@@ -1103,6 +1140,9 @@ class _SuggestedPractice extends ConsumerWidget {
       ],
       todaysFinished: today,
       plan: ref.watch(weeklyPlanProvider),
+      // Item 94: what has been stood down for today, so both screens agree
+      // about which planned practice is on offer.
+      skippedToday: ref.watch(plannedSkipsProvider.notifier).today,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1122,6 +1162,9 @@ class _SuggestedPractice extends ConsumerWidget {
                 .read(pinnedPracticesProvider.notifier)
                 .pin(suggestion.activityId),
           ),
+          onSkipToday: suggestion.canSkipToday
+              ? () => unawaited(_skipPlannedToday(context, ref, suggestion))
+              : null,
           doneToday:
               today.any((s) => s.vyanaActivityType == suggestion.activityId),
         ),
@@ -1129,6 +1172,41 @@ class _SuggestedPractice extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// Item 94: stands a planned practice down for today, and says so with a
+/// way back.
+///
+/// The weekly plan is not touched. Today's reminder for it is cancelled,
+/// because a reminder for something the person has just declined is the
+/// app not listening — and re-armed by Undo through the same reschedule
+/// every other change goes through.
+Future<void> _skipPlannedToday(
+  BuildContext context,
+  WidgetRef ref,
+  HomeSuggestion suggestion,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final skips = ref.read(plannedSkipsProvider.notifier);
+  final reminders = ref.read(weeklyPlanReminderProvider.notifier);
+  final id = suggestion.activityId;
+
+  await skips.skip(id);
+  await reminders.reschedule();
+
+  messenger.showSnackBar(
+    SnackBar(
+      content: const Text('Skipped for today'),
+      duration: const Duration(seconds: 6),
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () async {
+          await skips.unskip(id);
+          await reminders.reschedule();
+        },
+      ),
+    ),
+  );
 }
 
 /// Item 46: one line under a planned practice on a low-readiness day. The
@@ -1231,9 +1309,15 @@ class _DoneChip extends StatelessWidget {
     final activity = activityById(row.vyanaActivityType);
     // Bug 32: `.inMinutes` truncates, so a 40-second try read "0m" — which
     // says the session was worth nothing rather than that it was short.
-    final length = sessionLengthLabel(
-      row.endedAt!.difference(row.startedAt),
-    );
+    // Item 80: from the session's own record of how long it ran, so this
+    // pill and the summary behind it cannot disagree about a paused run.
+    final length = sessionLengthLabel(Duration(
+      seconds: sessionSeconds(
+        summaryJson: row.summaryJson,
+        startedAt: row.startedAt,
+        endedAt: row.endedAt,
+      ),
+    ));
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(100),
@@ -1378,10 +1462,23 @@ class RecoveredSessionLine extends ConsumerWidget {
                 label: 'Resume',
                 color: t.gold,
                 onTap: () async {
+                  // Item 85 (d, e): the messenger and navigator are taken
+                  // before the await, and a failure is said out loud. This
+                  // used to return on an error with the bar still sitting
+                  // there, so tapping Resume on a session that could not be
+                  // resumed did nothing at all, twice, and then a third
+                  // time.
+                  final messenger = ScaffoldMessenger.of(context);
+                  final navigator = Navigator.of(context);
                   final error = await controller.resumeRecoveredSession();
-                  if (!context.mounted || error != null) return;
-                  await Navigator.of(context).push<void>(
+                  if (error != null) {
+                    messenger.showSnackBar(SnackBar(content: Text(error)));
+                    return;
+                  }
+                  await navigator.push<void>(
                     MaterialPageRoute(
+                      settings:
+                          const RouteSettings(name: kLiveSessionRouteName),
                       builder: (_) => const LiveSessionScreen(),
                     ),
                   );
@@ -1530,7 +1627,22 @@ class _BatterySettingsLineState extends ConsumerState<BatterySettingsLine> {
                 BorderedPill(
                   label: 'Allow',
                   onTap: () async {
-                    await RingForegroundService.requestBatteryExemption();
+                    // Item 85 (f): dismissed only if the settings screen
+                    // actually opened. Otherwise the card and its
+                    // explanation were gone for good on a phone that cannot
+                    // show that screen, and nothing said why.
+                    final messenger = ScaffoldMessenger.of(context);
+                    final opened =
+                        await RingForegroundService.requestBatteryExemption();
+                    if (!opened) {
+                      messenger.showSnackBar(const SnackBar(
+                        content: Text(
+                          'This phone would not open its battery settings. '
+                          'Look for Battery optimisation in Settings.',
+                        ),
+                      ));
+                      return;
+                    }
                     await _dismissForever();
                   },
                 ),

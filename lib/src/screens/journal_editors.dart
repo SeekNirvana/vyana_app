@@ -12,6 +12,15 @@ Future<void> openMealLog(BuildContext context) => Navigator.of(context)
 
 /// Shared editor chrome: back affordance, serif title, scrolling body, and a
 /// sticky CTA at the bottom.
+/// The shell every editor screen shares: a title, a scrolling body and one
+/// Save button at the bottom.
+///
+/// Item 73: the busy guard lives here rather than in each screen, which is
+/// where it belongs — a second tap while the first save is in flight wrote
+/// the record twice and popped twice, and the second pop closed whatever
+/// screen had come up underneath. Ten screens use this shell, and putting
+/// the flag in each of them would have meant ten chances to forget. Any
+/// editor added later gets it for free.
 class _EditorScaffold extends StatelessWidget {
   const _EditorScaffold({
     required this.title,
@@ -28,7 +37,13 @@ class _EditorScaffold extends StatelessWidget {
   final List<Widget> children;
   final String ctaLabel;
   final String ctaIcon;
-  final VoidCallback onSave;
+
+  /// Awaited, so the button can stay disabled until the save is done.
+  /// Returning a Future is what makes the guard possible: a plain callback
+  /// gives nothing to wait on and the screen cannot tell when it is safe
+  /// to accept another tap.
+  final FutureOr<void> Function() onSave;
+
   final bool canSave;
 
   @override
@@ -67,7 +82,7 @@ class _EditorScaffold extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
-                child: Cta(
+                child: BusyCta(
                     label: ctaLabel,
                     icon: ctaIcon,
                     disabled: !canSave,
@@ -458,13 +473,23 @@ class _WakeCaptureScreenState extends ConsumerState<WakeCaptureScreen> {
   Future<void> _exploreWithGuide() async {
     if (_reflecting) return;
     final text = _body.text.trim();
-    final ready = ref.read(guideModelReadyProvider);
-    if (!ready || text.isEmpty) {
-      setState(() {
-        _reflection =
-            'Notice the feeling the dream left behind, not just the events. '
-            'What in waking life carries that same texture right now?';
-      });
+    if (text.isEmpty) {
+      _showVoiceSnack('Write the dream first, then ask Nova.');
+      return;
+    }
+    // Item 77: the backend-aware check (item 69), not modelReady. An
+    // endpoint that is set up and tested is a Nova who can answer, and
+    // reading modelReady alone put those users in the "not installed"
+    // branch — where a fixed sentence was written under a NOVA label as
+    // though she had written it.
+    final ai = ref.read(aiBackendProvider);
+    final ready = novaCanAnswer(
+      backend: ai.backend,
+      cloudReady: ai.cloudReady,
+      localReady: ref.read(guideModelReadyProvider),
+    );
+    if (!ready) {
+      await _offerToSetUpNova();
       return;
     }
     setState(() => _reflecting = true);
@@ -479,15 +504,35 @@ class _WakeCaptureScreenState extends ConsumerState<WakeCaptureScreen> {
       if (!mounted) return;
       setState(() => _reflection = stripGuideMarkdown(reply).trim());
     } catch (_) {
+      // Item 77: whatever was there stays there. Replacing a reflection
+      // the person may have valued with a stock sentence, on any error, is
+      // the part of this that lost something.
       if (!mounted) return;
-      setState(() {
-        _reflection =
-            'Notice the feeling the dream left behind, not just the events. '
-            'What in waking life carries that same texture right now?';
-      });
+      showVyanaSnackBar(
+        context,
+        message: 'Nova could not answer just now.',
+        icon: 'alert',
+      );
     } finally {
       if (mounted) setState(() => _reflecting = false);
     }
+  }
+
+  /// Says Nova is not set up, and offers the way to set her up.
+  ///
+  /// Item 77: better than a canned sentence under her name. Someone who has
+  /// not installed her should be told that, not handed a fixed paragraph
+  /// they will reasonably believe she wrote.
+  Future<void> _offerToSetUpNova() async {
+    final go = await showVyanaConfirmDialog<bool>(
+      context: context,
+      title: "Nova isn't set up",
+      message: 'Nova reflects on your entries on this phone, or on your own '
+          'server. Set her up and she can read this one.',
+      confirmLabel: 'Set up Nova',
+      cancelLabel: 'Not now',
+    );
+    if (go == true && mounted) await openAiSetup(context);
   }
 
   Future<void> _save() async {
@@ -929,14 +974,15 @@ class _PhotoChip extends StatelessWidget {
   }
 }
 
-/// Fallback reflection when Nova is not installed, or has nothing to work on.
-const _novaFallbackReflection =
-    'Notice the feeling this left behind, not just the events. What in waking '
-    'life carries that same texture right now?';
-
 /// Bug 8: after an entry is refined, Nova's reflection was written about the
 /// old text. Rather than silently keeping a stale reading or discarding one
 /// the user may value, "Ask Nova again" regenerates it on request.
+///
+/// Item 77: it used to write a fixed sentence into the entry whenever Nova
+/// was unavailable *or* anything went wrong — so asking again could replace
+/// a reflection someone valued with stock text, under Nova's name, and the
+/// original was gone. Now the only thing that ever becomes a reflection is
+/// something Nova actually said.
 Future<void> addNovaReflection(
   BuildContext context,
   WidgetRef ref,
@@ -944,9 +990,32 @@ Future<void> addNovaReflection(
 ) async {
   final db = ref.read(databaseProvider);
   final text = entry.body.trim();
-  final ready = ref.read(guideModelReadyProvider);
-  if (!ready || text.isEmpty) {
-    await db.setJournalReflection(entry.id, _novaFallbackReflection);
+  if (text.isEmpty) {
+    showVyanaSnackBar(
+      context,
+      message: 'There is nothing written to reflect on yet.',
+      icon: 'alert',
+    );
+    return;
+  }
+  // The backend-aware check (item 69): an endpoint that is set up and
+  // tested is a Nova who can answer.
+  final ai = ref.read(aiBackendProvider);
+  final ready = novaCanAnswer(
+    backend: ai.backend,
+    cloudReady: ai.cloudReady,
+    localReady: ref.read(guideModelReadyProvider),
+  );
+  if (!ready) {
+    final go = await showVyanaConfirmDialog<bool>(
+      context: context,
+      title: "Nova isn't set up",
+      message: 'Nova reflects on your entries on this phone, or on your own '
+          'server. Set her up and she can read this one.',
+      confirmLabel: 'Set up Nova',
+      cancelLabel: 'Not now',
+    );
+    if (go == true && context.mounted) await openAiSetup(context);
     return;
   }
   showVyanaSnackBar(
@@ -967,6 +1036,13 @@ Future<void> addNovaReflection(
         );
     await db.setJournalReflection(entry.id, stripGuideMarkdown(reply).trim());
   } catch (_) {
-    await db.setJournalReflection(entry.id, _novaFallbackReflection);
+    // Item 77: the entry keeps the reflection it had. A failed request is
+    // not a reason to overwrite someone's own record with a stock sentence.
+    if (!context.mounted) return;
+    showVyanaSnackBar(
+      context,
+      message: 'Nova could not answer just now. Your reflection is as it was.',
+      icon: 'alert',
+    );
   }
 }

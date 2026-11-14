@@ -49,4 +49,53 @@ void main() {
     expect(profile.age, 40);
     expect(profile.gender, UserGender.male);
   });
+
+  group('editing the profile keeps what the screen does not ask about', () {
+    // The editor used to rebuild the whole profile from its five fields and
+    // carry the rest over by hand. It carried the three cycle fields and
+    // missed trainingFrequency, so every save wiped the answer behind the
+    // personal resting-HR band — and the save that leads straight into the
+    // cycle sheet is the one path where it always happened.
+    const stored = UserProfile(
+      firstName: 'Leena',
+      age: 31,
+      gender: UserGender.female,
+      trainingFrequency: 'mostDays',
+      cycleMode: CycleMode.tracking,
+      cycleSheetSeen: true,
+    );
+
+    test('a name change does not drop the training answer', () {
+      final saved = stored.copyWith(firstName: 'Leena', lastName: 'Rao');
+      expect(saved.trainingFrequency, 'mostDays');
+      expect(saved.cycleMode, CycleMode.tracking);
+      expect(saved.cycleSheetSeen, isTrue);
+    });
+
+    test('the cycle sheet writing back does not drop it either', () {
+      final afterSheet = stored.copyWith(
+        cycleMode: CycleMode.pregnant,
+        cycleSheetSeen: true,
+      );
+      expect(afterSheet.trainingFrequency, 'mostDays');
+      expect(afterSheet.firstName, 'Leena');
+      expect(afterSheet.age, 31);
+    });
+
+    test('clearing height needs the explicit flag, not a null', () {
+      const withHeight = UserProfile(firstName: 'Leena', heightCm: 165);
+      // The trap in copyWith: a bare null means "unchanged".
+      expect(withHeight.copyWith(heightCm: null).heightCm, 165);
+      expect(withHeight.copyWith(clearHeightCm: true).heightCm, isNull);
+    });
+
+    test('the model stores what it is given; the editor is the gate', () {
+      // 17 cm was on screen as "34 yrs · Male · 17 cm · 72 kg". Nothing
+      // computes from height, so nothing broke — it just sat there reading
+      // like data.
+      const bad = UserProfile(firstName: 'Leena', age: 34, heightCm: 17);
+      expect(bad.subtitle, contains('17 cm'),
+          reason: 'the model stores what it is given; the editor is the gate');
+    });
+  });
 }

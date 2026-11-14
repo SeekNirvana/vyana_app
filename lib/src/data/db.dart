@@ -392,9 +392,73 @@ class WeeklyPlans extends Table {
   Set<Column> get primaryKey => {weekday, position};
 }
 
+/// One stored conversation with a guide.
+///
+/// Chat used to live in the chat screen's own `State`: leave the screen and
+/// everything said was gone, while the model's own history quietly survived —
+/// so the screen showed a fresh greeting to a model that still remembered
+/// the last conversation. Storing the conversation fixes the half anyone can
+/// see, and gives the model's history an explicit boundary to agree with.
+@DataClassName('ChatSessionRow')
+class ChatSessions extends Table {
+  TextColumn get id => text()();
+
+  /// Catalog persona id, e.g. `nova`.
+  TextColumn get personaId => text()();
+
+  /// The first thing the user asked, trimmed. Their own words, so the
+  /// history list reads as the questions they came with rather than
+  /// "Conversation 4".
+  TextColumn get title => text()();
+
+  /// `device` | `cloud` — where this conversation was answered. Recorded
+  /// because the answer to "why does this one read differently" is usually
+  /// that it was answered somewhere else.
+  TextColumn get backend => text().withDefault(const Constant('device'))();
+
+  /// The model that answered, as the picker names it.
+  TextColumn get modelLabel => text().nullable()();
+
+  DateTimeColumn get startedAt => dateTime()();
+
+  /// Last message in either direction. The history list sorts on this.
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// One turn in a stored conversation.
+///
+/// [body] holds what the bubble showed, not what the model was sent: the
+/// prompt also carries a DATA block of the user's own numbers, which is
+/// appended behind the scenes and would be stale by the time anyone read it
+/// back.
+@DataClassName('ChatMessageRow')
+class ChatMessages extends Table {
+  TextColumn get id => text()();
+
+  TextColumn get sessionId =>
+      text().references(ChatSessions, #id, onDelete: KeyAction.cascade)();
+
+  /// Position in the conversation, from 0.
+  IntColumn get ordinal => integer()();
+
+  BoolColumn get fromUser => boolean()();
+
+  TextColumn get body => text()();
+
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DriftDatabase(
   tables: [
     WeeklyPlans,
+    ChatSessions,
+    ChatMessages,
     ActivitySessions,
     Samples,
     RoutePoints,
@@ -425,8 +489,30 @@ class VyanaDatabase extends _$VyanaDatabase {
     );
   }
 
+  /// Whether [table] is already in this database.
+  ///
+  /// Item 72: asked *before* creating anything, because the answer decides
+  /// whether columns from a later schema version have to be added by hand.
+  /// A table drift creates is built from the current definition and already
+  /// has every column, so adding them again is the "duplicate column name"
+  /// that stopped the app opening.
+  ///
+  /// Note for anyone reading the `try/catch (_) {/* already exists */}`
+  /// blocks below and reasoning from them, as this fix first did: drift's
+  /// `createTable` emits `CREATE TABLE IF NOT EXISTS`, so it does not throw
+  /// for a table that is already there and those catches have never caught
+  /// anything. Existence has to be looked up; it cannot be inferred from a
+  /// failure that never happens.
+  Future<bool> _hasTable(String name) async {
+    final rows = await customSelect(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+      variables: [Variable.withString(name)],
+    ).get();
+    return rows.isNotEmpty;
+  }
+
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -434,9 +520,9 @@ class VyanaDatabase extends _$VyanaDatabase {
         onUpgrade: (m, from, to) async {
           // Idempotent: bring any device forward by creating tables it is
           // missing, tolerating partial state left by earlier dev builds.
-          try {
-            await m.createTable(journalEntries);
-          } on Object catch (_) {/* already exists */}
+          final hadJournalEntries =
+              await _hasTable(journalEntries.actualTableName);
+          await m.createTable(journalEntries);
           try {
             await m.createTable(meals);
           } on Object catch (_) {/* already exists */}
@@ -449,21 +535,41 @@ class VyanaDatabase extends _$VyanaDatabase {
           try {
             await m.createTable(ringHistoryCaches);
           } on Object catch (_) {/* already exists */}
-          try {
-            await m.createTable(ringOrders);
-          } on Object catch (_) {/* already exists */}
-          if (from < 6) {
-            await m.addColumn(ringOrders, ringOrders.orderType);
-            await m.addColumn(ringOrders, ringOrders.shippingCountry);
-            await m.addColumn(ringOrders, ringOrders.orderMessage);
+          // Item 72: this crashed every upgrade from schema 4 or older, and
+          // crashed it in the worst place — onUpgrade throwing means the
+          // database never opens, so the app is dead on launch with every
+          // record still sitting there.
+          //
+          // createTable builds the table from the *current* definition, so
+          // a device that had no ring_orders got one with orderType,
+          // shippingCountry and orderMessage already in it. The unguarded
+          // addColumn calls then hit "duplicate column name" and nothing
+          // caught them. `from < 6` was the wrong question: what decides
+          // whether those columns need adding by hand is not the version
+          // the device is coming from, it is whether the table was already
+          // there to be migrated.
+          final hadRingOrders = await _hasTable(ringOrders.actualTableName);
+          await m.createTable(ringOrders);
+          if (hadRingOrders && from < 6) {
+            for (final column in [
+              ringOrders.orderType,
+              ringOrders.shippingCountry,
+              ringOrders.orderMessage,
+            ]) {
+              // Guarded as well as conditional. A migration that throws
+              // costs someone their app, so this is one of the few places
+              // worth both.
+              try {
+                await m.addColumn(ringOrders, column);
+              } on Object catch (_) {/* already there */}
+            }
           }
           try {
             await m.createTable(ecgRecordings);
           } on Object catch (_) {/* already exists */}
-          try {
-            await m.createTable(patterns);
-          } on Object catch (_) {/* already exists */}
-          if (from < 10) {
+          final hadPatterns = await _hasTable(patterns.actualTableName);
+          await m.createTable(patterns);
+          if (hadPatterns && from < 10) {
             for (final column in [
               patterns.counterIdsJson,
               patterns.baseline,
@@ -473,7 +579,7 @@ class VyanaDatabase extends _$VyanaDatabase {
               } on Object catch (_) {/* already exists */}
             }
           }
-          if (from < 8) {
+          if (hadJournalEntries && from < 8) {
             try {
               await m.addColumn(journalEntries, journalEntries.reflection);
             } on Object catch (_) {/* already exists */}
@@ -491,6 +597,14 @@ class VyanaDatabase extends _$VyanaDatabase {
           // for anyone who never opens "My week".
           try {
             await m.createTable(weeklyPlans);
+          } on Object catch (_) {/* already exists */}
+          // Stored conversations. Empty on arrival: nothing said before this
+          // build was written down anywhere, so there is nothing to backfill.
+          try {
+            await m.createTable(chatSessions);
+          } on Object catch (_) {/* already exists */}
+          try {
+            await m.createTable(chatMessages);
           } on Object catch (_) {/* already exists */}
         },
         beforeOpen: (details) async {
@@ -694,6 +808,56 @@ class VyanaDatabase extends _$VyanaDatabase {
     );
   }
 
+  /// When the oldest thing the user has here was recorded.
+  ///
+  /// Item 53: decides whether it is fair to mention backing up at all.
+  /// Telling someone on their second day that they have never backed up is
+  /// nagging about an empty file, so the reminder waits until there is a
+  /// week of history to lose.
+  Future<DateTime?> historyStartedAt() async {
+    DateTime? oldest;
+    // Named per table: a session is stamped started_at, not created_at,
+    // and asking every table for the same column throws on that one.
+    const dated = {
+      'activity_sessions': 'started_at',
+      'journal_entries': 'created_at',
+      'meals': 'created_at',
+      'cycle_days': 'created_at',
+    };
+    for (final entry in dated.entries) {
+      final row = await customSelect(
+        'SELECT MIN(${entry.value}) AS t FROM ${entry.key}',
+      ).getSingleOrNull();
+      final seconds = row?.data['t'] as int?;
+      if (seconds == null) continue;
+      final at = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+      if (oldest == null || at.isBefore(oldest)) oldest = at;
+    }
+    return oldest;
+  }
+
+  /// Whether this phone holds nothing the user put here.
+  ///
+  /// Item 53: decides whether a restore can be offered without a warning.
+  /// An empty vault means nothing can be overwritten, which is the only
+  /// condition under which restoring is a free choice.
+  Future<bool> isEmptyOfUserData() async {
+    for (final table in const [
+      'activity_sessions',
+      'journal_entries',
+      'meals',
+      'cycle_days',
+      'samples',
+      'chat_sessions',
+    ]) {
+      final row = await customSelect(
+        'SELECT COUNT(*) AS n FROM $table',
+      ).getSingleOrNull();
+      if ((row?.data['n'] as int? ?? 0) > 0) return false;
+    }
+    return true;
+  }
+
   Future<void> deleteJournalEntry(String id) =>
       (delete(journalEntries)..where((t) => t.id.equals(id))).go();
 
@@ -849,45 +1013,10 @@ class VyanaDatabase extends _$VyanaDatabase {
     return rows.isEmpty ? null : rows.first;
   }
 
-  Future<void> insertRingOrder({
-    required String id,
-    required String status,
-    required String productName,
-    required String color,
-    required int size,
-    required double amountUsdc,
-    String? referralCode,
-    required String treasuryAddress,
-    required String walletAddress,
-    String? txSignature,
-    int shippingEtaDays = 30,
-    String? errorMessage,
-    String orderType = 'purchase',
-    String? shippingCountry,
-    String? orderMessage,
-    DateTime? createdAt,
-  }) {
-    return into(ringOrders).insert(
-      RingOrdersCompanion.insert(
-        id: id,
-        status: status,
-        productName: productName,
-        color: color,
-        size: size,
-        amountUsdc: amountUsdc,
-        referralCode: Value(referralCode),
-        treasuryAddress: treasuryAddress,
-        walletAddress: walletAddress,
-        txSignature: Value(txSignature),
-        shippingEtaDays: Value(shippingEtaDays),
-        errorMessage: Value(errorMessage),
-        orderType: Value(orderType),
-        shippingCountry: Value(shippingCountry),
-        orderMessage: Value(orderMessage),
-        createdAt: createdAt ?? DateTime.now(),
-      ),
-    );
-  }
+  // Item 61: the method that wrote a row here is gone. Buying moved to
+  // seeknirvana.com, so nothing in the app creates an order any more. The
+  // table stays, holding the ones placed before this release, and
+  // watchRingOrders reads them.
 
   Stream<List<RingOrderRow>> watchRingOrders() =>
       (select(ringOrders)..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
@@ -1215,6 +1344,124 @@ class VyanaDatabase extends _$VyanaDatabase {
 
   Future<int> deletePattern(String id) =>
       (delete(patterns)..where((t) => t.id.equals(id))).go();
+
+  // ── Stored conversations ──────────────────────────────────────────────────
+
+  Future<void> insertChatSession({
+    required String id,
+    required String personaId,
+    required String title,
+    required String backend,
+    String? modelLabel,
+    required DateTime startedAt,
+  }) {
+    return into(chatSessions).insert(
+      ChatSessionsCompanion.insert(
+        id: id,
+        personaId: personaId,
+        title: title,
+        backend: Value(backend),
+        modelLabel: Value(modelLabel),
+        startedAt: startedAt,
+        updatedAt: startedAt,
+      ),
+    );
+  }
+
+  /// Moves a conversation to the top of the history list, and takes a title
+  /// if it does not have one yet.
+  Future<void> touchChatSession(
+    String id, {
+    String? title,
+    DateTime? at,
+  }) {
+    return (update(chatSessions)..where((t) => t.id.equals(id))).write(
+      ChatSessionsCompanion(
+        updatedAt: Value(at ?? DateTime.now()),
+        title: title == null ? const Value.absent() : Value(title),
+      ),
+    );
+  }
+
+  Future<void> insertChatMessage({
+    required String id,
+    required String sessionId,
+    required int ordinal,
+    required bool fromUser,
+    required String body,
+    required DateTime createdAt,
+  }) {
+    return into(chatMessages).insertOnConflictUpdate(
+      ChatMessagesCompanion.insert(
+        id: id,
+        sessionId: sessionId,
+        ordinal: ordinal,
+        fromUser: fromUser,
+        body: body,
+        createdAt: createdAt,
+      ),
+    );
+  }
+
+  /// A reply is written once, when it has finished arriving. Writing every
+  /// token would be hundreds of writes per answer for a row nobody reads
+  /// until the conversation is over.
+  Future<void> updateChatMessageBody(String id, String body) {
+    return (update(chatMessages)..where((t) => t.id.equals(id)))
+        .write(ChatMessagesCompanion(body: Value(body)));
+  }
+
+  Stream<List<ChatSessionRow>> watchChatSessions() =>
+      (select(chatSessions)..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
+          .watch();
+
+  Future<List<ChatSessionRow>> allChatSessions() =>
+      (select(chatSessions)..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
+          .get();
+
+  Future<ChatSessionRow?> getChatSession(String id) =>
+      (select(chatSessions)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  /// Watched rather than fetched: opening the transcript of the conversation
+  /// that is still in progress should not show a snapshot of it.
+  Stream<List<ChatMessageRow>> watchChatMessagesFor(String sessionId) =>
+      (select(chatMessages)
+            ..where((t) => t.sessionId.equals(sessionId))
+            ..orderBy([(t) => OrderingTerm.asc(t.ordinal)]))
+          .watch();
+
+  Future<List<ChatMessageRow>> chatMessagesFor(String sessionId) =>
+      (select(chatMessages)
+            ..where((t) => t.sessionId.equals(sessionId))
+            ..orderBy([(t) => OrderingTerm.asc(t.ordinal)]))
+          .get();
+
+  /// Messages cascade with the row; `PRAGMA foreign_keys` is on in
+  /// [beforeOpen], so this does not leave orphans behind.
+  Future<int> deleteChatSession(String id) =>
+      (delete(chatSessions)..where((t) => t.id.equals(id))).go();
+
+  Future<void> deleteAllChatSessions() async {
+    await batch((b) {
+      b.deleteAll(chatMessages);
+      b.deleteAll(chatSessions);
+    });
+  }
+
+  Future<int> chatSessionsCount() => _countRows(chatSessions);
+
+  Future<int> chatMessagesCount() => _countRows(chatMessages);
+
+  /// Roughly what the stored conversations occupy, for the footprint screen.
+  /// The text itself, not the page overhead around it — close enough to tell
+  /// somebody whether this is worth clearing, and honest about being a sum
+  /// of what was written rather than a file size.
+  Future<int> chatHistoryBytes() async {
+    final length = chatMessages.body.length.sum();
+    final row = await (selectOnly(chatMessages)..addColumns([length]))
+        .getSingleOrNull();
+    return row?.read(length)?.toInt() ?? 0;
+  }
 }
 
 /// The local vault (drift). One instance app-wide.
