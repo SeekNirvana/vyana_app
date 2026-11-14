@@ -74,6 +74,9 @@ dependencies:
   sherpa_onnx: ^2.0.1             # Offline neural TTS runtime (Kokoro)
   audioplayers: ^6.8.1            # Plays Kokoro's generated audio
   crypto: ^3.0.6                  # SHA-256 pinning for downloaded voice files
+  # Item 53: encrypted backups. AES-256-GCM for the file, Argon2id to turn
+  # the user's passphrase into the key — `crypto` above is hashing only.
+  cryptography: ^2.7.0            # AES-256-GCM + Argon2id for backup files
   image_picker: ^1.2.2
   url_launcher: ^6.3.1
 
