@@ -10,55 +10,9 @@ part of '../../main.dart';
 /// Every value here is read from the same source the screens read, so Nova
 /// can never disagree with what Home and Metrics are showing.
 
-/// Target size of the DATA block. Short fields, not sentences — the cap it
-/// shares with the conversation is small (see the note on
-/// [GuidePersonaPrefsService.maxTokensFor]).
-const int kNovaDataTargetTokens = 150;
-
-/// At most this many day lines in a LOOKUP block; beyond it, a summary.
-const int kNovaLookupMaxDays = 10;
-
-/// One day's numbers, for the DATA and LOOKUP blocks.
-class NovaDay {
-  const NovaDay({
-    required this.day,
-    this.sleepSeconds,
-    this.sleepScore,
-    this.readiness,
-    this.hrv,
-    this.restingHr,
-    this.nightMissing = false,
-  });
-
-  final DateTime day;
-  final int? sleepSeconds;
-  final int? sleepScore;
-  final int? readiness;
-  final int? hrv;
-  final int? restingHr;
-  final bool nightMissing;
-
-  String get line {
-    final parts = <String>[
-      if (sleepSeconds != null) 'sleep ${_hm(sleepSeconds!)}',
-      if (sleepScore != null) 'score $sleepScore',
-      if (readiness != null) 'readiness $readiness',
-      if (hrv != null) 'HRV $hrv',
-      if (restingHr != null) 'resting HR $restingHr',
-    ];
-    if (parts.isEmpty) return '${_date(day)}: no data';
-    return '${_date(day)}: ${parts.join(' · ')}';
-  }
-}
-
-String _hm(int seconds) {
-  final h = seconds ~/ 3600;
-  final m = (seconds % 3600) ~/ 60;
-  return '${h}h ${m.toString().padLeft(2, '0')}m';
-}
-
-String _date(DateTime d) =>
-    '${kShortWeekdays[d.weekday - 1]} ${d.day} ${kShortMonths[d.month - 1]}';
+/// Item 70: the day label lives in nova_budget.dart now, with the rest of
+/// what Nova is told. Aliased rather than duplicated.
+String _date(DateTime d) => novaDayLabel(d);
 
 String _stamp(DateTime d) =>
     '${_date(d)} ${d.hour.toString().padLeft(2, '0')}:'
@@ -143,7 +97,7 @@ String formatNovaData(NovaFacts f) {
   // there (item 36). "I can't see one" is a useless answer on its own.
   if (f.lastNight case final night?) {
     final parts = <String>[
-      if (night.sleepSeconds != null) _hm(night.sleepSeconds!),
+      if (night.sleepSeconds != null) novaHoursMinutes(night.sleepSeconds!),
       if (night.sleepScore != null) 'score ${night.sleepScore}',
     ];
     final suffix = f.nightReason == MissingNightReason.recorded
@@ -159,7 +113,7 @@ String formatNovaData(NovaFacts f) {
 
   if (f.yesterday case final y?) {
     final parts = <String>[
-      if (y.sleepSeconds != null) 'sleep ${_hm(y.sleepSeconds!)}',
+      if (y.sleepSeconds != null) 'sleep ${novaHoursMinutes(y.sleepSeconds!)}',
       if (y.sleepScore != null) 'score ${y.sleepScore}',
       if (y.readiness != null) 'readiness ${y.readiness}',
     ];
@@ -204,157 +158,6 @@ String formatNovaData(NovaFacts f) {
   }
 
   return lines.join('\n');
-}
-
-/// Formats the look-up for a past day or range (item 51 (2)). One line per
-/// day up to [kNovaLookupMaxDays]; beyond that, a summary.
-String formatNovaLookup(List<NovaDay> days, {required String label}) {
-  if (days.isEmpty) return '';
-  final sorted = [...days]..sort((a, b) => a.day.compareTo(b.day));
-  if (sorted.length <= kNovaLookupMaxDays) {
-    return ['LOOKUP ($label)', for (final d in sorted) d.line].join('\n');
-  }
-  final scores = [
-    for (final d in sorted)
-      if (d.sleepScore != null) d.sleepScore!,
-  ];
-  final missing = sorted.where((d) => d.nightMissing).length;
-  final summary = <String>[
-    '${sorted.length} days',
-    if (scores.isNotEmpty)
-      'average score ${(scores.reduce((a, b) => a + b) / scores.length).round()}',
-    if (scores.isNotEmpty) 'best ${scores.reduce(math.max)}',
-    if (scores.isNotEmpty) 'worst ${scores.reduce(math.min)}',
-    if (missing > 0) '$missing missing ${missing == 1 ? 'night' : 'nights'}',
-  ];
-  return 'LOOKUP ($label)\n${summary.join(' · ')}';
-}
-
-// ── Does this message refer to a past day or range? ───────────────────────
-
-const Map<String, int> _weekdayWords = {
-  'monday': 1,
-  'tuesday': 2,
-  'wednesday': 3,
-  'thursday': 4,
-  'friday': 5,
-  'saturday': 6,
-  'sunday': 7,
-  'mon': 1,
-  'tue': 2,
-  'wed': 3,
-  'thu': 4,
-  'fri': 5,
-  'sat': 6,
-  'sun': 7,
-};
-
-/// A past window the message is asking about, or null when it is about now.
-class NovaLookupRange {
-  const NovaLookupRange({
-    required this.from,
-    required this.to,
-    required this.label,
-  });
-
-  /// Inclusive first day.
-  final DateTime from;
-
-  /// Inclusive last day.
-  final DateTime to;
-  final String label;
-
-  int get days => to.difference(from).inDays + 1;
-}
-
-/// Reads the message for a past day, a range, or a metric over time. Returns
-/// null when it refers to nothing older than today — in which case no LOOKUP
-/// block is added at all.
-NovaLookupRange? novaLookupRangeFor(String message, {DateTime? now}) {
-  final at = now ?? DateTime.now();
-  final today = DateTime(at.year, at.month, at.day);
-  final text = message.toLowerCase();
-
-  DateTime back(int days) => today.subtract(Duration(days: days));
-
-  if (text.contains('last month')) {
-    final first = DateTime(today.year, today.month - 1, 1);
-    return NovaLookupRange(
-      from: first,
-      to: DateTime(today.year, today.month, 0),
-      label: 'last month',
-    );
-  }
-  if (text.contains('this month')) {
-    return NovaLookupRange(
-      from: DateTime(today.year, today.month, 1),
-      to: today,
-      label: 'this month',
-    );
-  }
-  if (text.contains('last week')) {
-    return NovaLookupRange(from: back(13), to: back(7), label: 'last week');
-  }
-  if (text.contains('this week') ||
-      text.contains('last 7') ||
-      text.contains('past week') ||
-      text.contains('past 7')) {
-    return NovaLookupRange(from: back(6), to: today, label: 'last 7 days');
-  }
-  if (text.contains('last 30') ||
-      text.contains('past 30') ||
-      text.contains('past month')) {
-    return NovaLookupRange(from: back(29), to: today, label: 'last 30 days');
-  }
-  if (text.contains('yesterday')) {
-    return NovaLookupRange(
-      from: back(1),
-      to: back(1),
-      label: 'yesterday',
-    );
-  }
-
-  // A weekday name means the most recent one that has already happened.
-  for (final entry in _weekdayWords.entries) {
-    if (!RegExp(r'\b' + entry.key + r'\b').hasMatch(text)) continue;
-    var day = today.subtract(const Duration(days: 1));
-    for (var i = 0; i < 7; i++) {
-      if (day.weekday == entry.value) {
-        return NovaLookupRange(
-          from: day,
-          to: day,
-          label: kShortWeekdays[entry.value - 1],
-        );
-      }
-      day = day.subtract(const Duration(days: 1));
-    }
-  }
-
-  // "12 Oct" / "Oct 12".
-  final months = [
-    for (final m in kShortMonths) m.toLowerCase(),
-  ];
-  for (var i = 0; i < months.length; i++) {
-    final m = months[i];
-    final match = RegExp(
-      r'(?:(\d{1,2})\s+' + m + r'|' + m + r'\w*\s+(\d{1,2}))',
-    ).firstMatch(text);
-    if (match == null) continue;
-    final dayNumber = int.tryParse(match.group(1) ?? match.group(2) ?? '');
-    if (dayNumber == null || dayNumber < 1 || dayNumber > 31) continue;
-    var year = today.year;
-    var day = DateTime(year, i + 1, dayNumber);
-    if (day.isAfter(today)) day = DateTime(--year, i + 1, dayNumber);
-    return NovaLookupRange(from: day, to: day, label: _date(day));
-  }
-
-  // A metric named over time, with no date: the last week is the useful
-  // default — the same window Metrics opens on.
-  if (RegExp(r'\b(trend|trending|average|over time|recently|lately)\b')
-      .hasMatch(text)) {
-    return NovaLookupRange(from: back(6), to: today, label: 'last 7 days');
-  }
-  return null;
 }
 
 // ── Gathering the facts ───────────────────────────────────────────────────
@@ -416,8 +219,14 @@ List<String> _concernsFrom({
   required RingController controller,
   required RingHistory history,
   required DateTime now,
+  List<String> alerts = const [],
 }) {
   final out = <String>[];
+
+  // Item 70: the alerts the person was actually sent come first, because
+  // being asked about a week Nova calls unremarkable is worst when the
+  // phone buzzed about it two nights ago.
+  out.addAll(alerts);
 
   // Bug 36: a missing or partial night, with its reason.
   switch (dashboard.sleepStatus) {
@@ -466,12 +275,34 @@ List<String> _concernsFrom({
       out.add('${kind.name} $value ${verdict.captionSuffix ?? ''}'.trim());
     }
   }
-  return out;
+
+  // Item 70: the doc comment above always said "the last three days" while
+  // the code read the dashboard, which is today. The two days before last
+  // night come from history, by the same rules.
+  final today = DateTime(now.year, now.month, now.day);
+  for (var back = 1; back <= 2; back++) {
+    final day = _dayFrom(history, today.subtract(Duration(days: back)));
+    final word = novaDaysAgoWord(back);
+    if (day.nightMissing) {
+      out.add('no sleep recorded $word');
+    } else if (day.readiness != null && day.readiness! < 50) {
+      out.add('readiness ${day.readiness} $word');
+    }
+  }
+
+  // More to say, not more room to say it in: the DATA block still has to
+  // fit the window it shares with the conversation.
+  return out.take(kNovaMaxConcerns).toList();
 }
 
 /// Builds the DATA block for the message about to be sent. Reads the same
 /// providers the screens read, so Nova can never disagree with the screen.
-String novaDataBlockFor(WidgetRef ref, {DateTime? at}) {
+///
+/// Item 70: asynchronous now, because the alerts someone was actually sent
+/// live in preferences rather than in a provider. Worth the await — the
+/// alternative was Nova describing a calm week to a person whose phone had
+/// told them otherwise.
+Future<String> novaDataBlockFor(WidgetRef ref, {DateTime? at}) async {
   final now = at ?? DateTime.now();
   final controller = ref.read(ringControllerProvider);
   final dashboard = HomeDashboard.from(controller);
@@ -547,9 +378,37 @@ String novaDataBlockFor(WidgetRef ref, {DateTime? at}) {
         controller: controller,
         history: history,
         now: now,
+        alerts: await _recentAlerts(now),
       ),
     ),
   );
+}
+
+/// What the alert service has notified this person about lately.
+///
+/// Reads the "already fired" stamps the alert evaluator writes, so Nova is
+/// told what the person was told. A keystore or preferences failure here
+/// returns nothing rather than failing the message: a DATA block missing
+/// one line is better than no answer.
+Future<List<String>> _recentAlerts(DateTime now) async {
+  try {
+    final store = await SharedPreferences.getInstance();
+    DateTime? stamp(String key) {
+      final millis = store.getInt(key);
+      return millis == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(millis);
+    }
+
+    return recentAlertConcerns(
+      now: now,
+      healthFiredAt: stamp(kRingAlertHealthFiredAtKey),
+      lowBatteryFiredAt: stamp(kRingAlertLowBatteryFiredAtKey),
+    );
+  } on Object catch (error) {
+    debugPrint('[Nova] could not read recent alerts: $error');
+    return const [];
+  }
 }
 
 /// Builds the LOOKUP block for [message], or an empty string when it refers
@@ -567,11 +426,11 @@ String novaLookupBlockFor(
     for (var i = 0; i < range.days; i++)
       _dayFrom(history, range.from.add(Duration(days: i))),
   ];
-  // Nothing on record for any of those days: say nothing rather than
-  // printing a wall of "no data".
-  final hasData = days.any(
-    (d) => d.sleepSeconds != null || d.hrv != null || d.restingHr != null,
-  );
-  if (!hasData) return '';
+  // Item 70: an empty range used to return nothing at all, so a question
+  // about a week with the ring in a drawer reached Nova with no block and
+  // she answered as though the days had been ordinary. formatNovaLookup
+  // now says "no data recorded" in one line — which is the difference
+  // between Nova telling someone their ring was off and Nova inventing a
+  // quiet week.
   return formatNovaLookup(days, label: range.label);
 }

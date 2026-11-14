@@ -10,6 +10,7 @@ import 'package:vyana/src/services/guide_model_manager.dart';
 import 'package:vyana/src/services/guide_persona_prefs_service.dart';
 import 'package:vyana/src/services/guide_voice_service.dart';
 import 'package:vyana/src/services/nova_voice_assets.dart';
+import 'package:vyana/src/services/nova_budget.dart';
 import 'package:vyana/src/wellness/wellness_state.dart';
 import 'package:vyana_sdk/vyana_sdk.dart';
 

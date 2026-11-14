@@ -62,12 +62,13 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     // was never a privacy reason for it, since model and data are both on
     // this phone. The block is appended after the user's words; the user
     // never sees or types it, and the bubble below still shows `prompt`.
+    // Item 70: handed over separately rather than joined here. Whether the
+    // DATA block still needs sending depends on what the live session has
+    // already been given, and the runtime is the only thing that knows
+    // that — it used to go with every message, which pushed the question
+    // out of the window by the third turn on Android.
     final lookup = novaLookupBlockFor(ref, prompt);
-    final modelPrompt = [
-      prompt,
-      novaDataBlockFor(ref),
-      if (lookup.isNotEmpty) lookup,
-    ].join('\n\n');
+    final dataBlock = await novaDataBlockFor(ref);
 
     final kind = guideKindForPersona(guide);
     final runtime = ref.read(guideRuntimeServiceProvider);
@@ -109,7 +110,12 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
         var spokenUpTo = 0;
         final sentenceEnd = RegExp(r'[.!?]\s+');
         await for (final partial
-            in runtime.streamResponse(guide: kind, prompt: modelPrompt)) {
+            in runtime.streamResponse(
+          guide: kind,
+          prompt: prompt,
+          dataBlock: dataBlock,
+          lookupBlock: lookup,
+        )) {
           if (!mounted) return;
           history.updateReply(replyIndex, partial);
           if (voice.voiceResponsesEnabled) {
@@ -134,8 +140,12 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
           if (remaining.isNotEmpty) voice.queueSpeak(remaining);
         }
       } else {
-        final reply =
-            await runtime.generateResponse(guide: kind, prompt: modelPrompt);
+        final reply = await runtime.generateResponse(
+          guide: kind,
+          prompt: prompt,
+          dataBlock: dataBlock,
+          lookupBlock: lookup,
+        );
         if (!mounted) return;
         history.updateReply(replyIndex, reply);
         if (voice.voiceResponsesEnabled && reply.trim().isNotEmpty) {

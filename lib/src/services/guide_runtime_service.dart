@@ -1,6 +1,8 @@
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+
+import 'nova_budget.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -110,20 +112,42 @@ class GuideRuntimeService {
   Future<String> generateResponse({
     required GuideKind guide,
     required String prompt,
+    String dataBlock = '',
+    String lookupBlock = '',
   }) async {
     var finalResponse = '';
-    await for (final partial in streamResponse(guide: guide, prompt: prompt)) {
+    await for (final partial in streamResponse(
+      guide: guide,
+      prompt: prompt,
+      dataBlock: dataBlock,
+      lookupBlock: lookupBlock,
+    )) {
       finalResponse = partial;
     }
     return finalResponse;
   }
 
+  /// The DATA block the live session has already been given, if any.
+  ///
+  /// Item 70: cleared in [offload], so it is remembered for exactly as long
+  /// as the session that received it. A block "already sent" to a session
+  /// that no longer exists would leave Nova with no numbers at all.
+  String? _sentDataBlock;
+
   /// Stream a response for [prompt] as text accumulates.
+  ///
+  /// [dataBlock] and [lookupBlock] are passed separately rather than joined
+  /// into [prompt] by the caller, because whether the DATA block needs
+  /// sending depends on the session — which only this service knows about.
   Stream<String> streamResponse({
     required GuideKind guide,
     required String prompt,
+    String dataBlock = '',
+    String lookupBlock = '',
   }) async* {
-    if (_backend.backend == AiBackend.cloud && _backend.cloudReady) {
+    final onCloud = _backend.backend == AiBackend.cloud && _backend.cloudReady;
+
+    if (onCloud) {
       // The endpoint carries the whole conversation in the prompt, so there
       // is no session to load, offload or retry on another backend. A
       // failure here is the user's server, and saying so beats a generic
@@ -139,11 +163,17 @@ class GuideRuntimeService {
       // nothing at all on a server.
       final cloudDefinition = guidePersonaDefinitions[guide]!;
       final cloudConfig = await _prefsService.effectiveConfig(cloudDefinition);
+      // An HTTP request carries its whole context and remembers nothing
+      // between calls, so the endpoint gets the data every time.
       yield* _backend.streamFromEndpoint(
-        prompt,
+        composeNovaPrompt(
+          message: prompt,
+          dataBlock: dataBlock,
+          lookupBlock: lookupBlock,
+        ),
         systemPrompt: cloudConfig.systemPrompt,
         temperature: cloudConfig.temperature,
-        maxTokens: cloudConfig.maxTokens,
+        maxTokens: cloudConfig.replyTokens,
       );
       return;
     }
@@ -156,7 +186,11 @@ class GuideRuntimeService {
       _backendAttemptIndex = attempt;
       try {
         await initialize(guide);
-        yield* _streamOnce(prompt);
+        yield* _streamOnce(
+          prompt,
+          dataBlock: dataBlock,
+          lookupBlock: lookupBlock,
+        );
         _backendAttemptIndex = 0;
         _loadedBackendAttempt = 0;
         return;
@@ -185,7 +219,18 @@ class GuideRuntimeService {
     );
   }
 
-  Stream<String> _streamOnce(String prompt) async* {
+  /// One attempt at an on-device reply.
+  ///
+  /// Item 70: composing happens here, not in [streamResponse], because this
+  /// is what the retry loop calls again. A failed attempt offloads, which
+  /// clears the session's memory of the DATA block — so the second attempt
+  /// has to send it again, and a prompt composed once before the loop
+  /// would have arrived without it.
+  Stream<String> _streamOnce(
+    String message, {
+    required String dataBlock,
+    required String lookupBlock,
+  }) async* {
     if (_activeChat == null) {
       throw StateError('Failed to initialize chat');
     }
@@ -199,11 +244,31 @@ class GuideRuntimeService {
       await Future.delayed(const Duration(milliseconds: 100));
     }
 
+    // An on-device chat keeps the turns it was given, so repeating the
+    // numbers is what pushes the question out of the window.
+    final sendData = novaDataNeedsSending(
+      block: dataBlock,
+      lastSent: _sentDataBlock,
+      sessionRemembers: true,
+    );
+
     try {
       try {
         await _activeChat!.addQueryChunk(
-          Message.text(text: prompt, isUser: true),
+          Message.text(
+            text: composeNovaPrompt(
+              message: message,
+              dataBlock: sendData ? dataBlock : '',
+              lookupBlock: lookupBlock,
+            ),
+            isUser: true,
+          ),
         );
+        // Recorded only now the session has it. Recording it when the
+        // block was composed would mean a turn that failed to be added
+        // left Nova with no numbers for the rest of the session, and no
+        // sign of why.
+        if (sendData) _sentDataBlock = dataBlock;
       } catch (e) {
         throw StateError('Failed to add message to chat: $e');
       }
@@ -276,6 +341,11 @@ class GuideRuntimeService {
     if (_isGenerating) return;
     try {
       await chat.clearHistory();
+      // Item 70: the session has just forgotten the DATA block along with
+      // everything else, so it has to be sent again. Without this, asking
+      // for a new conversation left Nova with no numbers and nothing to
+      // say about them.
+      _sentDataBlock = null;
     } on Object catch (error) {
       // A model that will not forget is worse than one that cannot be asked
       // to, so drop it and let the next message rebuild from nothing.
@@ -300,6 +370,9 @@ class GuideRuntimeService {
 
     _activeChat = null;
     _activeGuide = null;
+    // Item 70: the DATA block is remembered for exactly as long as the
+    // session that received it.
+    _sentDataBlock = null;
     _loadedConfigEpoch = null;
     _loadedBackendAttempt = null;
     _loadedPrefsUpdatedAt = null;
@@ -331,11 +404,13 @@ class GuideRuntimeService {
     final backend = _preferredBackendFor(definition);
     debugPrint(
       '[GuideRuntime] Loading ${definition.name} on $backend '
-      '(maxTokens=${effective.maxTokens}, temp=${effective.temperature})',
+      '(contextTokens=${effective.contextTokens}, '
+      'replyTokens=${effective.replyTokens}, temp=${effective.temperature})',
     );
 
     _currentModel = await FlutterGemma.getActiveModel(
-      maxTokens: effective.maxTokens,
+      // Item 70: the window, not the reply length.
+      maxTokens: effective.contextTokens,
       preferredBackend: backend,
     );
 

@@ -354,6 +354,18 @@ const int kBatteryRecoveredPercent = 30;
 /// to warn about one, so "Nothing is reading you right now" arrived about a
 /// ring that had been removed — which reads as the app watching something
 /// that is not there.
+/// When the last health alert was sent, as epoch milliseconds.
+///
+/// Public because item 70 has Nova read it: what she is told about a
+/// person's week should include what their phone told them. Shared rather
+/// than spelled out twice, so renaming it breaks the build instead of
+/// quietly emptying the DATA block.
+const String kRingAlertHealthFiredAtKey = 'vyana.ring.alert.healthFiredAt';
+
+/// When the last low-battery alert was sent, as epoch milliseconds.
+const String kRingAlertLowBatteryFiredAtKey =
+    'vyana.ring.alert.lowBatteryFiredAt';
+
 const List<String> kRingAlertStateKeys = [
   'vyana.ring.alert.offlineSince',
   'vyana.ring.alert.offlineFired',
@@ -367,11 +379,11 @@ const List<String> kRingAlertStateKeys = [
 class _AlertKeys {
   static const offlineSince = 'vyana.ring.alert.offlineSince';
   static const offlineFired = 'vyana.ring.alert.offlineFired';
-  static const lowBatteryFiredAt = 'vyana.ring.alert.lowBatteryFiredAt';
+  static const lowBatteryFiredAt = kRingAlertLowBatteryFiredAtKey;
   static const overnightBatteryFiredOn =
       'vyana.ring.alert.overnightBatteryFiredOn';
   static const staleFired = 'vyana.ring.alert.staleFired';
-  static const healthFiredAt = 'vyana.ring.alert.healthFiredAt';
+  static const healthFiredAt = kRingAlertHealthFiredAtKey;
 }
 
 /// Out of reach this long before the offline alert fires.

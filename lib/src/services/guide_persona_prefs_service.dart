@@ -35,12 +35,38 @@ enum GuideResponseLength {
   }
 }
 
+/// What to ask of the model about length, in words.
+///
+/// Item 70: "Short" used to be implemented by halving the context window,
+/// which does not shorten an answer — it shortens the model's memory of
+/// the question. Asking in the system prompt costs about ten tokens and
+/// actually describes the thing wanted.
+String replyLengthInstruction(GuideResponseLength length) =>
+    switch (length) {
+      GuideResponseLength.short =>
+        'Keep your answer to two or three sentences.',
+      GuideResponseLength.balanced =>
+        'Keep your answer to a short paragraph.',
+      GuideResponseLength.detailed =>
+        'You may take a few short paragraphs if the question needs them.',
+    };
+
 /// Resolved inference settings for one persona after applying DB overrides.
 class GuidePersonaEffectiveConfig {
   final String personaId;
   final String systemPrompt;
   final double temperature;
-  final int maxTokens;
+
+  /// The whole context window: instructions, data blocks, the conversation
+  /// and the reply. Item 70: this is a property of the phone, not of how
+  /// long someone likes their answers, and treating it as both is what let
+  /// "Short" halve the window to 256 on iOS and push every message over.
+  final int contextTokens;
+
+  /// How long a reply may be. The cap an endpoint is given, and what the
+  /// instruction in the system prompt asks of an on-device model.
+  final int replyTokens;
+
   final GuideResponseLength responseLength;
   final bool usesCustomSystemPrompt;
   final bool usesTemperatureOverride;
@@ -50,7 +76,8 @@ class GuidePersonaEffectiveConfig {
     required this.personaId,
     required this.systemPrompt,
     required this.temperature,
-    required this.maxTokens,
+    required this.contextTokens,
+    required this.replyTokens,
     required this.responseLength,
     required this.usesCustomSystemPrompt,
     required this.usesTemperatureOverride,
@@ -63,17 +90,22 @@ class GuidePersonaPrefsService extends ChangeNotifier {
   GuidePersonaPrefsService(this._db);
 
   static const double defaultTemperature = 0.8;
-  /// The reply cap, shared by the instructions, the data blocks, the
+  /// The context window, shared by the instructions, the data blocks, the
   /// conversation and the reply itself.
   ///
-  /// **Item 51 developer note — do not change here.** With the shorter
-  /// instructions and the DATA block (about 150 tokens each) Android keeps
-  /// roughly 700 tokens for the reply and earlier messages, iOS only about
-  /// 180 — so on iPhone a longer chat will forget earlier messages and
-  /// replies stay short. The "Short" setting halves it again (256 on iOS).
-  /// Whether iOS should be raised to 1,024 to match Android has to be
-  /// measured for memory and speed on the oldest supported iPhones first,
-  /// and reported back before anything moves.
+  /// **Item 51 developer note — do not change these two numbers here.**
+  /// With the shorter instructions and the DATA block (about 150 tokens
+  /// each) Android keeps roughly 700 tokens for the reply and earlier
+  /// messages, iOS only about 180 — so on iPhone a longer chat will forget
+  /// earlier messages and replies stay short. Whether iOS should be raised
+  /// to 1,024 to match Android has to be measured for memory and speed on
+  /// the oldest supported iPhones first, and reported back before anything
+  /// moves.
+  ///
+  /// Item 70 changed how they are *used*, not what they are: the response
+  /// length setting no longer scales them. It used to, so "Short" left
+  /// 256 tokens on iOS for instructions, data, question and answer
+  /// together, and every message was over budget before it was sent.
   static const int androidBalancedMaxTokens = 1024;
   static const int iosBalancedMaxTokens = 512;
 
@@ -114,12 +146,18 @@ class GuidePersonaPrefsService extends ChangeNotifier {
       // rules that fix the reported bug are kept — without them a custom
       // prompt brings "let's focus on today" straight back. The data blocks
       // are appended either way, by the caller.
-      systemPrompt: usesCustom
-          ? '$customPrompt\n$kNovaListenFirstRules'
-          : definition.systemPrompt,
+      // Item 70: the response length is asked for in words now, because
+      // shrinking the window was never a way to shorten an answer.
+      systemPrompt: [
+        usesCustom
+            ? '$customPrompt\n$kNovaListenFirstRules'
+            : definition.systemPrompt,
+        replyLengthInstruction(responseLength),
+      ].join('\n'),
       temperature: (prefs?.temperatureOverride ?? defaultTemperature)
           .clamp(0.2, 1.2),
-      maxTokens: maxTokensFor(responseLength),
+      contextTokens: contextTokensFor(),
+      replyTokens: replyTokensFor(responseLength),
       responseLength: responseLength,
       usesCustomSystemPrompt: usesCustom,
       usesTemperatureOverride: usesTemperature,
@@ -127,17 +165,28 @@ class GuidePersonaPrefsService extends ChangeNotifier {
     );
   }
 
-  int maxTokensFor(GuideResponseLength length) {
-    final balanced = defaultTargetPlatform == TargetPlatform.iOS
-        ? iosBalancedMaxTokens
-        : androidBalancedMaxTokens;
+  /// The context window for this phone.
+  ///
+  /// Item 70: not scaled by the response length. A smaller window does not
+  /// produce a shorter answer, it produces a forgotten question.
+  static int contextTokensFor() =>
+      defaultTargetPlatform == TargetPlatform.iOS
+      ? iosBalancedMaxTokens
+      : androidBalancedMaxTokens;
 
-    return switch (length) {
-      GuideResponseLength.short => (balanced * 0.5).round(),
-      GuideResponseLength.balanced => balanced,
-      GuideResponseLength.detailed => (balanced * 1.5).round(),
-    };
-  }
+  /// How long a reply may be.
+  ///
+  /// Reply-sized numbers rather than window-sized ones, and the same on
+  /// every platform: this is the cap sent to someone's own server as
+  /// `max_tokens`, where the window is not the phone's problem. On-device
+  /// the instruction below is what does the steering, since the runtime
+  /// takes no per-reply cap.
+  static int replyTokensFor(GuideResponseLength length) =>
+      switch (length) {
+        GuideResponseLength.short => 200,
+        GuideResponseLength.balanced => 400,
+        GuideResponseLength.detailed => 800,
+      };
 
   Future<void> savePrefs({
     required String personaId,
