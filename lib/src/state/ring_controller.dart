@@ -1349,7 +1349,14 @@ class RingController extends ChangeNotifier {
     try {
       await cache.save(
         deviceId: deviceId,
-        history: result.history.sanitized(),
+        // Item 83: the merged history, not this sync's. An overnight sync
+        // deliberately does not ask for sleep (bug 19), so result.history
+        // has none — and saving that blanked the nights the cache already
+        // held. Close the app before morning, open it before the morning
+        // sync, and past nights were gone; any night older than the ring
+        // still keeps was gone for good. _history is the one that kept
+        // them, and it is already sanitised where it is assigned.
+        history: _history,
         vitals: result.vitals.merge(_vitals),
         basicInfo: result.basicInfo,
       );
