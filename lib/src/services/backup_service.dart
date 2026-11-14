@@ -17,6 +17,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/db.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import 'auto_backup.dart';
 import 'backup_file.dart';
 import 'backup_payload.dart';
 import 'file_exchange_service.dart';
@@ -200,6 +203,154 @@ class BackupService {
 
   /// Lets the person choose a backup. Null if they chose none.
   Future<File?> chooseBackup() => _files.askForFile();
+
+  /// Lets the person choose where weekly backups go.
+  Future<String?> chooseFolder() => _files.askForFolder();
+
+  // ── The weekly backup (item 53, part five) ─────────────────────────────
+
+  // Keychain on iOS, Keystore-backed on Android. The plugin's own
+  // defaults: encryptedSharedPreferences is deprecated and ignored, and
+  // passing it would be asking for something that no longer happens.
+  static const _secure = FlutterSecureStorage();
+
+  Future<AutoBackupStatus> autoBackupStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final run = prefs.getString(kAutoBackupLastRunKey);
+    return AutoBackupStatus(
+      enabled: prefs.getBool(kAutoBackupEnabledKey) ?? false,
+      lastRun: run == null ? null : DateTime.tryParse(run),
+      lastError: prefs.getString(kAutoBackupLastErrorKey),
+    );
+  }
+
+  /// Turns the weekly backup on, given a folder and a passphrase.
+  ///
+  /// The passphrase goes to the Keychain or the Keystore and nowhere else —
+  /// never to preferences, never into the file, never into a log. It is
+  /// kept at all only so an unattended run needs no input, which is the
+  /// only reason that outweighs not keeping it.
+  Future<void> enableAutoBackup({
+    required String folder,
+    required String passphrase,
+  }) async {
+    await _secure.write(key: kAutoBackupPassphraseKey, value: passphrase);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kAutoBackupEnabledKey, true);
+    await prefs.setString(kAutoBackupFolderKey, folder);
+    await prefs.remove(kAutoBackupLastErrorKey);
+  }
+
+  /// Turns it off, and forgets the passphrase with it.
+  ///
+  /// Switching it off is the clearest statement someone can make that they
+  /// do not want this, so the stored secret goes too rather than waiting
+  /// on a Keystore nobody will think to clear.
+  Future<void> disableAutoBackup() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kAutoBackupEnabledKey, false);
+    await prefs.remove(kAutoBackupFolderKey);
+    await prefs.remove(kAutoBackupLastErrorKey);
+    await _secure.delete(key: kAutoBackupPassphraseKey);
+  }
+
+  /// Runs the weekly backup if one is due. Safe to call on every launch.
+  ///
+  /// Returns whether a file was written. Failures are recorded for the Your
+  /// data row rather than thrown: the person did not ask to be interrupted,
+  /// and a folder that has gone is something to be told about, not
+  /// something to stop the app for.
+  Future<bool> runAutoBackupIfDue({
+    required String appVersion,
+    DateTime? now,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final folder = prefs.getString(kAutoBackupFolderKey);
+    final lastRun = prefs.getString(kAutoBackupLastRunKey);
+
+    if (!autoBackupDue(
+      enabled: prefs.getBool(kAutoBackupEnabledKey) ?? false,
+      folder: folder,
+      lastRun: lastRun == null ? null : DateTime.tryParse(lastRun),
+      now: now,
+    )) {
+      return false;
+    }
+
+    try {
+      final passphrase =
+          await _secure.read(key: kAutoBackupPassphraseKey);
+      if (passphrase == null || passphrase.isEmpty) {
+        // The secret is gone — a restored phone, a cleared Keystore. Not a
+        // failure to shout about, but the switch is now a promise that
+        // cannot be kept, so it stops claiming otherwise.
+        await prefs.setString(
+          kAutoBackupLastErrorKey,
+          'Switch this on again to set the passphrase.',
+        );
+        await prefs.setBool(kAutoBackupEnabledKey, false);
+        return false;
+      }
+
+      final directory = Directory(folder!);
+      if (!directory.existsSync()) {
+        await prefs.setString(
+          kAutoBackupLastErrorKey,
+          'That folder is no longer reachable. Choose it again.',
+        );
+        return false;
+      }
+
+      await VyanaStorageService.instance.ensureReady();
+      final when = now ?? DateTime.now();
+      final payload = await buildBackupPayload(
+        db: _db,
+        settings: await _settingsToBackUp(),
+        now: when,
+      );
+      final photos = await collectMealPhotos(
+        db: _db,
+        mealPhotosPath: VyanaStorageService.instance.mealPhotosPath,
+      );
+      final bytes = await writeBackup(
+        payload: payload,
+        files: photos,
+        passphrase: passphrase,
+        appVersion: appVersion,
+        createdAt: when,
+      );
+
+      final existing = directory
+          .listSync()
+          .whereType<File>()
+          .map((f) => p.basename(f.path))
+          .toList();
+      final name =
+          uniqueBackupName(backupFileName(when), existing.toSet());
+      await File(p.join(folder, name)).writeAsBytes(bytes, flush: true);
+
+      for (final stale in staleBackups([...existing, name])) {
+        try {
+          final old = File(p.join(folder, stale));
+          if (old.existsSync()) await old.delete();
+        } on Object catch (error) {
+          // Keeping too many is harmless; failing the run over it is not.
+          debugPrint('[Backup] could not remove $stale: $error');
+        }
+      }
+
+      await prefs.setString(kAutoBackupLastRunKey, when.toIso8601String());
+      await prefs.remove(kAutoBackupLastErrorKey);
+      return true;
+    } on Object catch (error) {
+      debugPrint('[Backup] weekly run failed: $error');
+      await prefs.setString(
+        kAutoBackupLastErrorKey,
+        'The last weekly backup did not finish.',
+      );
+      return false;
+    }
+  }
 
   Future<Map<String, Object?>> _settingsToBackUp() async {
     final prefs = await SharedPreferences.getInstance();

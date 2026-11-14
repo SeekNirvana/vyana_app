@@ -55,7 +55,27 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final uri = await HomeWidgetService.instance.initialLaunchUri();
       _handleWidgetUri(uri);
+      unawaited(_runWeeklyBackupIfDue());
     });
+  }
+
+  /// Item 53: the weekly backup, when it is on and one is due.
+  ///
+  /// On launch rather than in the background. A true scheduled job would
+  /// need WorkManager on Android and a background refresh task on iOS,
+  /// neither of which runs reliably enough to be the only chance a backup
+  /// gets — and both of which would mean the app writing the user's data
+  /// to a folder while they are not looking. "Every week, the next time
+  /// you open Vyana" is a weaker promise, and it is one that can be kept.
+  Future<void> _runWeeklyBackupIfDue() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      await ref
+          .read(backupServiceProvider)
+          .runAutoBackupIfDue(appVersion: info.version);
+    } on Object catch (error) {
+      debugPrint('[Backup] weekly check failed: $error');
+    }
   }
 
   void _handleWidgetUri(Uri? uri) {

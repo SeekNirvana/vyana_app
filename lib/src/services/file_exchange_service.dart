@@ -107,4 +107,23 @@ class FileExchangeService {
       return null;
     }
   }
+
+  /// Asks the person to choose a folder, once, for the weekly backup.
+  ///
+  /// Returns null if they chose none. What comes back is whatever the
+  /// platform's picker gives — on iOS a path in Files, which may be an
+  /// iCloud Drive folder; on Android a location from the system picker.
+  /// Whether it is still writable next week is not something either
+  /// platform promises, so the caller treats a failure to write as a
+  /// normal outcome and says so rather than assuming it worked.
+  Future<String?> askForFolder() async {
+    try {
+      return await getDirectoryPath(
+        confirmButtonText: 'Back up here',
+      );
+    } on Object catch (error) {
+      debugPrint('[FileExchange] could not open the folder picker: $error');
+      return null;
+    }
+  }
 }

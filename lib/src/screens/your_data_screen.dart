@@ -115,6 +115,7 @@ class YourDataScreen extends ConsumerStatefulWidget {
 
 class _YourDataScreenState extends ConsumerState<YourDataScreen> {
   DateTime? _lastBackup;
+  AutoBackupStatus _auto = const AutoBackupStatus(enabled: false);
   bool _busy = false;
   String? _note;
 
@@ -125,8 +126,42 @@ class _YourDataScreenState extends ConsumerState<YourDataScreen> {
   }
 
   Future<void> _readLastBackup() async {
-    final at = await ref.read(backupServiceProvider).lastBackupAt();
-    if (mounted) setState(() => _lastBackup = at);
+    final service = ref.read(backupServiceProvider);
+    final at = await service.lastBackupAt();
+    final auto = await service.autoBackupStatus();
+    if (mounted) {
+      setState(() {
+        _lastBackup = at;
+        _auto = auto;
+      });
+    }
+  }
+
+  Future<void> _toggleAuto(bool on) async {
+    final service = ref.read(backupServiceProvider);
+    if (!on) {
+      await service.disableAutoBackup();
+      await _readLastBackup();
+      return;
+    }
+
+    // A folder first, because choosing one is the part someone can change
+    // their mind about without having typed a secret.
+    final folder = await service.chooseFolder();
+    if (folder == null || !mounted) return;
+
+    final passphrase = await askForBackupPassphrase(context, creating: true);
+    if (passphrase == null || passphrase.isEmpty || !mounted) return;
+
+    await service.enableAutoBackup(folder: folder, passphrase: passphrase);
+    if (!mounted) return;
+    await _readLastBackup();
+    if (!mounted) return;
+    showVyanaSnackBar(
+      context,
+      message: 'Vyana will back up here every week.',
+      icon: 'check',
+    );
   }
 
   Future<void> _backUp() async {
@@ -264,6 +299,36 @@ class _YourDataScreenState extends ConsumerState<YourDataScreen> {
                   onTap: _busy ? null : _restore,
                 ),
               ],
+            ),
+            const SizedBox(height: 18),
+            const MonoEyebrow('AUTOMATIC', size: 11, spacing: 0.9),
+            const SizedBox(height: 8),
+            SettingsGroup(
+              rows: [
+                SettingsRow(
+                  icon: 'refresh',
+                  iconColor: t.heading,
+                  label: 'Back up automatically every week',
+                  subtitle: _auto.line,
+                  chevron: false,
+                  trailing: VSwitch(
+                    on: _auto.enabled,
+                    color: t.green,
+                    onTap: () => unawaited(_toggleAuto(!_auto.enabled)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                'Off unless you turn it on. Vyana writes the same encrypted '
+                'file to a folder you choose — which can be one your phone '
+                'syncs to Drive or iCloud — and keeps the last four.',
+                style: VyanaType.caption
+                    .copyWith(color: t.textMuted, height: 1.4),
+              ),
             ),
             const SizedBox(height: 18),
             const MonoEyebrow('EXPORTS', size: 11, spacing: 0.9),
