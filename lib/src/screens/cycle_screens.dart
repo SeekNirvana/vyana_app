@@ -7,8 +7,22 @@ part of '../../main.dart';
 
 // ── 13a · Opt-in sheet ───────────────────────────────────────────────────
 
-Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
-  final profile = ref.read(userProfileProvider).valueOrNull;
+/// Item 52 — this takes a [BuildContext], never a [WidgetRef].
+///
+/// It is opened from the profile editor *after* that editor has been popped,
+/// and then waits for a tap that may come seconds later. A `WidgetRef`
+/// belongs to a widget: once the editor was disposed, every
+/// `ref.read(...)` in here threw "Cannot use ref after the widget was
+/// disposed", and the exception ended the handler before the save and before
+/// the pop. From outside, all four options did nothing and the sheet stayed
+/// open — on a fresh install, with the cycle question the only thing between
+/// the user and the app.
+///
+/// The provider container is owned by the ProviderScope at the root, so it
+/// outlives any screen. Read it from the context that is still mounted.
+Future<void> offerCycleTracking(BuildContext context) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final profile = container.read(userProfileProvider).valueOrNull;
   if (profile == null || !profile.shouldOfferCycleSheet) return;
   final t = context.vyana;
   CycleMode? chosen;
@@ -53,8 +67,15 @@ Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
                   pad: 13,
                   onTap: () async {
                     chosen = mode;
-                    await ref.read(userProfileProvider.notifier).save(
-                          profile.copyWith(
+                    // Read the profile again rather than writing back the
+                    // snapshot taken when the sheet opened: the same reason
+                    // the ref could not be held across that gap applies to
+                    // the value it fetched.
+                    final current =
+                        container.read(userProfileProvider).valueOrNull ??
+                            profile;
+                    await container.read(userProfileProvider.notifier).save(
+                          current.copyWith(
                             cycleMode: mode,
                             cycleSheetSeen: true,
                           ),
@@ -86,14 +107,15 @@ Future<void> offerCycleTracking(BuildContext context, WidgetRef ref) async {
   // started from nothing — day 1, phase and next-period date all blank until
   // the user happened to log a start. One optional question fixes that.
   if (chosen == CycleMode.tracking && context.mounted) {
-    await _askLastPeriodStart(context, ref);
+    await _askLastPeriodStart(context);
   }
 }
 
 /// "When did your last period start?" — a date picker and a way out. A picked
 /// day is logged as a period start with the length left unconfirmed, so the
 /// §14b predictions work from day one and the calendar can correct it later.
-Future<void> _askLastPeriodStart(BuildContext context, WidgetRef ref) async {
+Future<void> _askLastPeriodStart(BuildContext context) async {
+  final container = ProviderScope.containerOf(context, listen: false);
   final t = context.vyana;
 
   await showModalBottomSheet<void>(
@@ -136,9 +158,9 @@ Future<void> _askLastPeriodStart(BuildContext context, WidgetRef ref) async {
                   helpText: 'First day of your last period',
                 );
                 if (picked == null) return;
-                await ref
-                    .read(databaseProvider)
-                    .addCycleDay(picked);
+                // Same again: the date picker is another await the editor
+                // does not survive.
+                await container.read(databaseProvider).addCycleDay(picked);
                 if (sheetContext.mounted) Navigator.of(sheetContext).pop();
               },
               child: Row(

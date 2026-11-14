@@ -209,3 +209,4 @@ novaChatSubtitle
 Finish setting up your endpoint
 Set up the endpoint
 onActiveModelChanged
+Track my cycle

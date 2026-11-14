@@ -574,4 +574,24 @@ void main() {
     // "Which model?" over a single row is a question with one answer.
     expect(setup, contains('kOnDeviceModels.length > 1'));
   });
+
+  test('#52 the cycle sheet does not hold the profile editor\'s ref', () {
+    final cycle = readLib('src/screens/cycle_screens.dart');
+    // The sheet is opened after the editor has been popped and then waits
+    // for a tap. A WidgetRef belongs to a widget: every read in here threw
+    // "Cannot use ref after the widget was disposed", which ended the
+    // handler before the save and the pop, so all four options did nothing
+    // on a fresh install.
+    expect(cycle, contains('Future<void> offerCycleTracking(BuildContext context)'));
+    expect(cycle, contains('Future<void> _askLastPeriodStart(BuildContext context)'));
+    expect(cycle, contains('ProviderScope.containerOf(context, listen: false)'));
+
+    final profile = readLib('src/screens/profile_screen.dart');
+    expect(profile, contains('offerCycleTracking(shellContext)'));
+    expect(profile, isNot(contains('offerCycleTracking(shellContext, ref)')));
+
+    final fingerprints =
+        File('scripts/release-manifest.txt').readAsStringSync();
+    expect(fingerprints, contains('Track my cycle'));
+  });
 }

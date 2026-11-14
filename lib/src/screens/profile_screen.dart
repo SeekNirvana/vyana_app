@@ -136,7 +136,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     if (!offerCycle) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (shellContext.mounted) {
-        unawaited(offerCycleTracking(shellContext, ref));
+        // Item 52: not this screen's `ref` — it is disposed by the pop
+        // above, and the sheet waits for a tap long after that.
+        unawaited(offerCycleTracking(shellContext));
       }
     });
   }
