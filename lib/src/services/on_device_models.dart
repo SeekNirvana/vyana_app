@@ -57,16 +57,19 @@ class OnDeviceModel {
   bool fitsIn(int? ramMb) => ramMb == null || ramMb >= wantsRamMb;
 }
 
-/// Deliberately short, and deliberately not a ladder of ever-smaller
-/// options.
+/// Two models: one that answers best, and one that fits.
 ///
-/// A 0.6B model was tried here and shipped nothing worth reading: asked to
-/// help someone settle for four minutes it answered "I am sorry, but I
-/// can't understand what you". Offering it would mean offering Nova in a
-/// state where she cannot do the one thing this app asks of her — read a
-/// vitals block and say something useful about it — and no amount of
-/// labelling makes that a real choice. A phone too small for the models
-/// below is better served by an endpoint, which is a tap away on the same
+/// There is a floor and a ceiling here, both found the same way. A 0.6B was
+/// tried and shipped nothing worth reading — asked to help someone settle
+/// for four minutes it answered "I am sorry, but I can't understand what
+/// you" — and no amount of labelling makes a model that cannot read a vitals
+/// block a real choice. A 4B was tried at the other end and was simply too
+/// large for the phones this app runs on: 2.7 GB to download and more than
+/// most of them have the memory to load.
+///
+/// Qwen3 1.7B at int4 sits between them at 977 MB, which is the first entry
+/// here a 4 GB phone can hold without the warning. A phone too small even
+/// for that is better served by an endpoint, one tap away on the same
 /// screen.
 const List<OnDeviceModel> kOnDeviceModels = <OnDeviceModel>[
   OnDeviceModel(
@@ -81,15 +84,15 @@ const List<OnDeviceModel> kOnDeviceModels = <OnDeviceModel>[
     wantsRamMb: 6 * 1024,
   ),
   OnDeviceModel(
-    id: 'qwen3-4b-instruct',
-    label: 'Qwen3 4B Instruct',
-    url: 'https://huggingface.co/litert-community/Qwen3-4B-Instruct-2507/'
-        'resolve/main/qwen3_4b_instruct_2507_mixed_int4.litertlm',
-    bytes: 2659057664,
+    id: 'qwen3-1_7b',
+    label: 'Qwen3 1.7B',
+    url: 'https://huggingface.co/litert-community/Qwen3-1.7B/'
+        'resolve/main/Qwen3-1.7B_dynamic_wi4b32_afp32.litertlm',
+    bytes: 977184032,
     modelType: ModelType.qwen3,
     fileType: ModelFileType.litertlm,
-    blurb: 'Newer, and follows a long instruction more closely.',
-    wantsRamMb: 6 * 1024,
+    blurb: 'Smaller and quicker, and it fits a phone Gemma does not.',
+    wantsRamMb: 3 * 1024,
   ),
 ];
 
