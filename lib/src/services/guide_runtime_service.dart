@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'ai_backend_service.dart';
 import 'app_startup_service.dart';
+import 'device_capability_service.dart';
 import 'guide_model_manager.dart';
 import 'guide_persona_prefs_service.dart';
 
@@ -37,6 +38,11 @@ class GuideRuntimeService {
   static const _runtimeConfigEpoch = 2;
 
   final Random _sessionRandom = Random();
+
+  /// Whether this phone should try CPU before GPU. Set once from the
+  /// measured RAM; unknown RAM keeps the Gemma-tuned order, because a guess
+  /// either way is worse than the behaviour that has shipped.
+  bool _prefersCpuFirst = false;
   int? _loadedConfigEpoch;
   int _backendAttemptIndex = 0;
   int? _loadedBackendAttempt;
@@ -57,6 +63,7 @@ class GuideRuntimeService {
   /// Initialize the runtime for a specific guide.
   Future<void> initialize(GuideKind guide) async {
     await AppStartupService.instance.ensureInitialized();
+    _prefersCpuFirst = await DeviceCapabilityService.instance.isLowRam();
 
     final definition = guidePersonaDefinitions[guide]!;
     final effective = await _prefsService.effectiveConfig(definition);
@@ -379,9 +386,28 @@ class GuideRuntimeService {
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
-      // GPU is the supported LiteRT-LM path for Gemma 4 E2B. CPU often fails
-      // tensor allocation (DYNAMIC_UPDATE_SLICE). NPU is a secondary attempt on
-      // Qualcomm / MediaTek / Tensor devices.
+      // GPU is the supported LiteRT-LM path for Gemma 4 E2B — CPU often
+      // fails tensor allocation there (DYNAMIC_UPDATE_SLICE) — and NPU is a
+      // secondary attempt on Qualcomm / MediaTek / Tensor parts.
+      //
+      // That order is right for Gemma and wrong for a phone that cannot
+      // afford it. Loading a model on the GPU path inflates well past the
+      // file's size, and on a 4 GB device it does not fail politely: the
+      // low-memory killer takes the app, and on the device this was found
+      // on it took the system launcher with it. A SIGKILL is not an
+      // exception, so the GPU→NPU fallback below never runs — the process
+      // is simply gone.
+      //
+      // So on a phone short of memory, try CPU first. It may fail tensor
+      // allocation and fall through to GPU, which is a recoverable error;
+      // the reverse is not.
+      if (_prefersCpuFirst) {
+        return [
+          PreferredBackend.cpu,
+          PreferredBackend.gpu,
+          PreferredBackend.npu,
+        ];
+      }
       return [PreferredBackend.gpu, PreferredBackend.npu];
     }
 
