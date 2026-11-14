@@ -254,19 +254,44 @@ class RingForegroundService {
     _initialized = true;
   }
 
+  /// The interval the running service was last told about, so it is not
+  /// told again for no reason.
+  static int? _appliedRepeatMinutes;
+
+  /// Asks for notification permission, once, where asking makes sense.
+  ///
+  /// Item 62: this used to live inside [start], which the connection poll
+  /// reached every two seconds — so anyone who tapped "Don't allow" was
+  /// asked again, and again. Permission belongs to pairing: the one moment
+  /// the person has just said they want a ring watched.
+  static Future<void> ensureNotificationPermission() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final permission =
+          await FlutterForegroundTask.checkNotificationPermission();
+      if (permission != NotificationPermission.granted) {
+        await FlutterForegroundTask.requestNotificationPermission();
+      }
+    } on Object catch (error) {
+      debugPrint('RING_FOREGROUND_PERMISSION_FAILED: $error');
+    }
+  }
+
   static Future<void> start({int? intervalMinutes}) async {
     if (!Platform.isAndroid) return;
     if (intervalMinutes != null) _repeatMinutes = intervalMinutes;
     _ensureInitialized();
 
-    final permission = await FlutterForegroundTask.checkNotificationPermission();
-    if (permission != NotificationPermission.granted) {
-      await FlutterForegroundTask.requestNotificationPermission();
-    }
-
     if (await FlutterForegroundTask.isRunningService) {
-      // Already running — just make sure the heartbeat cadence is current.
-      await setRepeatInterval(_repeatMinutes);
+      // Already running. Item 62: this used to re-apply the repeat
+      // interval every time, and `start` was reached every two seconds
+      // from the connection poll — so the twenty-minute heartbeat's timer
+      // was restarted before it could ever elapse. Only a real change
+      // touches it now.
+      if (_appliedRepeatMinutes != _repeatMinutes) {
+        await setRepeatInterval(_repeatMinutes);
+        _appliedRepeatMinutes = _repeatMinutes;
+      }
       return;
     }
 
@@ -291,6 +316,8 @@ class RingForegroundService {
 
     if (result is ServiceRequestFailure) {
       debugPrint('RING_FOREGROUND_SERVICE_START_FAILED: ${result.error}');
+    } else {
+      _appliedRepeatMinutes = _repeatMinutes;
     }
   }
 
@@ -331,4 +358,33 @@ class RingForegroundService {
     if (_initialized) return;
     init();
   }
+}
+
+/// What the foreground service is being asked for.
+///
+/// Item 62: a value rather than four fields compared by hand, so "has
+/// anything actually changed" is one question with one answer, and the
+/// two-second poll can be told from a real change.
+@immutable
+class ForegroundServiceIntent {
+  const ForegroundServiceIntent({
+    required this.shouldRun,
+    required this.intervalMinutes,
+  });
+
+  final bool shouldRun;
+  final int intervalMinutes;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ForegroundServiceIntent &&
+      other.shouldRun == shouldRun &&
+      other.intervalMinutes == intervalMinutes;
+
+  @override
+  int get hashCode => Object.hash(shouldRun, intervalMinutes);
+
+  @override
+  String toString() =>
+      'ForegroundServiceIntent(run: $shouldRun, every: ${intervalMinutes}m)';
 }

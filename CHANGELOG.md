@@ -151,6 +151,13 @@ conversation into that would cost the room the next answer needs.
   combination sherpa-onnx refuses: every sentence came back as an empty
   waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
   less to download — 341 MB, not the 355 MB the prompt used to quote.
+- **The background service stops being restarted every two seconds.** The
+  connection poll reached it on every tick: re-checking notification
+  permission — and re-asking anyone who had tapped "Don't allow" — reading
+  whether the service was running, and resetting the twenty-minute
+  heartbeat's timer before it could ever elapse. It is touched only when
+  something it depends on actually changes now, and permission is asked
+  once, at pairing.
 - **Your data: back up, restore, and a plain word about where history
   lives.** Everything Vyana holds is on your phone, so deleting the app
   deletes it — and neither Android nor iPhone warns an app it is being

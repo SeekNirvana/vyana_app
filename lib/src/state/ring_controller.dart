@@ -1594,6 +1594,13 @@ class RingController extends ChangeNotifier {
     }
     await _persistRingOnboarding();
     _set(() {});
+    // Item 62: asked here, once, and only when the person has just said
+    // they want this ring watched — not from inside the service start that
+    // the two-second poll reached, where "Don't allow" was answered with
+    // the same question two seconds later.
+    if (enableForegroundService) {
+      await RingForegroundService.ensureNotificationPermission();
+    }
     _syncForegroundService();
   }
 
@@ -2583,8 +2590,31 @@ class RingController extends ChangeNotifier {
     _syncForegroundService();
   }
 
+  /// What the foreground service is being asked for, so a poll that
+  /// changed nothing can be recognised as such.
+  ForegroundServiceIntent? _lastForegroundIntent;
+
   void _syncForegroundService() {
     if (!Platform.isAndroid) return;
+
+    // Item 62: this is reached from _publishMeasurementSnapshot, which the
+    // connection poll calls every two seconds. Each call crossed to the
+    // platform three times — check permission, ask if denied, read whether
+    // the service runs, reset the repeat interval — for a state that had
+    // almost never changed. Battery for nothing, a permission prompt on a
+    // loop for anyone who said no once, and a heartbeat timer restarted
+    // before it could fire.
+    final intent = ForegroundServiceIntent(
+      shouldRun: _foregroundServiceEnabled && _pairedRing != null,
+      intervalMinutes: _periodicSyncIntervalMinutes,
+    );
+    if (intent == _lastForegroundIntent) {
+      // The notification text still follows the ring, which is cheap and
+      // is the part a person actually sees change.
+      if (intent.shouldRun) _updateForegroundNotification();
+      return;
+    }
+    _lastForegroundIntent = intent;
     // Bug 21 (2): this used to require _isConnected, so the moment the ring
     // dropped, the service whose whole job is to reconnect it was shut down
     // — and with it the alert evaluation. A disconnected ring is exactly
