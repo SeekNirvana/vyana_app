@@ -1620,6 +1620,18 @@ class RingController extends ChangeNotifier {
     // the same question two seconds later.
     if (enableForegroundService) {
       await RingForegroundService.ensureNotificationPermission();
+    } else {
+      // Item 76: the alert switches are on by default on every platform, so
+      // consent is owed on every platform. iOS was only ever asked on a
+      // toggle or a Monitor-all run, so until someone happened to do one of
+      // those, every alert the app had been told to send was dropped in
+      // silence — the switches said yes and nothing arrived.
+      //
+      // ensureNotificationPermission above returns immediately off Android,
+      // which is why this is the other branch rather than an extra call:
+      // asking twice in a row on Android is a second dialog about a
+      // decision already made.
+      await VitalsNotificationService.instance.requestPermissions();
     }
     _syncForegroundService();
   }

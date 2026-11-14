@@ -153,6 +153,27 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
     });
   }
 
+  /// Whether setup shows the "Keep Vyana running" step.
+  ///
+  /// Item 75: Android only. The step promises that vitals keep syncing in
+  /// the background and points at an Android foreground-service setting,
+  /// neither of which exists on iPhone — so on iOS it was a promise the app
+  /// could not keep, next to a switch that did nothing.
+  bool get _hasForegroundStep => !kIsWeb && Platform.isAndroid;
+
+  int get _pageCount => _hasForegroundStep ? 4 : 3;
+
+  /// Where leaving the wipe step goes. On iPhone the wipe step is the last
+  /// one, so leaving it ends setup — four separate `_goTo(3)` calls used to
+  /// say "past the wipe step" and there is no page 3 to go to now.
+  void _afterWipe() {
+    if (_hasForegroundStep) {
+      _goTo(3);
+    } else {
+      unawaited(_onFinish());
+    }
+  }
+
   void _goTo(int page) {
     _pageController.animateToPage(
       page,
@@ -222,7 +243,7 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
   Future<void> _onWipeContinue() async {
     if (_wipeBusy || _wipeDone) return;
     if (!_wipeRing && !_wipeApp) {
-      _goTo(3);
+      _afterWipe();
       return;
     }
     setState(() {
@@ -263,14 +284,17 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
               'cycle are untouched.'
           : failure;
     });
-    if (ok) _goTo(3);
+    if (ok) _afterWipe();
   }
 
   Future<void> _onFinish() async {
     if (_finishBusy) return;
     setState(() => _finishBusy = true);
     await widget.controller.completeRingOnboarding(
-      enableForegroundService: _foregroundEnabled,
+      // Item 75/76: false where there is no foreground step, so the switch
+      // that was never shown cannot stand for an answer — and so pairing
+      // takes the branch that asks iOS for notification permission.
+      enableForegroundService: _hasForegroundStep && _foregroundEnabled,
     );
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -822,14 +846,14 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
                           _buildRenameStep(t),
                           _buildHealthMonitoringStep(t),
                           _buildWipeStep(t),
-                          _buildForegroundStep(t),
+                          if (_hasForegroundStep) _buildForegroundStep(t),
                         ])
                           SingleChildScrollView(child: step),
                       ],
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _dots(4, _page, t),
+                  _dots(_pageCount, _page, t),
                   const SizedBox(height: 24),
                   if (_page == 0)
                     _continueButton(t, 'Continue', _onRenameContinue, busy: _nameBusy)
@@ -839,10 +863,10 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
                     _continueButton(
                       t,
                       _wipeDone || (!_wipeRing && !_wipeApp)
-                          ? 'Continue'
+                          ? (_hasForegroundStep ? 'Continue' : "Let's Go!")
                           : 'Wipe ring data',
-                      _wipeDone ? () => _goTo(3) : _onWipeContinue,
-                      busy: _wipeBusy,
+                      _wipeDone ? _afterWipe : _onWipeContinue,
+                      busy: _wipeBusy || _finishBusy,
                     )
                   else
                     _continueButton(t, "Let's Go!", _onFinish, busy: _finishBusy),
@@ -868,7 +892,7 @@ class _RingOnboardingScreenState extends ConsumerState<RingOnboardingScreen>
                     ),
                   if (_page == 2 && !_wipeDone && (_wipeRing || _wipeApp))
                     TextButton(
-                      onPressed: _wipeBusy ? null : () => _goTo(3),
+                      onPressed: _wipeBusy ? null : _afterWipe,
                       child: Text(
                         'Skip — keep existing data',
                         style: VyanaType.label.copyWith(color: t.textSec),
