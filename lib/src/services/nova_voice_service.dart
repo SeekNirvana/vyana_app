@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 import 'nova_voice_assets.dart';
+import 'spoken_text.dart';
 
 /// Nova's own voice, generated on the phone — and the only voice she has.
 ///
@@ -118,7 +119,11 @@ class NovaVoiceService {
   Future<void> speak(String text, {double rate = 1.0}) async {
     final tts = _tts;
     if (tts == null) throw StateError('Nova voice is not loaded');
-    final normalized = text.trim();
+    // The one place text becomes speech, so the one place numbers become
+    // words. Kokoro's lexicon has no entry for any digit and skips what it
+    // cannot find, which turned "Halfway. 5 minutes." into "Halfway.
+    // minutes." — see spoken_text.dart.
+    final normalized = speakableText(text);
     if (normalized.isEmpty) return;
 
     await stop();

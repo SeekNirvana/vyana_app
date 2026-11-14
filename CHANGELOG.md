@@ -151,6 +151,12 @@ conversation into that would cost the room the next answer needs.
   combination sherpa-onnx refuses: every sentence came back as an empty
   waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
   less to download — 341 MB, not the 355 MB the prompt used to quote.
+- **She says the numbers.** Kokoro has no lexicon entry for any digit, and a
+  word it cannot find is skipped rather than mispronounced, so every figure
+  came out as a hole in the sentence: "Halfway. 5 minutes." was spoken as
+  "Halfway. minutes.", and "Your HRV is 48 milliseconds" as "Your HRV is
+  milliseconds". A cue whose only content is the number said nothing at all.
+  Numbers become words now, at the one point text turns into speech.
 - **She can say "Vyana".** A word the lexicon doesn't carry is skipped
   silently, and the lexicon carried neither our name nor most of our
   catalogue: "Try the Nadi Shodhana pranayama for seven cycles" would have
