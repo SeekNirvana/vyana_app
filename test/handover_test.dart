@@ -1120,17 +1120,6 @@ void main() {
       expect(novaVoiceApproxSizeLabel, '355 MB');
     });
 
-    test('the voice is only fetched from our own host, by digest', () {
-      expect(kNovaVoiceHost, 'cdn.seeknirvana.app');
-      expect(novaVoiceConfigured, kNovaVoiceFiles.isNotEmpty);
-      for (final asset in kNovaVoiceFiles) {
-        final uri = Uri.parse(asset.url);
-        expect(uri.scheme, 'https');
-        expect(uri.host, kNovaVoiceHost);
-        expect(asset.sha256, matches(RegExp(r'^[0-9a-f]{64}$')));
-        expect(asset.bytes, greaterThan(0));
-      }
-    });
   });
 
   group('ring screen title (bug 49)', () {
@@ -1651,6 +1640,49 @@ void main() {
       );
       expect(full.isComplete, isTrue);
       expect(full.reach, EndpointReach.onYourNetwork);
+    });
+  });
+
+
+  group("Nova's voice is fetched from one place, by digest", () {
+    test('mirrored on our own GitHub release', () {
+      expect(kNovaVoiceHost, 'github.com');
+      expect(kNovaVoiceReleaseTag, startsWith('voice-'));
+    });
+
+    test('the redirect rule follows a domain, not a hostname', () {
+      // GitHub has already moved this once — objects.githubusercontent.com
+      // became release-assets.githubusercontent.com. Pinning the exact host
+      // would turn their next rename into every download failing on a
+      // phone. Nobody else can register under the domain, and the SHA-256
+      // is what decides whether what arrives gets used.
+      expect(kNovaVoiceRedirectSuffix, '.githubusercontent.com');
+      for (final host in [
+        'release-assets.githubusercontent.com',
+        'objects.githubusercontent.com',
+      ]) {
+        expect(host.endsWith(kNovaVoiceRedirectSuffix), isTrue, reason: host);
+      }
+      for (final host in [
+        'githubusercontent.com.evil.test',
+        'notgithubusercontent.com',
+        'cdn.example.com',
+      ]) {
+        expect(host.endsWith(kNovaVoiceRedirectSuffix), isFalse,
+            reason: host);
+      }
+    });
+
+    test('every pinned file is on that host, by digest', () {
+      expect(novaVoiceConfigured, kNovaVoiceFiles.isNotEmpty);
+      for (final asset in kNovaVoiceFiles) {
+        final uri = Uri.parse(asset.url);
+        expect(uri.scheme, 'https');
+        expect(uri.host, kNovaVoiceHost);
+        expect(uri.path, contains(kNovaVoiceReleaseTag));
+        expect(asset.sha256, matches(RegExp(r'^[0-9a-f]{64}$')));
+        expect(asset.bytes, greaterThan(0));
+      }
     });
   });
 }

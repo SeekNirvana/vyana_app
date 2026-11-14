@@ -192,6 +192,7 @@ Skip — set this later
 kHealthMonitoringApplyTimeout
 Light, dark, or whatever the phone is set to
 kokoro-en-v0_19
+voice-kokoro-en-v0_19
 Download Nova's voice
 Nova's voice is not available in this build yet. Replies
 Needs Nova's voice installed

@@ -57,17 +57,49 @@ import 'package:path/path.dart' as p;
 
 import 'vyana_storage_service.dart';
 
-/// The only host Nova's voice may be fetched from. We mirror Kokoro's release
-/// ourselves so a third party cannot change what the app downloads.
-const String kNovaVoiceHost = 'cdn.seeknirvana.app';
+/// The host Nova's voice is mirrored on: our own GitHub releases.
+///
+/// It is worth being clear about what this rule does and does not buy.
+/// Every file is pinned by SHA-256 in the build and verified after download
+/// and again before first load, so a hostile or compromised host can cause a
+/// *failed* download and nothing worse — it cannot hand us a different
+/// model. The host restriction is availability and defence in depth, not
+/// the control that makes this safe.
+///
+/// GitHub was chosen over a CDN of our own because the pinning makes the
+/// trust question moot, release assets are immutable per tag, and the
+/// bandwidth for a 355 MB file is free rather than a bill that grows with
+/// every install.
+const String kNovaVoiceHost = 'github.com';
+
+/// The domain GitHub serves release assets from, permitted as a single hop
+/// from [kNovaVoiceHost] and nowhere else.
+///
+/// A suffix rather than one host on purpose. GitHub has moved this at least
+/// once — it was `objects.githubusercontent.com` and is now
+/// `release-assets.githubusercontent.com` — and pinning the exact name
+/// would turn their next rename into every download failing on a phone with
+/// a message about a refused redirect. The suffix is a domain GitHub owns,
+/// so nobody else can register under it, and the SHA-256 on every file is
+/// what actually decides whether what arrives is used.
+const String kNovaVoiceRedirectSuffix = '.githubusercontent.com';
+
+/// The release tag the voice files hang off, separate from the app's own
+/// version tags so re-cutting an app release never touches them.
+const String kNovaVoiceReleaseTag = 'voice-kokoro-en-v0_19';
 
 /// The Kokoro release this build is pinned to. Part of the stored path, so a
 /// new version lands beside the old one rather than half-overwriting it.
 ///
-/// This is the name sherpa-onnx publishes, not one of ours: there is no
-/// `kokoro-v0.19-int8` upstream — v0.19 ships as fp32 only, and the int8
-/// builds exist for the multi-lang packs. Naming a build that does not exist
-/// is how a packaging step gets attempted and abandoned.
+/// The name sherpa-onnx publishes, so the pin names something real.
+///
+/// Full precision by choice, not for want of an alternative:
+/// `kokoro-int8-en-v0_19` exists and is 98.5 MB against this one's 304.8 MB
+/// compressed. An earlier version of this comment said it did not exist,
+/// which was wrong — it is absent from the docs page but present in the
+/// release assets. int8's spectral correlation against fp32 is about 0.92,
+/// which is audible, and this is a voice whose whole job is to sound calm
+/// during a practice.
 const String kNovaVoiceVersion = 'kokoro-en-v0_19';
 
 /// One downloaded file, pinned by digest.
@@ -230,14 +262,55 @@ Future<void> downloadNovaVoice({
   }
 }
 
+/// GETs [uri], following at most one redirect, and only to a
+/// [kNovaVoiceRedirectSuffix] host — which is where GitHub serves release
+/// assets from. Hand-rolled rather than `followRedirects = true` so the hop
+/// is bounded and its destination is checked rather than trusted.
+Future<HttpClientResponse> _getFollowingOneHop(
+  HttpClient client,
+  Uri uri,
+) async {
+  final request = await client.getUrl(uri);
+  request.followRedirects = false;
+  final response = await request.close();
+
+  const redirects = {
+    HttpStatus.movedPermanently,
+    HttpStatus.found,
+    HttpStatus.seeOther,
+    HttpStatus.temporaryRedirect,
+    HttpStatus.permanentRedirect,
+  };
+  if (!redirects.contains(response.statusCode)) return response;
+
+  final location = response.headers.value(HttpHeaders.locationHeader);
+  await response.drain<void>();
+  if (location == null) {
+    throw HttpException('Redirect without a location', uri: uri);
+  }
+  final next = uri.resolve(location);
+  final allowed = next.host == kNovaVoiceHost ||
+      next.host.endsWith(kNovaVoiceRedirectSuffix);
+  if (next.scheme != 'https' || !allowed) {
+    throw StateError(
+      'Nova voice download redirected to ${next.host}, which is neither '
+      '$kNovaVoiceHost nor a $kNovaVoiceRedirectSuffix host — refusing to '
+      'follow it.',
+    );
+  }
+
+  final second = await client.getUrl(next);
+  second.followRedirects = false;
+  return second.close();
+}
+
 Future<void> _fetchVerified(
   HttpClient client,
   PinnedAsset asset, {
   void Function(int received)? onBytes,
 }) async {
   final uri = Uri.parse(asset.url);
-  // Our own host, over HTTPS, every time. A redirect to anywhere else is a
-  // different file than the one this build pinned.
+  // HTTPS to our own release, every time.
   if (uri.scheme != 'https' || uri.host != kNovaVoiceHost) {
     throw StateError(
       'Nova voice files are only fetched from https://$kNovaVoiceHost — '
@@ -249,9 +322,7 @@ Future<void> _fetchVerified(
   for (var attempt = 0; attempt < 2; attempt++) {
     if (await file.exists()) await file.delete();
 
-    final request = await client.getUrl(uri);
-    request.followRedirects = false;
-    final response = await request.close();
+    final response = await _getFollowingOneHop(client, uri);
     if (response.statusCode != HttpStatus.ok) {
       throw HttpException(
         'Nova voice download failed with status ${response.statusCode}',

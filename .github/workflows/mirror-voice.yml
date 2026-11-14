@@ -1,0 +1,131 @@
+name: Mirror Nova's voice
+
+# Mirrors the Kokoro TTS pack onto our own releases and prints the Dart that
+# pins it, so populating kNovaVoiceFiles is a paste rather than a ritual
+# performed by hand once a year and misremembered each time.
+#
+# Run it from Actions → Mirror Nova's voice → Run workflow. It is manual on
+# purpose: the output is an immutable release other builds pin by digest, so
+# it should never fire off a push.
+on:
+  workflow_dispatch:
+    inputs:
+      pack:
+        description: 'sherpa-onnx pack to mirror'
+        required: true
+        default: kokoro-en-v0_19
+        type: choice
+        options:
+          - kokoro-en-v0_19
+          - kokoro-int8-en-v0_19
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    name: Mirror and pin
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Upstream publishes these in one tarball on its tts-models release.
+      # We re-host the four files the app actually loads, not the archive, so
+      # a phone downloads 355 MB once instead of 305 MB plus an unpack.
+      - name: Fetch the pack from sherpa-onnx
+        id: fetch
+        run: |
+          set -euo pipefail
+          pack='${{ inputs.pack }}'
+          url="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/${pack}.tar.bz2"
+          echo "Fetching $url"
+          curl -fL --retry 3 -o pack.tar.bz2 "$url"
+          echo "archive sha256: $(sha256sum pack.tar.bz2 | cut -d' ' -f1)"
+          tar -xjf pack.tar.bz2
+          test -d "$pack" || { echo "::error::$pack/ not in the archive"; exit 1; }
+          echo "pack=$pack" >> "$GITHUB_OUTPUT"
+
+      # sherpa-onnx wants espeak-ng-data as a directory; the app expands this
+      # tar on first use. Built with sorted names and no owner metadata so the
+      # same input gives the same digest on any runner.
+      - name: Stage the four files
+        id: stage
+        run: |
+          set -euo pipefail
+          pack='${{ steps.fetch.outputs.pack }}'
+          mkdir -p out
+
+          model=$(ls "$pack"/model*.onnx | head -1)
+          cp "$model" out/"$(basename "$model")"
+          cp "$pack/voices.bin" out/voices.bin
+          cp "$pack/tokens.txt" out/tokens.txt
+
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+              --mtime='UTC 1970-01-01' \
+              -cf out/espeak-ng-data.tar -C "$pack" espeak-ng-data
+
+          echo "model_file=$(basename "$model")" >> "$GITHUB_OUTPUT"
+          ls -l out
+
+      # The whole point: emit the exact Dart, with real digests and byte
+      # counts, so kNovaVoiceFiles cannot drift from what is published.
+      - name: Print the PinnedAsset list
+        id: pins
+        run: |
+          set -euo pipefail
+          pack='${{ steps.fetch.outputs.pack }}'
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/voice-${pack}"
+          total=0
+          {
+            echo 'const List<PinnedAsset> kNovaVoiceFiles = <PinnedAsset>['
+            for f in out/*; do
+              name=$(basename "$f")
+              sum=$(sha256sum "$f" | cut -d' ' -f1)
+              size=$(stat -c%s "$f")
+              total=$((total + size))
+              printf "  PinnedAsset(\n"
+              printf "    name: '%s',\n" "$name"
+              printf "    url: '%s/%s',\n" "$base" "$name"
+              printf "    sha256: '%s',\n" "$sum"
+              printf "    bytes: %s,\n" "$size"
+              printf "  ),\n"
+            done
+            echo '];'
+            echo ''
+            echo "// Total: $total bytes"
+            echo "const int kNovaVoiceApproxBytes = $total;"
+          } > pins.dart
+          cat pins.dart
+          {
+            echo '### Paste into `lib/src/services/nova_voice_assets.dart`'
+            echo ''
+            echo '```dart'
+            cat pins.dart
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the voice release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: voice-${{ steps.fetch.outputs.pack }}
+          name: "Nova's voice · ${{ steps.fetch.outputs.pack }}"
+          body: |
+            Kokoro TTS mirrored from
+            [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models),
+            re-hosted so Vyana fetches it from one place with a stable URL.
+
+            The app pins every file by SHA-256 and verifies it after download
+            and again before first load, so these assets are checked rather
+            than trusted. Replacing one here without updating the digests in
+            the build makes the download fail — which is the intent.
+
+            Total ${{ steps.stage.outputs.model_file }} + voices + tokens +
+            espeak data: ${{ steps.pins.outputs.total }} bytes.
+
+            The `PinnedAsset` list for this release is in the workflow run's
+            summary.
+          files: out/*
+          make_latest: false
+          prerelease: false
