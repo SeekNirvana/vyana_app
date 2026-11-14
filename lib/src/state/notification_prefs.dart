@@ -254,9 +254,45 @@ class RingAlertSnapshot {
   }
 
   /// Reads the snapshot the main isolate last wrote. Safe in either isolate.
+  /// The same readings, with everything that goes out of date removed.
+  ///
+  /// Item 63: an old snapshot is not a wrong one, it is one that has
+  /// stopped being evidence. Battery and the vitals become null so the
+  /// checks that need a current reading decline instead of deciding.
+  /// `connected` and `charging` become false because that is the honest
+  /// reading of "the app has not been awake to tell us otherwise" — and
+  /// because a frozen `charging: true` muted every battery alert, and a
+  /// frozen `connected: true` meant a ring could be out of range all night
+  /// without a word.
+  RingAlertSnapshot asUnknown() => RingAlertSnapshot(
+        at: at,
+        hasRingContext: hasRingContext,
+        paired: paired,
+        connected: false,
+        batteryPercent: null,
+        batteryReadAt: null,
+        lastSyncedAt: lastSyncedAt,
+        lastConnectionConfirmedAt: lastConnectionConfirmedAt,
+        restingHr: null,
+        spo2: null,
+        hrBandLow: hrBandLow,
+        hrBandHigh: hrBandHigh,
+        charging: false,
+      );
+
   static Future<RingAlertSnapshot?> load() async {
     try {
       final store = await SharedPreferences.getInstance();
+      // Item 63: this isolate's cache was filled when the service started,
+      // so without a reload the "latest" snapshot is whatever was true
+      // hours ago — which is the same failure the staleness check exists
+      // to catch, arriving by a different route.
+      try {
+        await store.reload();
+      } on Object catch (_) {
+        // An un-reloaded snapshot is still better than none; the staleness
+        // check below decides what it may be used for.
+      }
       final raw = store.getString(_key);
       if (raw == null) return null;
       final decoded = jsonDecode(raw);
@@ -340,6 +376,19 @@ int _dayStamp(DateTime at) => at.year * 10000 + at.month * 100 + at.day;
 /// BLE stack, so the foreground-service isolate can run it on every heartbeat
 /// without waking the UI isolate. It needs SharedPreferences and the
 /// notifications plugin, both of which work in a background isolate.
+/// How old a snapshot may be before the service stops believing it.
+///
+/// Item 63: the service isolate judges alerts from a snapshot only the app
+/// writes. Once the phone suspends Vyana, that snapshot stops moving — so
+/// battery never falls, `connected` never goes false, and a `charging` that
+/// was true at bedtime stays true all night and mutes everything. The
+/// readings do not become wrong, they become *old*, and old is a different
+/// thing from known.
+///
+/// Thirty minutes: longer than the twenty-minute heartbeat, so an awake
+/// app is never mistaken for a suspended one.
+const Duration kAlertSnapshotStaleAfter = Duration(minutes: 30);
+
 Future<void> evaluateRingAlerts({
   required RingAlertSnapshot snapshot,
   required NotificationPrefs prefs,
@@ -358,14 +407,25 @@ Future<void> evaluateRingAlerts({
     // A failed reload only risks a duplicate alert, never a missing one.
   }
 
+  // Item 63: what this snapshot can still be asked.
+  final stale = at.difference(snapshot.at) > kAlertSnapshotStaleAfter;
+  final usable = stale ? snapshot.asUnknown() : snapshot;
+
   if (prefs.ringAndData) {
-    await _evaluateBattery(snapshot, store, notify, at);
-    await _evaluateStaleSync(snapshot, store, notify);
-    await _evaluateOffline(snapshot, store, notify, at);
+    // Battery needs a current reading, and a stale snapshot has none —
+    // asUnknown clears it so the check declines rather than deciding from
+    // a number that stopped moving hours ago.
+    await _evaluateBattery(usable, store, notify, at);
+    await _evaluateStaleSync(usable, store, notify);
+    // Offline is the one that must still run. A frozen `connected: true`
+    // is precisely why an out-of-range ring went unreported all night.
+    await _evaluateOffline(usable, store, notify, at);
   }
 
-  if (prefs.healthAlerts) {
-    await _evaluateHealth(snapshot, store, notify, at);
+  if (prefs.healthAlerts && !stale) {
+    // A resting heart rate from yesterday evening is not a thing to wake
+    // someone about at four in the morning.
+    await _evaluateHealth(usable, store, notify, at);
   }
 }
 
@@ -408,8 +468,10 @@ Future<void> _evaluateBattery(
   }
 
   // Outside the evening window the flat-battery floor still matters — but
-  // nothing is said after 22:00, when there is nothing to be done about it.
-  if (at.hour >= kEveningBatteryCheckToHour) return;
+  // not at night. Item 63: this said nothing after 22:00 and then started
+  // again at midnight, so the one alert guaranteed to wake someone was the
+  // one about a battery they could do nothing about until morning.
+  if (isBatteryQuietHour(at)) return;
   if (battery > kLowBatteryPercent) return;
   final firedAtMs = store.getInt(_AlertKeys.lowBatteryFiredAt);
   final firedAt = firedAtMs == null
@@ -427,6 +489,17 @@ Future<void> _evaluateBattery(
     body: 'Charge it soon — this low it stops recording.',
   );
 }
+
+/// Night, for anything that is not worth waking someone for.
+///
+/// 22:00 to 07:00. The evening check (19:00–22:00) is the one that catches
+/// a low battery while there is still time to charge it; after that there
+/// is nothing to be done until morning.
+bool isBatteryQuietHour(DateTime at) =>
+    at.hour >= kBatteryQuietFromHour || at.hour < kBatteryQuietToHour;
+
+const int kBatteryQuietFromHour = 22;
+const int kBatteryQuietToHour = 7;
 
 Future<void> _evaluateStaleSync(
   RingAlertSnapshot s,

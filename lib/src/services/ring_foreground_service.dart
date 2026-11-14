@@ -157,6 +157,15 @@ class RingForegroundService {
   static Future<DateTime?> lastHeartbeat() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Item 63: the heartbeat is written by the service isolate and read
+      // by the app. Without a reload a long-running app keeps reading the
+      // value it cached at launch, sees a widening gap, and claims Android
+      // stopped Vyana while the service was running the whole time.
+      try {
+        await prefs.reload();
+      } on Object catch (_) {
+        // Fall through to the cached value rather than report nothing.
+      }
       final ms = prefs.getInt(_heartbeatKey);
       return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
     } on Object catch (_) {

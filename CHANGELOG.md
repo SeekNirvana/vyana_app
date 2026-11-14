@@ -151,6 +151,19 @@ conversation into that would cost the room the next answer needs.
   combination sherpa-onnx refuses: every sentence came back as an empty
   waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
   less to download — 341 MB, not the 355 MB the prompt used to quote.
+- **Overnight alerts work from what is known, not what was true at
+  bedtime.** The background service judged alerts from a snapshot only the
+  app writes, so once your phone suspended Vyana the readings stopped
+  moving: the battery never fell, the ring never went out of range, and a
+  "charging" that was true when you plugged in muted every battery warning
+  until morning. A snapshot older than half an hour is now treated as
+  unknown rather than current — which lets the out-of-range alert fire and
+  stops the others deciding from stale numbers. The 15% warning no longer
+  fires between 22:00 and 07:00, when there is nothing to be done about it;
+  the evening check that catches it in time still does.
+- **Vyana stops claiming Android killed it when it did not.** The app read
+  the background heartbeat from a cache it filled at launch, so the longer
+  it stayed open the larger the gap appeared.
 - **The background service stops being restarted every two seconds.** The
   connection poll reached it on every tick: re-checking notification
   permission — and re-asking anyone who had tapped "Don't allow" — reading
