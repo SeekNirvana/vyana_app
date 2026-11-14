@@ -155,6 +155,10 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
           RingUiState.stale,
           RingUiState.disconnected,
           RingUiState.connecting,
+          // The radio being off belongs here most of all: it is the one of
+          // these the user can fix in a single tap, and leaving it out left
+          // the banner written and never shown on the screen it was for.
+          RingUiState.bluetoothOff,
         }.contains(ringUiStateOf(ring));
     return PopScope(
       canPop: false,

@@ -63,8 +63,13 @@ class _MetricsScreenState extends ConsumerState<MetricsScreen> {
     final band = TrainingFrequencyX.fromName(profile?.trainingFrequency);
     final patterns = ref.watch(patternsProvider).valueOrNull ?? const [];
     final pattern = currentPatternFor(patterns, 'metrics');
-    final stale = ringUiStateOf(c) == RingUiState.stale ||
-        ringUiStateOf(c) == RingUiState.disconnected;
+    final ringState = ringUiStateOf(c);
+    // The radio being off belongs in the banner's set as much as a stale or
+    // disconnected ring: leaving it out of both this and the Home slot left
+    // the Bluetooth banner written and shown nowhere.
+    final stale = ringState == RingUiState.stale ||
+        ringState == RingUiState.disconnected ||
+        ringState == RingUiState.bluetoothOff;
 
     ref.listen<RingController>(ringControllerProvider, (prev, next) {
       if (prev?.history.totalRecords != next.history.totalRecords) {
