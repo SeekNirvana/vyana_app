@@ -188,30 +188,24 @@ Display size
 More fits on screen
 DisplayScaleLayer
 Skip — set this later
-kHealthMonitoringApplyTimeout
 Light, dark, or whatever the phone is set to
 kokoro-en-v0_19
-voice-kokoro-en-v0_19
-355 MB
 AudioRouteService
 Your own endpoint
 On this phone
 Test and save
 ic_notification
-kNotificationAccent
-Which model?
+Steady, and the one Nova was written against.
 Her voice
-Whisper · your voice to text
-Kokoro · her own voice
-Not in this build yet · replies stay on screen
+your voice to text
+replies stay on screen
 Conversations
 New conversation
 Kept on this phone, like everything else.
 Delete every conversation?
 ChatHistoryController
 forgetConversation
-novaCanAnswer
+novaChatSubtitle
 Finish setting up your endpoint
 Set up the endpoint
 onActiveModelChanged
-Qwen3 1.7B
