@@ -23,6 +23,16 @@ on-device story narrower than anyone intended.
   with it. A SIGKILL is not an exception, so the existing GPU→NPU fallback
   never ran. Phones with memory keep the previous order, and a phone whose
   RAM could not be measured keeps it too.
+- **The model picker did not change what was downloaded.** It wrote the
+  chosen model to one place and the downloader, validator, registrar and
+  loader all read another, with nothing connecting them — so picking Qwen3
+  1.7B put "Install Qwen3 1.7B · 977 MB" on the button and then fetched
+  `gemma-4-E2B-it.litertlm`. Found by looking at the file on the phone while
+  the screen said it was downloading the other one. There is one writer now,
+  and changing the model re-registers and re-checks what is installed,
+  because "installed" is a question about a particular file. The backend card
+  above the picker also quoted one flat "2.6 GB" beside a row offering
+  977 MB; it reads the chosen model.
 - **Saving your profile wiped the training answer.** The editor rebuilt the
   whole profile from the five fields on screen and carried the rest over by
   hand. It carried the three cycle fields and missed `trainingFrequency`,

@@ -545,4 +545,23 @@ void main() {
     expect(editor, contains('_minHeightCm'));
     expect(editor, contains('_fieldOk('));
   });
+
+  test('v1.1.6 the model picker actually changes what is downloaded', () {
+    // The picker wrote to onDeviceModelProvider; the downloader, validator
+    // and loader all read activeOnDeviceModel; nothing connected the two.
+    // Choosing Qwen3 1.7B put "Install Qwen3 1.7B · 977 MB" on the button
+    // and fetched gemma-4-E2B-it.litertlm.
+    final manager = readLib('src/services/guide_model_manager.dart');
+    expect(manager, contains('setActiveOnDeviceModel(ref.read('));
+    expect(manager, contains('ref.listen<OnDeviceModel>(onDeviceModelProvider'));
+    expect(manager, contains('Future<void> onActiveModelChanged()'));
+    // Re-registration matters as much as the re-check: the spec carries the
+    // file name and type of whichever model is active.
+    expect(manager, contains('ensureGuideModelRegistered(guidePersonaDefinitions[kind]!)'));
+
+    // And the backend card stops quoting one flat size beside a picker.
+    final setup = readLib('src/screens/ai_setup_screen.dart');
+    expect(setup, isNot(contains(r"A $kGuideModelSizeLabel download")));
+    expect(setup, contains('ref.watch(onDeviceModelProvider).bytes'));
+  });
 }

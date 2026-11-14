@@ -213,3 +213,5 @@ forgetConversation
 novaCanAnswer
 Finish setting up your endpoint
 Set up the endpoint
+onActiveModelChanged
+Qwen3 1.7B

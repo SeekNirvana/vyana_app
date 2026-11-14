@@ -478,6 +478,25 @@ class GuideModelManager extends ChangeNotifier {
     return _initFuture ??= _initialize();
   }
 
+  /// Re-register and re-check after the user picks a different model.
+  ///
+  /// The spec carries the file name, type and url of whichever model is
+  /// active, so a change invalidates both the registration and every cached
+  /// "installed" answer.
+  Future<void> onActiveModelChanged() async {
+    if (_initFuture == null) return;
+    try {
+      await _initFuture;
+      for (final kind in activeGuideKinds) {
+        await ensureGuideModelRegistered(guidePersonaDefinitions[kind]!);
+        await recheckModelStatus(kind);
+      }
+    } on Object catch (error) {
+      debugPrint('[GuideModel] Switching model failed: $error');
+    }
+    notifyListeners();
+  }
+
   Future<void> _initialize() async {
     try {
       await VyanaStorageService.instance.ensureReady();
@@ -936,6 +955,27 @@ final guideModelManagerProvider = ChangeNotifierProvider<GuideModelManager>((
   ref,
 ) {
   final manager = GuideModelManager();
+
+  // The picker writes the chosen model to [onDeviceModelProvider]. Everything
+  // that downloads, validates, registers and loads reads [activeOnDeviceModel]
+  // instead — and nothing connected the two, so the picker was decorative:
+  // choosing Qwen3 1.7B showed "Install Qwen3 1.7B · 977 MB" on the button
+  // and then fetched gemma-4-E2B-it.litertlm. Caught by looking at the file
+  // on the phone while the screen said it was downloading the other one.
+  //
+  // One writer, here, so the two cannot drift again. The stored choice
+  // arrives a moment after this provider is built, which is why the listener
+  // matters as much as the initial read.
+  setActiveOnDeviceModel(ref.read(onDeviceModelProvider));
+  ref.listen<OnDeviceModel>(onDeviceModelProvider, (previous, next) {
+    if (previous?.id == next.id) return;
+    setActiveOnDeviceModel(next);
+    // Installed-or-not is a question about a particular file, so the answer
+    // changes with the model. recheckModelStatus, not _checkModelStatus,
+    // which short-circuits while the previous model is ready.
+    unawaited(manager.onActiveModelChanged());
+  });
+
   manager.init();
   return manager;
 });

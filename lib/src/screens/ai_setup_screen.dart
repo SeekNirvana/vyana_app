@@ -201,9 +201,12 @@ class _AiSetupScreenState extends ConsumerState<AiSetupScreen> {
                 selected: ai.backend == AiBackend.local,
                 icon: 'brain',
                 title: 'On this phone',
+                // Follows the picker below it. It read a flat "2.6 GB"
+                // beside a row offering a 977 MB model.
                 caption: manager.modelReady
                     ? 'Installed and ready'
-                    : 'A $kGuideModelSizeLabel download, then it works offline',
+                    : 'A ${formatDownloadSize(ref.watch(onDeviceModelProvider).bytes)}'
+                        ' download, then it works offline',
                 onTap: () => unawaited(ai.setBackend(AiBackend.local)),
               ),
               const SizedBox(height: 10),
