@@ -210,3 +210,52 @@ Finish setting up your endpoint
 Set up the endpoint
 onActiveModelChanged
 Track my cycle
+
+# v1.1.6 — Your data: back up, restore, say where history lives (53)
+Back up automatically every week
+Choose a passphrase
+Start fresh
+Choose backup
+Without this passphrase
+
+# v1.1.6 — Exports reach the person, not just a folder (65)
+Vyana export
+Saved on this phone.
+
+# v1.1.6 — Your own AI server is told about, and keeps its own key (69)
+This leaves your phone
+This server wants an API key.
+
+# v1.1.6 — Nova keeps the question (70)
+no data recorded for these days
+
+# v1.1.6 — Save cannot run twice (73)
+BusyCta
+
+# v1.1.6 — Lock screen and map (81, 82)
+Show map
+
+# v1.1.6 — The gaps left by v1.1.5's items (84)
+no sleep detected overnight
+Retry ring service
+End and start
+
+# v1.1.6 — One session length everywhere (80)
+under 1m
+
+# v1.1.6 — A night adds up to the night (92)
+Not recorded
+The ring recorded nothing
+
+# v1.1.6 — "Not today" on a planned practice (94)
+Not today
+Skipped for today
+
+# v1.1.6 — "Your normal" only asks what it asked (95)
+Learning your normal
+This is normal for me
+Keep flagging it
+Ask me later
+
+# v1.1.6 — The panels describe this release (96)
+Last updated November 2026
