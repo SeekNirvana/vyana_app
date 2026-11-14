@@ -220,6 +220,14 @@ class GpsBody extends StatefulWidget {
 class _GpsBodyState extends State<GpsBody> {
   final MapController _map = MapController();
   bool _mapReady = false;
+
+  /// Item 82: the map is off until asked for. Zoom-16 tiles of the live
+  /// route were fetched from tile.openstreetmap.org the moment a session
+  /// started, which tells a third party where someone is, every few
+  /// seconds, as they move — and the privacy screen did not mention it.
+  /// The route itself is drawn from the phone's own GPS either way; this is
+  /// only about the imagery underneath it.
+  bool _showMap = false;
   bool _follow = true;
   int _followedLen = 0;
 
@@ -265,7 +273,12 @@ class _GpsBodyState extends State<GpsBody> {
             clipBehavior: Clip.antiAlias,
             child: c.gpsPermissionDenied
                 ? _GpsDeniedPanel(accent: widget.accent)
-                : route.isEmpty
+                : !_showMap
+                    ? _MapOffPanel(
+                        accent: widget.accent,
+                        onShow: () => setState(() => _showMap = true),
+                      )
+                    : route.isEmpty
                     ? CustomPaint(
                         painter: _StripePainter(t.border, t.surface),
                         child: Center(
@@ -562,6 +575,51 @@ class _BigStat extends StatelessWidget {
 }
 
 /// Shown in the map slot when location permission was declined mid-session.
+/// What stands where the map goes until someone asks for it (item 82).
+///
+/// The session is recorded either way — distance, pace, elevation and the
+/// route all come from the phone's own GPS. The only thing waiting on this
+/// tap is the imagery, and the line says where that comes from, because
+/// "show map" and "tell OpenStreetMap where I am" are the same tap and a
+/// person should be able to tell.
+class _MapOffPanel extends StatelessWidget {
+  const _MapOffPanel({required this.accent, required this.onShow});
+
+  final Color accent;
+  final VoidCallback onShow;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Container(
+      color: t.surface,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          VyanaIcon('mapPin', size: 28, color: accent),
+          const SizedBox(height: 12),
+          Text(
+            'Your route is being recorded',
+            style: VyanaType.label.copyWith(color: t.text),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Map tiles load from OpenStreetMap, which means sending them '
+            'roughly where you are. Distance, pace and the route itself do '
+            'not need it.',
+            style: VyanaType.caption.copyWith(color: t.textSec, height: 1.45),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          Cta(label: 'Show map', icon: 'mapPin', onTap: onShow),
+        ],
+      ),
+    );
+  }
+}
+
 class _GpsDeniedPanel extends StatelessWidget {
   const _GpsDeniedPanel({required this.accent});
   final Color accent;

@@ -16,7 +16,7 @@ void main() {
   String summary({int? durationSec, Map<String, Object?> extra = const {}}) =>
       jsonEncode({
         'activity': 'walk',
-        if (durationSec != null) 'durationSec': durationSec,
+        'durationSec': ?durationSec,
         ...extra,
       });
 

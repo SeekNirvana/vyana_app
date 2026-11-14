@@ -105,6 +105,11 @@ class VitalsNotificationService {
           _channelId,
           _channelName,
           channelDescription: _channelDescription,
+          // Item 81: alerts name values - a low battery percentage, a
+          // resting heart rate, a readiness score. Private, so a locked
+          // phone shows that Vyana has something to say without saying
+          // it to the room.
+          visibility: NotificationVisibility.private,
           icon: kNotificationIconName,
           color: kNotificationAccent,
           importance: Importance.high,
@@ -319,6 +324,11 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        // Item 81: alerts name values - a low battery percentage, a
+        // resting heart rate, a readiness score. Private, so a locked
+        // phone shows that Vyana has something to say without saying
+        // it to the room.
+        visibility: NotificationVisibility.private,
         icon: kNotificationIconName,
         color: kNotificationAccent,
         importance: Importance.low,
@@ -356,6 +366,11 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        // Item 81: alerts name values - a low battery percentage, a
+        // resting heart rate, a readiness score. Private, so a locked
+        // phone shows that Vyana has something to say without saying
+        // it to the room.
+        visibility: NotificationVisibility.private,
         icon: kNotificationIconName,
         color: kNotificationAccent,
         importance: Importance.high,
@@ -377,6 +392,11 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        // Item 81: alerts name values - a low battery percentage, a
+        // resting heart rate, a readiness score. Private, so a locked
+        // phone shows that Vyana has something to say without saying
+        // it to the room.
+        visibility: NotificationVisibility.private,
         icon: kNotificationIconName,
         color: kNotificationAccent,
         importance: Importance.high,
@@ -403,6 +423,11 @@ class VitalsNotificationService {
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
+        // Item 81: alerts name values - a low battery percentage, a
+        // resting heart rate, a readiness score. Private, so a locked
+        // phone shows that Vyana has something to say without saying
+        // it to the room.
+        visibility: NotificationVisibility.private,
         icon: kNotificationIconName,
         color: kNotificationAccent,
         importance: Importance.high,

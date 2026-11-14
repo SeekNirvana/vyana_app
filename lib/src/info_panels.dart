@@ -697,6 +697,11 @@ class AppPrivacyScreen extends StatelessWidget {
                   'Wallet linking — only if you connect Solana or Reown; keys stay with your wallet app',
                   'Buying a ring — a USDC payment you sign in your wallet, sent to the Solana network',
                   'Installing Nova — a one-time model download from Hugging Face; nothing about you is sent',
+                  // Item 82: this was happening and was not written down.
+                  // The tiles were fetched automatically from the moment a
+                  // GPS session started; now they wait for "Show map", and
+                  // the person reading this can see what that tap does.
+                  'Session map — only if you tap "Show map"; tiles come from OpenStreetMap, which means sending them roughly where you are',
                   'Cloud sync — an opt-in switch that is not live yet; today nothing leaves the phone either way',
                 ],
               ),

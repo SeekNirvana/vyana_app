@@ -253,6 +253,12 @@ class RingForegroundService {
         showWhen: false,
         showBadge: false,
         onlyAlertOnce: true,
+        // Item 81: the ongoing notification carries HR, SpO2 and HRV, and
+        // the plugin's default is VISIBILITY_PUBLIC — so a locked phone on
+        // a table showed someone's heart rate to whoever walked past.
+        // Private keeps the notification there and hides its content until
+        // the phone is unlocked.
+        visibility: NotificationVisibility.VISIBILITY_PRIVATE,
       ),
       iosNotificationOptions: const IOSNotificationOptions(
         showNotification: false,
