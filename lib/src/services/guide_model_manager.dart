@@ -85,19 +85,43 @@ class GuidePersonaDefinition {
 // Every persona uses the same Gemma E2B litert-lm bundle; the persona's
 // `systemPrompt` is what gives each guide its voice. Downloading once makes
 // every guide usable.
-const String _kSharedModelLabel = 'Gemma E2B · on-device';
+const String _kSharedModelLabel = 'Gemma E2B';
 
-/// Approximate download size of the shared Gemma bundle, shown wherever the
-/// app asks the user to install Nova. One constant so the pill, the store
-/// and You never disagree.
+/// Exact download size of the shared Gemma bundle, in bytes, as the server
+/// actually serves it.
 ///
+/// A byte count rather than a hand-typed string because the string was
+/// wrong: it read "3.1 GB" against a file of 2,586,706,331 bytes — half a
+/// gigabyte of overstatement on the one number that decides whether someone
+/// starts the download at all. It had also been "3.2 GB" at one point, to
+/// fold in a voice that was never part of this file.
+///
+/// Confirmed with `curl -sIL` against the Hugging Face URL below; re-check
+/// it when [_kSharedModelUrl] changes.
+const int kGuideModelBytes = 2586706331;
+
+/// That size, said the way the UI should say it.
+String get kGuideModelSizeLabel => formatDownloadSize(kGuideModelBytes);
+
+/// Download sizes in the units people read them in: GB to one decimal above
+/// a gigabyte, whole MB below. Decimal, like every download manager and
+/// every store listing — not the 1024-based figure, which would call this
+/// file 2.4 GB and disagree with the phone.
+String formatDownloadSize(int bytes) {
+  if (bytes <= 0) return '0 MB';
+  const mb = 1000 * 1000;
+  if (bytes >= 1000 * mb) {
+    return '${(bytes / (1000 * mb)).toStringAsFixed(1)} GB';
+  }
+  return '${(bytes / mb).round()} MB';
+}
+
 /// **Nova's voice is not in this figure.** It used to be: the voice was
-/// folded into the same install step at an estimated 90 MB. The real pack is
-/// 355 MB of full-precision weights, which is too much to add to someone's
-/// download without asking, so it is its own opt-in in Guides › Vani Voice
-/// and advertises its own size ([novaVoiceApproxSizeLabel]). Nova works
-/// without it; she just does not read her replies aloud.
-const String kGuideModelSizeLabel = '3.1 GB';
+/// folded into the same install step at an estimated 90 MB. It is its own
+/// opt-in now and advertises its own size ([novaVoiceApproxSizeLabel]).
+/// Nova works without it; she just does not read her replies aloud.
+const String kGuideModelSizeNote =
+    "Nova's voice is a separate download.";
 
 /// Item 51 — Nova's instructions. Roughly 150 tokens, about half the length
 /// of the prompt it replaces, because the cap it shares with the data blocks
@@ -184,10 +208,25 @@ String? guidePrimaryModelPathFromFileMap(
   return filePaths[primaryKey] ?? filePaths.values.first;
 }
 
+/// Whether the bundle at [filePath] is whole enough to hand to the native
+/// parser.
+///
+/// [expectedBytes] is what the model is supposed to weigh. It used to be a
+/// flat `> 1.5 GB`, with a comment saying "Gemma models are typically
+/// > 1.5GB" — true of Gemma and of nothing else. A 614 MB Qwen bundle
+/// downloaded perfectly and was then deleted as corrupt, which is a hard
+/// failure to read from the outside: the download bar fills and the model
+/// never appears.
+///
+/// A truncated file is still rejected, and more precisely than before: the
+/// point of the check is that a half-written bundle crashes the C++
+/// FlatBuffer parser with EXC_BAD_ACCESS, and 2% short of the expected size
+/// catches that far better than a threshold borrowed from a different model.
 Future<bool> validateGuideBundleFile(
   String? filePath,
-  ModelFileType fileType,
-) async {
+  ModelFileType fileType, {
+  required int expectedBytes,
+}) async {
   if (filePath == null || filePath.isEmpty) {
     return false;
   }
@@ -199,10 +238,11 @@ Future<bool> validateGuideBundleFile(
 
   if (fileType != ModelFileType.task) {
     final fileLength = await file.length();
-    // Gemma models are typically > 1.5GB. A 1MB check would let severely
-    // truncated files pass, which causes EXC_BAD_ACCESS in the C++ FlatBuffer
-    // parser.
-    return fileLength > 1500 * 1024 * 1024;
+    if (expectedBytes > 0) {
+      return fileLength >= (expectedBytes * 0.98).floor();
+    }
+    // No expectation recorded: fall back to "not obviously truncated".
+    return fileLength > 1024 * 1024;
   }
 
   final raf = await file.open();
@@ -230,6 +270,7 @@ Future<String?> resolveInstalledGuideModelPath(
     if (await validateGuideBundleFile(
       vyanaPath,
       definition.modelFileType,
+      expectedBytes: kGuideModelBytes,
     )) {
       return vyanaPath;
     }
@@ -245,7 +286,11 @@ Future<bool> validateInstalledGuideModel(
   GuidePersonaDefinition definition,
 ) async {
   final path = await resolveInstalledGuideModelPath(definition);
-  return validateGuideBundleFile(path, definition.modelFileType);
+  return validateGuideBundleFile(
+    path,
+    definition.modelFileType,
+    expectedBytes: kGuideModelBytes,
+  );
 }
 
 /// Removes flutter_gemma registry entries and the Vyana on-disk bundle.
@@ -766,7 +811,8 @@ Future<void> downloadGuideModelFile(
   await targetFile.parent.create(recursive: true);
 
   if (await targetFile.exists() &&
-      await validateGuideBundleFile(targetPath, definition.modelFileType)) {
+      await validateGuideBundleFile(targetPath, definition.modelFileType,
+          expectedBytes: kGuideModelBytes)) {
     onProgress?.call(1);
     return;
   }
@@ -806,7 +852,8 @@ Future<void> downloadGuideModelFile(
     await sink.flush();
     await sink.close();
 
-    if (!await validateGuideBundleFile(targetPath, definition.modelFileType)) {
+    if (!await validateGuideBundleFile(targetPath, definition.modelFileType,
+        expectedBytes: kGuideModelBytes)) {
       await targetFile.delete();
       throw StateError('Downloaded model failed validation.');
     }
@@ -853,6 +900,7 @@ Future<void> ensureGuideModelRegistered(GuidePersonaDefinition definition) async
   if (!await validateGuideBundleFile(
     targetPath,
     definition.modelFileType,
+    expectedBytes: kGuideModelBytes,
   )) {
     return;
   }

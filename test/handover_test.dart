@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter_gemma/core/model.dart' show ModelFileType;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyana/main.dart';
@@ -1683,6 +1684,92 @@ void main() {
         expect(asset.sha256, matches(RegExp(r'^[0-9a-f]{64}$')));
         expect(asset.bytes, greaterThan(0));
       }
+    });
+  });
+
+
+  group('a downloaded model is judged against its own size', () {
+    late Directory tmp;
+    setUp(() async {
+      tmp = await Directory.systemTemp.createTemp('vyana_bundle_test');
+    });
+    tearDown(() async {
+      if (tmp.existsSync()) await tmp.delete(recursive: true);
+    });
+
+    Future<String> bundleOf(int bytes) async {
+      final f = File('${tmp.path}/model.litertlm');
+      await f.writeAsBytes(List<int>.filled(bytes, 0));
+      return f.path;
+    }
+
+    test('a small model is not corrupt just because it is small', () async {
+      // The check was a flat `> 1.5 GB`, commented "Gemma models are
+      // typically > 1.5GB" — true of Gemma and of nothing else. A 614 MB
+      // Qwen bundle downloaded perfectly and was deleted as corrupt, which
+      // reads from outside as the progress bar filling and the model never
+      // appearing.
+      final path = await bundleOf(1000);
+      expect(
+        await validateGuideBundleFile(
+          path,
+          ModelFileType.litertlm,
+          expectedBytes: 1000,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a truncated file is still refused', () async {
+      // Half a bundle crashes the native FlatBuffer parser, so this is the
+      // case the check exists for.
+      final path = await bundleOf(500);
+      expect(
+        await validateGuideBundleFile(
+          path,
+          ModelFileType.litertlm,
+          expectedBytes: 1000,
+        ),
+        isFalse,
+      );
+    });
+
+    test('a couple of per cent short is tolerated, ten is not', () async {
+      final nearly = await bundleOf(985);
+      expect(
+        await validateGuideBundleFile(nearly, ModelFileType.litertlm,
+            expectedBytes: 1000),
+        isTrue,
+      );
+      final short = await bundleOf(900);
+      expect(
+        await validateGuideBundleFile(short, ModelFileType.litertlm,
+            expectedBytes: 1000),
+        isFalse,
+      );
+    });
+
+    test('a missing file is never valid', () async {
+      expect(
+        await validateGuideBundleFile(
+          '${tmp.path}/absent.litertlm',
+          ModelFileType.litertlm,
+          expectedBytes: 1000,
+        ),
+        isFalse,
+      );
+      expect(
+        await validateGuideBundleFile(null, ModelFileType.litertlm,
+            expectedBytes: 1000),
+        isFalse,
+      );
+    });
+
+    test('the size the UI quotes is the size that is checked', () {
+      // These drifted apart before: the label said 3.1 GB against a
+      // 2.59 GB file, and the validator used a third number entirely.
+      expect(kGuideModelBytes, greaterThan(0));
+      expect(formatDownloadSize(kGuideModelBytes), matches(RegExp(r'^[\d.]+ (MB|GB)$')));
     });
   });
 }
