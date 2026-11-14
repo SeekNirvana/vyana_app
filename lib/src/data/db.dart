@@ -766,6 +766,34 @@ class VyanaDatabase extends _$VyanaDatabase {
     );
   }
 
+  /// When the oldest thing the user has here was recorded.
+  ///
+  /// Item 53: decides whether it is fair to mention backing up at all.
+  /// Telling someone on their second day that they have never backed up is
+  /// nagging about an empty file, so the reminder waits until there is a
+  /// week of history to lose.
+  Future<DateTime?> historyStartedAt() async {
+    DateTime? oldest;
+    // Named per table: a session is stamped started_at, not created_at,
+    // and asking every table for the same column throws on that one.
+    const dated = {
+      'activity_sessions': 'started_at',
+      'journal_entries': 'created_at',
+      'meals': 'created_at',
+      'cycle_days': 'created_at',
+    };
+    for (final entry in dated.entries) {
+      final row = await customSelect(
+        'SELECT MIN(${entry.value}) AS t FROM ${entry.key}',
+      ).getSingleOrNull();
+      final seconds = row?.data['t'] as int?;
+      if (seconds == null) continue;
+      final at = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+      if (oldest == null || at.isBefore(oldest)) oldest = at;
+    }
+    return oldest;
+  }
+
   /// Whether this phone holds nothing the user put here.
   ///
   /// Item 53: decides whether a restore can be offered without a warning.

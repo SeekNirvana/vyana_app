@@ -151,6 +151,17 @@ conversation into that would cost the room the next answer needs.
   combination sherpa-onnx refuses: every sentence came back as an empty
   waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
   less to download — 341 MB, not the 355 MB the prompt used to quote.
+- **Your data: back up, restore, and a plain word about where history
+  lives.** Everything Vyana holds is on your phone, so deleting the app
+  deletes it — and neither Android nor iPhone warns an app it is being
+  removed, so there was never a moment to say so. You → Your data says it,
+  and answers it: one encrypted file holding the vault, your settings and
+  your meal photos, saved wherever you choose through the system sheet.
+  Restoring asks for the passphrase and puts it all back. A new phone is
+  offered the restore before anything else, and after thirty days the row
+  quietly says how long it has been — in grey, with no notification.
+  Without the passphrase a backup cannot be opened, by anyone, including
+  us.
 - **Pinned practices come first in their category.** With a few pins, the
   rail at the top became a scroll hunt and the list below still showed every
   practice in catalogue order with your pinned ones mixed in — so finding one

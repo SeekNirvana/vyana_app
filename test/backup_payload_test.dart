@@ -272,4 +272,30 @@ void main() {
       expect(await db.isEmptyOfUserData(), isFalse);
     });
   });
+
+  group('how long there has been something to lose', () {
+    test('a phone with nothing has no history to date', () async {
+      expect(await db.historyStartedAt(), isNull);
+    });
+
+    test('it is the oldest thing, across the tables that have dates', () async {
+      // activity_sessions stamps started_at while the rest use created_at,
+      // so asking every table for the same column throws on that one —
+      // which is why each is named.
+      await db.addJournalEntry(
+        id: 'j1',
+        type: 'note',
+        title: 'Newer',
+        body: 'Later.',
+        createdAt: DateTime(2026, 11, 1),
+      );
+      await db.addMeal(
+        id: 'm1',
+        label: 'Older',
+        mealType: 'lunch',
+        createdAt: DateTime(2026, 3, 2),
+      );
+      expect(await db.historyStartedAt(), DateTime(2026, 3, 2));
+    });
+  });
 }

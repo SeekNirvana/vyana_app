@@ -595,7 +595,10 @@ class YouScreen extends ConsumerWidget {
               icon: 'shield',
               iconColor: t.heading,
               label: 'Your data',
-              subtitle: 'Back up, restore, and exports',
+              // Item 53: says how long it has been, but only once that is
+              // fair to mention — and in the row's own grey, never a badge.
+              subtitle: ref.watch(backupRowSubtitleProvider).valueOrNull ??
+                  'Back up, restore, and exports',
               onTap: () => openYourData(context),
             ),
             SettingsRow(

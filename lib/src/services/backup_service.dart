@@ -27,6 +27,27 @@ final backupServiceProvider = Provider<BackupService>((ref) {
   return BackupService(ref.watch(databaseProvider));
 });
 
+/// What the Your data row should say under its label.
+///
+/// Item 53: the row normally describes the screen. When a backup is overdue
+/// it says so instead — in the row's ordinary grey, with no badge, no
+/// colour and no notification. A backup is a good idea, not an emergency,
+/// and an app that shouts about its own housekeeping teaches people to
+/// stop reading it.
+final backupRowSubtitleProvider = FutureProvider<String>((ref) async {
+  const normal = 'Back up, restore, and exports';
+  final service = ref.watch(backupServiceProvider);
+  final lastBackup = await service.lastBackupAt();
+  final startedAt = await ref.watch(databaseProvider).historyStartedAt();
+  if (startedAt == null) return normal;
+
+  final overdue = backupIsOverdue(
+    lastBackup: lastBackup,
+    historyAge: DateTime.now().difference(startedAt),
+  );
+  return overdue ? lastBackupLine(lastBackup) : normal;
+});
+
 /// When the last backup was handed off, as an ISO date.
 const String kLastBackupKey = 'vyana.backup.last_at';
 
