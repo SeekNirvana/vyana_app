@@ -489,6 +489,28 @@ class VyanaDatabase extends _$VyanaDatabase {
     );
   }
 
+  /// Whether [table] is already in this database.
+  ///
+  /// Item 72: asked *before* creating anything, because the answer decides
+  /// whether columns from a later schema version have to be added by hand.
+  /// A table drift creates is built from the current definition and already
+  /// has every column, so adding them again is the "duplicate column name"
+  /// that stopped the app opening.
+  ///
+  /// Note for anyone reading the `try/catch (_) {/* already exists */}`
+  /// blocks below and reasoning from them, as this fix first did: drift's
+  /// `createTable` emits `CREATE TABLE IF NOT EXISTS`, so it does not throw
+  /// for a table that is already there and those catches have never caught
+  /// anything. Existence has to be looked up; it cannot be inferred from a
+  /// failure that never happens.
+  Future<bool> _hasTable(String name) async {
+    final rows = await customSelect(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+      variables: [Variable.withString(name)],
+    ).get();
+    return rows.isNotEmpty;
+  }
+
   @override
   int get schemaVersion => 13;
 
@@ -498,9 +520,9 @@ class VyanaDatabase extends _$VyanaDatabase {
         onUpgrade: (m, from, to) async {
           // Idempotent: bring any device forward by creating tables it is
           // missing, tolerating partial state left by earlier dev builds.
-          try {
-            await m.createTable(journalEntries);
-          } on Object catch (_) {/* already exists */}
+          final hadJournalEntries =
+              await _hasTable(journalEntries.actualTableName);
+          await m.createTable(journalEntries);
           try {
             await m.createTable(meals);
           } on Object catch (_) {/* already exists */}
@@ -513,21 +535,41 @@ class VyanaDatabase extends _$VyanaDatabase {
           try {
             await m.createTable(ringHistoryCaches);
           } on Object catch (_) {/* already exists */}
-          try {
-            await m.createTable(ringOrders);
-          } on Object catch (_) {/* already exists */}
-          if (from < 6) {
-            await m.addColumn(ringOrders, ringOrders.orderType);
-            await m.addColumn(ringOrders, ringOrders.shippingCountry);
-            await m.addColumn(ringOrders, ringOrders.orderMessage);
+          // Item 72: this crashed every upgrade from schema 4 or older, and
+          // crashed it in the worst place — onUpgrade throwing means the
+          // database never opens, so the app is dead on launch with every
+          // record still sitting there.
+          //
+          // createTable builds the table from the *current* definition, so
+          // a device that had no ring_orders got one with orderType,
+          // shippingCountry and orderMessage already in it. The unguarded
+          // addColumn calls then hit "duplicate column name" and nothing
+          // caught them. `from < 6` was the wrong question: what decides
+          // whether those columns need adding by hand is not the version
+          // the device is coming from, it is whether the table was already
+          // there to be migrated.
+          final hadRingOrders = await _hasTable(ringOrders.actualTableName);
+          await m.createTable(ringOrders);
+          if (hadRingOrders && from < 6) {
+            for (final column in [
+              ringOrders.orderType,
+              ringOrders.shippingCountry,
+              ringOrders.orderMessage,
+            ]) {
+              // Guarded as well as conditional. A migration that throws
+              // costs someone their app, so this is one of the few places
+              // worth both.
+              try {
+                await m.addColumn(ringOrders, column);
+              } on Object catch (_) {/* already there */}
+            }
           }
           try {
             await m.createTable(ecgRecordings);
           } on Object catch (_) {/* already exists */}
-          try {
-            await m.createTable(patterns);
-          } on Object catch (_) {/* already exists */}
-          if (from < 10) {
+          final hadPatterns = await _hasTable(patterns.actualTableName);
+          await m.createTable(patterns);
+          if (hadPatterns && from < 10) {
             for (final column in [
               patterns.counterIdsJson,
               patterns.baseline,
@@ -537,7 +579,7 @@ class VyanaDatabase extends _$VyanaDatabase {
               } on Object catch (_) {/* already exists */}
             }
           }
-          if (from < 8) {
+          if (hadJournalEntries && from < 8) {
             try {
               await m.addColumn(journalEntries, journalEntries.reflection);
             } on Object catch (_) {/* already exists */}
