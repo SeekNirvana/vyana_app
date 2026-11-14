@@ -168,6 +168,9 @@ void main() {
     // v1.1.5: the pill offers the choice, not one of the answers —
     // someone running their own endpoint needs no download.
     expect(chrome, contains('Configure your AI'));
+    final aiSetup = readLib('src/screens/ai_setup_screen.dart');
+    expect(aiSetup, contains('Which model?'));
+    expect(aiSetup, contains('Her voice'));
     expect(chrome, contains("'Ask Nova'"));
     expect(chrome, contains('class PatternCard'));
     expect(chrome, contains('DashedPillPainter'));
@@ -218,9 +221,15 @@ void main() {
     // string drifted from the file it described — it read 3.1 GB against a
     // 2.59 GB download. Assert the derivation exists and the old literal is
     // gone, rather than pinning a new string that can drift the same way.
+    // The size follows the chosen model now, so the byte count lives in the
+    // catalogue rather than as one constant tied to Gemma. What matters is
+    // that it is a measured number and not a typed string: the label read
+    // "3.1 GB" against a 2.59 GB download before this.
+    final models = readLib('src/services/on_device_models.dart');
+    expect(models, contains('bytes: 2588147712'));
+    expect(models, contains('bytes: 2659057664'));
     final modelManager = readLib('src/services/guide_model_manager.dart');
-    expect(modelManager, contains('const int kGuideModelBytes = 2586706331'));
-    expect(modelManager, contains('formatDownloadSize(kGuideModelBytes)'));
+    expect(modelManager, contains('activeOnDeviceModel.bytes'));
     expect(manifest, isNot(contains('3.1 GB')));
   });
 

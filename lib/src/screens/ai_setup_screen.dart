@@ -69,6 +69,7 @@ class AiSetupScreen extends ConsumerStatefulWidget {
 }
 
 class _AiSetupScreenState extends ConsumerState<AiSetupScreen> {
+  int? _ramMb;
   final _url = TextEditingController();
   final _model = TextEditingController();
   final _key = TextEditingController();
@@ -81,6 +82,19 @@ class _AiSetupScreenState extends ConsumerState<AiSetupScreen> {
     _model.dispose();
     _key.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_readRam());
+  }
+
+  /// Measured once so a model row can say "this phone has 4 GB" rather than
+  /// the screen opening with a warning about a phone nobody mentioned.
+  Future<void> _readRam() async {
+    final mb = await DeviceCapabilityService.instance.physicalRamMb();
+    if (mounted) setState(() => _ramMb = mb);
   }
 
   void _prefill(CloudEndpoint endpoint) {
@@ -179,7 +193,7 @@ class _AiSetupScreenState extends ConsumerState<AiSetupScreen> {
               const SizedBox(height: 20),
 
               if (ai.backend == AiBackend.local)
-                _LocalBackendPanel(manager: manager)
+                _LocalBackendPanel(manager: manager, ramMb: _ramMb)
               else
                 _EndpointForm(
                   url: _url,
@@ -192,8 +206,140 @@ class _AiSetupScreenState extends ConsumerState<AiSetupScreen> {
                   onForget: () => unawaited(ai.forgetEndpoint()),
                   onChanged: () => setState(() {}),
                 ),
+
+              const SizedBox(height: 26),
+              Text('Her voice',
+                  style: VyanaType.label.copyWith(color: t.text)),
+              const SizedBox(height: 3),
+              Text(
+                'Optional, and separate from thinking. Listening is your '
+                'voice becoming text; speaking is hers.',
+                style: VyanaType.caption
+                    .copyWith(color: t.textSec, height: 1.4),
+              ),
+              const SizedBox(height: 10),
+              const _SpeechRows(),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Listening and speaking as two plain rows — the two models, their sizes
+/// and their states.
+///
+/// They used to be one card called "Vani Voice" that named both and
+/// downloaded one, which is why installing it produced no audio and no
+/// explanation.
+class _SpeechRows extends ConsumerWidget {
+  const _SpeechRows();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.vyana;
+    final voice = ref.watch(guideVoiceServiceProvider);
+
+    return Column(
+      children: [
+        _SpeechRow(
+          icon: 'waveform',
+          title: 'Listening',
+          detail: 'Whisper · your voice to text',
+          state: voice.isPreparingWhisperModel
+              ? 'INSTALLING'
+              : (voice.whisperModelReady ? 'INSTALLED' : '74 MB'),
+          done: voice.whisperModelReady,
+          onTap: voice.whisperModelReady
+              ? null
+              : () => unawaited(voice.preloadWhisperModel()),
+        ),
+        const SizedBox(height: 8),
+        _SpeechRow(
+          icon: 'speaker',
+          title: 'Speaking',
+          detail: voice.novaVoiceAvailableToInstall
+              ? 'Kokoro · her own voice'
+              : 'Not in this build yet · replies stay on screen',
+          state: voice.isDownloadingNovaVoice
+              ? 'INSTALLING'
+              : (voice.novaVoiceReady
+                  ? 'INSTALLED'
+                  : (voice.novaVoiceAvailableToInstall
+                      ? voice.novaVoiceDownloadSize.toUpperCase()
+                      : 'UNAVAILABLE')),
+          done: voice.novaVoiceReady,
+          onTap: voice.novaVoiceAvailableToInstall && !voice.novaVoiceReady
+              ? () => unawaited(voice.downloadNovaVoiceModel())
+              : null,
+        ),
+        if (voice.lastError != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            voice.lastError!,
+            style: VyanaType.caption.copyWith(color: t.gold, height: 1.4),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _SpeechRow extends StatelessWidget {
+  const _SpeechRow({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    required this.state,
+    required this.done,
+    required this.onTap,
+  });
+
+  final String icon;
+  final String title;
+  final String detail;
+  final String state;
+  final bool done;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Panel(
+        pad: 13,
+        child: Row(
+          children: [
+            VyanaIconBadge(name: icon, color: done ? t.green : t.textSec),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title,
+                      style: VyanaType.label.copyWith(color: t.text)),
+                  const SizedBox(height: 2),
+                  Text(detail,
+                      style: VyanaType.caption
+                          .copyWith(color: t.textSec, height: 1.35)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              state,
+              style: VyanaType.mono10
+                  .copyWith(color: done ? t.green : t.textMuted),
+            ),
+            if (onTap != null) ...[
+              const SizedBox(width: 6),
+              VyanaIcon('download', size: 15, color: t.textMuted),
+            ],
+          ],
         ),
       ),
     );
@@ -268,14 +414,38 @@ class _BackendChoice extends StatelessWidget {
   }
 }
 
-class _LocalBackendPanel extends StatelessWidget {
-  const _LocalBackendPanel({required this.manager});
+/// Step 2a — which model, then install it here.
+///
+/// The picker only exists once "on this phone" is chosen, and the install
+/// button names what it installs, so there is never a button whose subject
+/// is a radio two rows up. The RAM note sits on the row it is about: it
+/// used to be a banner above the whole screen, shown even to people running
+/// an endpoint, for whom this phone's memory is beside the point.
+class _LocalBackendPanel extends ConsumerWidget {
+  const _LocalBackendPanel({
+    required this.manager,
+    required this.ramMb,
+  });
 
   final GuideModelManager manager;
+  final int? ramMb;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = context.vyana;
+    final selected = ref.watch(onDeviceModelProvider);
+    final downloading = manager.downloadingState;
+
+    if (downloading != null) {
+      final pct = (downloading.progress * 100).clamp(0, 100).round();
+      return _ProgressPanel(
+        progress: downloading.progress,
+        label: downloading.status == GuideModelStatus.verifying
+            ? 'Checking the download…'
+            : 'Downloading ${selected.label} · $pct%',
+      );
+    }
+
     if (manager.modelReady) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -289,8 +459,8 @@ class _LocalBackendPanel extends StatelessWidget {
                 const SizedBox(width: 11),
                 Expanded(
                   child: Text(
-                    'Nova runs here. Nothing she is told, and nothing she is '
-                    'shown, leaves this phone.',
+                    '${activeOnDeviceModel.label} is installed. Nothing Nova '
+                    'is told, and nothing she is shown, leaves this phone.',
                     style: VyanaType.body
                         .copyWith(color: t.textSec, height: 1.45),
                   ),
@@ -299,8 +469,6 @@ class _LocalBackendPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          // "What is this costing me on disk" belongs next to the choice
-          // that costs it, not on a row in You that now opens this screen.
           BorderedPill(
             label: 'What it uses on disk',
             onTap: () => openNovaFootprint(context),
@@ -308,20 +476,146 @@ class _LocalBackendPanel extends StatelessWidget {
         ],
       );
     }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'The model is a one-time $kGuideModelSizeLabel download. After '
-          'that Nova works with no network at all.',
-          style: VyanaType.caption.copyWith(color: t.textSec, height: 1.45),
-        ),
-        const SizedBox(height: 12),
+        Text('Which model?', style: VyanaType.label.copyWith(color: t.textSec)),
+        const SizedBox(height: 8),
+        for (final model in kOnDeviceModels) ...[
+          _ModelRow(
+            model: model,
+            selected: model.id == selected.id,
+            ramMb: ramMb,
+            onTap: () => unawaited(
+              ref.read(onDeviceModelProvider.notifier).select(model),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        const SizedBox(height: 6),
         Cta(
-          label: 'Install the model · $kGuideModelSizeLabel',
+          label: 'Install ${selected.label} · '
+              '${formatDownloadSize(selected.bytes)}',
           icon: 'download',
-          onTap: () => openGuideStore(context),
+          onTap: () => unawaited(manager.downloadModel(GuideKind.nova)),
         ),
+        const SizedBox(height: 8),
+        Text(
+          'A one-time download. After it, Nova works with no network at all.',
+          style: VyanaType.caption.copyWith(color: t.textMuted, height: 1.4),
+        ),
+      ],
+    );
+  }
+}
+
+class _ModelRow extends StatelessWidget {
+  const _ModelRow({
+    required this.model,
+    required this.selected,
+    required this.ramMb,
+    required this.onTap,
+  });
+
+  final OnDeviceModel model;
+  final bool selected;
+  final int? ramMb;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final tight = !model.fitsIn(ramMb);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Panel(
+        pad: 13,
+        accent: selected ? t.heading : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    model.label,
+                    style: VyanaType.label.copyWith(
+                      color: t.text,
+                      fontWeight:
+                          selected ? FontWeight.w700 : FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Text(
+                  formatDownloadSize(model.bytes),
+                  style: VyanaType.mono10.copyWith(color: t.textMuted),
+                ),
+                const SizedBox(width: 10),
+                VyanaIcon(
+                  selected ? 'checkCircle' : 'circle',
+                  size: 18,
+                  color: selected ? t.green : t.mutedInk,
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              model.blurb,
+              style:
+                  VyanaType.caption.copyWith(color: t.textSec, height: 1.35),
+            ),
+            if (tight) ...[
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  VyanaIcon('alert', size: 14, color: t.gold),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      'Wants ${(model.wantsRamMb / 1024).round()} GB of '
+                      'memory; this phone has '
+                      '${((ramMb ?? 0) / 1024).round()} GB. Replies may be '
+                      'slow or stop.',
+                      style: VyanaType.caption
+                          .copyWith(color: t.gold, height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProgressPanel extends StatelessWidget {
+  const _ProgressPanel({required this.progress, required this.label});
+
+  final double progress;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(100),
+          child: LinearProgressIndicator(
+            value: progress <= 0 ? null : progress,
+            minHeight: 7,
+            backgroundColor: t.mutedInk.withValues(alpha: 0.15),
+            valueColor: AlwaysStoppedAnimation<Color>(t.heading),
+          ),
+        ),
+        const SizedBox(height: 9),
+        Text(label, style: VyanaType.mono10.copyWith(color: t.textSec)),
       ],
     );
   }

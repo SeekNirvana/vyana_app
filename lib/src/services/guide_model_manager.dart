@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_startup_service.dart';
 import 'nova_voice_assets.dart';
+import 'on_device_models.dart';
 import 'vyana_storage_service.dart';
 
 /// On-device guide personas. Each maps to a string id used by the Vyana guide
@@ -85,10 +86,29 @@ class GuidePersonaDefinition {
 // Every persona uses the same Gemma E2B litert-lm bundle; the persona's
 // `systemPrompt` is what gives each guide its voice. Downloading once makes
 // every guide usable.
+/// The model the user picked, as the download, the validator, the spec and
+/// every label all read it.
+///
+/// Module-level and mutable, which is unusual here and deliberate: the
+/// persona definitions are `const` and carry Nova's words, while the model
+/// is a setting that changes under them. The alternative was threading a
+/// model through a dozen helpers that only ever have a definition to hand,
+/// which spreads the question "which model is this?" rather than answering
+/// it once. [GuideModelManager] keeps it in step with the stored choice.
+OnDeviceModel _activeOnDeviceModel =
+    onDeviceModelById(kDefaultOnDeviceModelId);
+
+OnDeviceModel get activeOnDeviceModel => _activeOnDeviceModel;
+
+void setActiveOnDeviceModel(OnDeviceModel model) {
+  _activeOnDeviceModel = model;
+}
+
 const String _kSharedModelLabel = 'Gemma E2B';
 
-/// Exact download size of the shared Gemma bundle, in bytes, as the server
-/// actually serves it.
+/// Exact download size of the model now selected, in bytes.
+///
+/// Was a const tied to Gemma; it follows the picker now.
 ///
 /// A byte count rather than a hand-typed string because the string was
 /// wrong: it read "3.1 GB" against a file of 2,586,706,331 bytes — half a
@@ -98,7 +118,7 @@ const String _kSharedModelLabel = 'Gemma E2B';
 ///
 /// Confirmed with `curl -sIL` against the Hugging Face URL below; re-check
 /// it when [_kSharedModelUrl] changes.
-const int kGuideModelBytes = 2586706331;
+int get kGuideModelBytes => activeOnDeviceModel.bytes;
 
 /// That size, said the way the UI should say it.
 String get kGuideModelSizeLabel => formatDownloadSize(kGuideModelBytes);
@@ -166,7 +186,7 @@ List<GuideKind> guideKindsSharingBundle(GuidePersonaDefinition definition) {
 }
 
 String guideInstalledModelFileName(GuidePersonaDefinition definition) {
-  return Uri.parse(definition.modelDownloadUrl).pathSegments.last;
+  return Uri.parse(activeOnDeviceModel.url).pathSegments.last;
 }
 
 String guideInstalledModelName(GuidePersonaDefinition definition) {
@@ -190,8 +210,8 @@ InferenceModelSpec guideInferenceModelSpec(GuidePersonaDefinition definition) {
   return InferenceModelSpec.fromLegacyUrl(
     name: guideInstalledModelName(definition),
     modelUrl: 'file://$targetPath',
-    modelType: definition.flutterGemmaModelType,
-    fileType: definition.modelFileType,
+    modelType: activeOnDeviceModel.modelType,
+    fileType: activeOnDeviceModel.fileType,
     replacePolicy: ModelReplacePolicy.keep,
   );
 }
@@ -269,8 +289,8 @@ Future<String?> resolveInstalledGuideModelPath(
     final vyanaPath = guideModelTargetPath(definition);
     if (await validateGuideBundleFile(
       vyanaPath,
-      definition.modelFileType,
-      expectedBytes: kGuideModelBytes,
+      activeOnDeviceModel.fileType,
+      expectedBytes: activeOnDeviceModel.bytes,
     )) {
       return vyanaPath;
     }
@@ -288,8 +308,8 @@ Future<bool> validateInstalledGuideModel(
   final path = await resolveInstalledGuideModelPath(definition);
   return validateGuideBundleFile(
     path,
-    definition.modelFileType,
-    expectedBytes: kGuideModelBytes,
+    activeOnDeviceModel.fileType,
+    expectedBytes: activeOnDeviceModel.bytes,
   );
 }
 
@@ -568,7 +588,7 @@ class GuideModelManager extends ChangeNotifier {
     notifyListeners();
 
     debugPrint('Starting download for ${definition.name}');
-    debugPrint('URL: ${definition.modelDownloadUrl}');
+    debugPrint('URL: ${activeOnDeviceModel.url}');
 
     // Bug 42: Nova's voice installs with Nova, in the same step. The voice is
     // a rounding error beside the model, so the bar stays on the model and
@@ -811,8 +831,8 @@ Future<void> downloadGuideModelFile(
   await targetFile.parent.create(recursive: true);
 
   if (await targetFile.exists() &&
-      await validateGuideBundleFile(targetPath, definition.modelFileType,
-          expectedBytes: kGuideModelBytes)) {
+      await validateGuideBundleFile(targetPath, activeOnDeviceModel.fileType,
+          expectedBytes: activeOnDeviceModel.bytes)) {
     onProgress?.call(1);
     return;
   }
@@ -823,7 +843,7 @@ Future<void> downloadGuideModelFile(
 
   final client = HttpClient();
   try {
-    final request = await client.getUrl(Uri.parse(definition.modelDownloadUrl));
+    final request = await client.getUrl(Uri.parse(activeOnDeviceModel.url));
     final token = definition.huggingFaceToken?.trim();
     if (token != null && token.isNotEmpty) {
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
@@ -833,7 +853,7 @@ Future<void> downloadGuideModelFile(
     if (response.statusCode != HttpStatus.ok) {
       throw HttpException(
         'Model download failed with status ${response.statusCode}',
-        uri: Uri.parse(definition.modelDownloadUrl),
+        uri: Uri.parse(activeOnDeviceModel.url),
       );
     }
 
@@ -852,8 +872,8 @@ Future<void> downloadGuideModelFile(
     await sink.flush();
     await sink.close();
 
-    if (!await validateGuideBundleFile(targetPath, definition.modelFileType,
-        expectedBytes: kGuideModelBytes)) {
+    if (!await validateGuideBundleFile(targetPath, activeOnDeviceModel.fileType,
+        expectedBytes: activeOnDeviceModel.bytes)) {
       await targetFile.delete();
       throw StateError('Downloaded model failed validation.');
     }
@@ -883,8 +903,8 @@ Future<void> registerGuideModelAtPath(GuidePersonaDefinition definition) async {
   }
 
   final installed = await FlutterGemma.installModel(
-    modelType: definition.flutterGemmaModelType,
-    fileType: definition.modelFileType,
+    modelType: activeOnDeviceModel.modelType,
+    fileType: activeOnDeviceModel.fileType,
   ).fromFile(targetPath).install();
 
   // Keep the active spec aligned with the FileSource path used at install time.
@@ -899,8 +919,8 @@ Future<void> ensureGuideModelRegistered(GuidePersonaDefinition definition) async
 
   if (!await validateGuideBundleFile(
     targetPath,
-    definition.modelFileType,
-    expectedBytes: kGuideModelBytes,
+    activeOnDeviceModel.fileType,
+    expectedBytes: activeOnDeviceModel.bytes,
   )) {
     return;
   }

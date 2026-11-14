@@ -941,7 +941,7 @@ class _NovaFootprintScreenState extends ConsumerState<NovaFootprintScreen> {
       ctaLabel: state.isReady ? 'Remove from this phone' : 'Install Nova',
       ctaIcon: state.isReady ? 'x' : 'download',
       canSave: state.status != GuideModelStatus.downloading,
-      onSave: state.isReady ? _remove : () => openGuideStore(context),
+      onSave: state.isReady ? _remove : () => openAiSetup(context),
       children: [
         _KV('STATUS', state.statusLabel),
         _KV('MODEL', definition.modelLabel),

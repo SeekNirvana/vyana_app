@@ -465,7 +465,7 @@ class YouScreen extends ConsumerWidget {
                         : 'UNAVAILABLE'),
                 style: VyanaType.mono10.copyWith(color: t.textMuted),
               ),
-              onTap: () => openGuideStore(context),
+              onTap: () => openAiSetup(context),
             ),
             SettingsRow(
               icon: 'waveform',

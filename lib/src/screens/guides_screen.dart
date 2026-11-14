@@ -227,7 +227,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
                   onTap: () => voice
                       .setVoiceResponsesEnabled(!voice.voiceResponsesEnabled),
                 ),
-              IconBtn(icon: 'plus', onTap: () => openGuideStore(context)),
+              IconBtn(icon: 'plus', onTap: () => openAiSetup(context)),
             ],
           ),
         ),
@@ -393,7 +393,7 @@ class _GuideDownloadGate extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
           TextButton(
-            onPressed: () => openGuideStore(context),
+            onPressed: () => openAiSetup(context),
             child: Text('Model, voice and storage',
                 style: VyanaType.label.copyWith(color: t.green)),
           ),

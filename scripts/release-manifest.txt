@@ -192,9 +192,6 @@ kHealthMonitoringApplyTimeout
 Light, dark, or whatever the phone is set to
 kokoro-en-v0_19
 voice-kokoro-en-v0_19
-Download Nova's voice
-Nova's voice is not available in this build yet. Replies
-Needs Nova's voice installed
 355 MB
 AudioRouteService
 Your own endpoint
@@ -202,6 +199,8 @@ On this phone
 Test and save
 ic_notification
 kNotificationAccent
-Listening and speaking
-Whisper · your voice to text, on this phone
-Not installed · she stays on screen
+Which model?
+Her voice
+Whisper · your voice to text
+Kokoro · her own voice
+Not in this build yet · replies stay on screen
