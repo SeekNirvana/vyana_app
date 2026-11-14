@@ -24,7 +24,7 @@ void main() {
         windowStart: windowStart,
         windowEnd: windowEnd,
         labelled: labelled,
-        measuring: (_, __) => true,
+        measuring: (_, _) => true,
       );
       expect(split.unstagedSeconds, 48 * 60);
       expect(split.notRecordedSeconds, 0);
@@ -39,7 +39,7 @@ void main() {
         windowStart: windowStart,
         windowEnd: windowEnd,
         labelled: labelled,
-        measuring: (_, __) => false,
+        measuring: (_, _) => false,
       );
       expect(split.unstagedSeconds, 0);
       expect(split.notRecordedSeconds, 48 * 60);
@@ -77,7 +77,7 @@ void main() {
           SleepSpan(from: at(2, 0), to: at(3, 0)),
           SleepSpan(from: at(4, 0), to: at(6, 0)),
         ],
-        measuring: (_, __) => false,
+        measuring: (_, _) => false,
       );
       expect(split.notRecorded.length, 2);
       expect(split.notRecordedSeconds, 2 * 3600);
@@ -95,7 +95,7 @@ void main() {
             to: at(23, 0).add(const Duration(hours: 8)),
           ),
         ],
-        measuring: (_, __) => true,
+        measuring: (_, _) => true,
       );
       expect(split.isEmpty, isTrue);
     });
@@ -109,7 +109,7 @@ void main() {
           SleepSpan(from: at(0, 0), to: at(2, 30)),
           SleepSpan(from: at(2, 0), to: at(4, 0)),
         ],
-        measuring: (_, __) => false,
+        measuring: (_, _) => false,
       );
       expect(split.isEmpty, isTrue);
     });
@@ -119,7 +119,7 @@ void main() {
         windowStart: at(1, 0),
         windowEnd: at(3, 0),
         labelled: [SleepSpan(from: at(0, 0), to: at(5, 0))],
-        measuring: (_, __) => false,
+        measuring: (_, _) => false,
       );
       expect(split.isEmpty, isTrue);
     });
@@ -135,7 +135,7 @@ void main() {
           windowStart: pair.$1,
           windowEnd: pair.$2,
           labelled: const [],
-          measuring: (_, __) => false,
+          measuring: (_, _) => false,
         );
         expect(split.isEmpty, isTrue);
       }
@@ -148,7 +148,7 @@ void main() {
         windowStart: at(0, 0),
         windowEnd: at(2, 0),
         labelled: const [],
-        measuring: (_, __) => false,
+        measuring: (_, _) => false,
       );
       expect(split.notRecordedSeconds, 2 * 3600);
       expect(split.unstagedSeconds, 0);

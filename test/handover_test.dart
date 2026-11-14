@@ -839,7 +839,20 @@ void main() {
     test('no "1 OF 1" when only one is planned', () {
       final s = suggestion(plan: planOn(2, ['yogaFlow']));
       expect(s.meta, isNot(contains('OF')));
-      expect(s.meta, startsWith('PLANNED · YOUR USUAL'));
+      expect(s.meta, startsWith('PLANNED'));
+      // Item 93: Yoga Flow is a guided sequence, so its own length is a
+      // fact about the practice and is shown. It is not called "your
+      // usual", because nobody has done it.
+      expect(s.meta, 'PLANNED · 30 MIN');
+      expect(s.meta, isNot(contains('YOUR USUAL')));
+    });
+
+    test('a planned practice nobody has done shows no length (item 93)', () {
+      // The plan stores no length and a planned practice opens with no
+      // target, so a number beside it read as if the plan set one.
+      final s = suggestion(plan: planOn(2, ['outdoorRun']));
+      expect(s.meta, 'PLANNED');
+      expect(s.minutes, isNull);
     });
 
     test('unplanned practices do not count against the plan', () {
@@ -983,6 +996,41 @@ void main() {
       expect(s.setsTarget, isTrue);
     });
 
+    test('three sessions make a usual, and it is the median (item 93)', () {
+      final s = at(
+        afternoon,
+        intent: DayIntent.perform,
+        pins: const ['outdoorRun'],
+        history: [
+          did('outdoorRun', afternoon.subtract(const Duration(days: 2)),
+              minutes: 38),
+          did('outdoorRun', afternoon.subtract(const Duration(days: 4)),
+              minutes: 40),
+          did('outdoorRun', afternoon.subtract(const Duration(days: 6)),
+              minutes: 42),
+        ],
+      );
+      expect(s.activityId, 'outdoorRun');
+      expect(s.meta, 'YOUR USUAL · 40 MIN');
+    });
+
+    test('two sessions are not enough (item 93)', () {
+      // The boundary: a length shown on a card reads as something the app
+      // knows about you, so two tries do not earn one.
+      final s = at(
+        afternoon,
+        intent: DayIntent.perform,
+        pins: const ['outdoorRun'],
+        history: [
+          did('outdoorRun', afternoon.subtract(const Duration(days: 2)),
+              minutes: 38),
+          did('outdoorRun', afternoon.subtract(const Duration(days: 4)),
+              minutes: 40),
+        ],
+      );
+      expect(s.meta, isNull);
+    });
+
     test('the day suggests a pin that fits the intent', () {
       final s = at(
         afternoon,
@@ -993,12 +1041,30 @@ void main() {
       expect(s.heading, 'Suggested activity');
       // Body Scan is pinned first but is not a Perform practice.
       expect(s.activityId, 'outdoorRun');
-      expect(s.meta, 'YOUR USUAL · 32 MIN');
+      // Item 93: one run is not a habit. Three are.
+      expect(s.meta, isNull);
+      expect(s.minutes, isNull);
       // Opens with no target set — "your usual" describes, it does not set.
       expect(s.setsTarget, isFalse);
       expect(s.offerPin, isFalse);
-      // No 4-minute cap outside the morning.
+    });
+
+    test('no 4-minute cap outside the morning (bug 45)', () {
+      // Kept from the assertion above, which item 93 took the length away
+      // from: the cap is about the morning, so a practice with a known
+      // usual keeps it in the afternoon.
+      final s = at(
+        afternoon,
+        intent: DayIntent.perform,
+        pins: const ['outdoorRun'],
+        history: [
+          for (var i = 2; i <= 6; i += 2)
+            did('outdoorRun', afternoon.subtract(Duration(days: i)),
+                minutes: 32),
+        ],
+      );
       expect(s.minutes, 32);
+      expect(s.minutes, greaterThan(4));
     });
 
     test('low readiness means gentle only, whatever the chip says', () {
@@ -1043,7 +1109,18 @@ void main() {
       expect(at(afternoon, intent: DayIntent.settle).activityId, 'walkingMed');
       final s = at(afternoon, intent: DayIntent.settle);
       expect(s.offerPin, isTrue);
-      expect(s.minutes, activityById('walkingMed')!.dur);
+      // Item 93: Walking Meditation is a GPS practice, so it is open-ended
+      // and carries no length — you walk as long as you walk. The guided
+      // ones do carry theirs, because a six-minute breath pacer is six
+      // minutes whether or not anyone has done it.
+      expect(s.minutes, isNull);
+      expect(s.meta, isNull);
+      final scan = at(afternoon, intent: DayIntent.recover);
+      expect(scan.activityId, 'bodyScan');
+      expect(scan.minutes, activityById('bodyScan')!.dur);
+      expect(scan.meta, '${activityById('bodyScan')!.dur} MIN');
+      final breath = at(afternoon, intent: DayIntent.perform);
+      expect(breath.minutes, activityById('hrvBreathing')!.dur);
     });
 
     test('the evening winds down, rotating day by day', () {
@@ -1080,8 +1157,10 @@ void main() {
           did('walk', afternoon.subtract(Duration(days: m)), minutes: m),
       ];
       expect(usualMinutesFor('walk', history), 30);
-      // Never done it: the catalogue length stands in.
-      expect(usualMinutesFor('walk', const []), activityById('walk')!.dur);
+      // Item 93: never done it, so there is no usual. The catalogue length
+      // used to stand in, which claimed a habit the person did not have.
+      expect(usualMinutesFor('walk', const []), isNull);
+      expect(lengthLabelFor('walk', const []), isNull);
     });
   });
 

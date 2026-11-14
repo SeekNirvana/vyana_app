@@ -382,12 +382,18 @@ class _ActivityPickerSheetState extends ConsumerState<_ActivityPickerSheet> {
                               ),
                             ),
                           ),
-                          MonoEyebrow(
-                            '${a.dur} MIN',
-                            size: 10,
-                            spacing: 0.8,
-                            color: t.mutedInk,
-                          ),
+                          // Item 93: a length only for a timed practice,
+                          // where it is a fact about the practice. The plan
+                          // stores no length and a planned practice opens
+                          // with no target, so "Walk · 30 MIN" here read as
+                          // if the plan were setting how long to walk.
+                          if (a.isTimed && a.dur > 0)
+                            MonoEyebrow(
+                              '${a.dur} MIN',
+                              size: 10,
+                              spacing: 0.8,
+                              color: t.mutedInk,
+                            ),
                         ],
                       ),
                     ),

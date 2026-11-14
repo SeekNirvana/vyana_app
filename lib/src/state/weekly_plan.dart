@@ -101,11 +101,15 @@ class PlannedState {
   final int index;
   final int total;
 
-  /// "PLANNED · 2 OF 3 · YOUR USUAL 40 MIN" — no "1 OF 1" when only one is
-  /// planned, which would read as a countdown with nothing to count.
-  String meta(int usualMinutes) {
+  /// "PLANNED · 2 OF 3 · YOUR USUAL · 40 MIN" — no "1 OF 1" when only one
+  /// is planned, which would read as a countdown with nothing to count.
+  ///
+  /// Item 93: [length] is null when the app does not know one, and then the
+  /// line stops after the position. The plan stores no length and a planned
+  /// practice opens with no target, so a number here read as if it did.
+  String meta(String? length) {
     final position = total > 1 ? 'PLANNED · $index OF $total' : 'PLANNED';
-    return '$position · YOUR USUAL $usualMinutes MIN';
+    return length == null ? position : '$position · $length';
   }
 }
 
