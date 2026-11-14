@@ -207,7 +207,13 @@ void main() {
 
     final db = readLib('src/data/db.dart');
     expect(db, contains('class Patterns extends Table'));
-    expect(db, contains('int get schemaVersion => 12;'));
+    // Was pinned to `=> 12`, which made every new table a failing release
+    // check — the same shape as the pubspec version this file used to pin.
+    // What matters is that the schema is at or past the one Patterns and
+    // PracticeTargets arrived in, not that it stopped there.
+    final schema = RegExp(r'int get schemaVersion => (\d+);').firstMatch(db);
+    expect(schema, isNotNull, reason: 'the schema version must be readable');
+    expect(int.parse(schema!.group(1)!), greaterThanOrEqualTo(12));
     expect(db, contains('class PracticeTargets extends Table'));
 
     final catalog = readLib('src/data/catalog.dart');
@@ -225,9 +231,27 @@ void main() {
     // catalogue rather than as one constant tied to Gemma. What matters is
     // that it is a measured number and not a typed string: the label read
     // "3.1 GB" against a 2.59 GB download before this.
+    //
+    // Pinning each model's literal made every catalogue change a failing
+    // release check, so what is asserted is the property instead: every
+    // model carries a byte count that was measured rather than typed. A
+    // figure somebody rounded by hand lands on an exact multiple of a
+    // million; a Content-Length never does.
     final models = readLib('src/services/on_device_models.dart');
-    expect(models, contains('bytes: 2588147712'));
-    expect(models, contains('bytes: 2659057664'));
+    final counts = RegExp(r'bytes: (\d+),')
+        .allMatches(models)
+        .map((m) => int.parse(m.group(1)!))
+        .toList();
+    expect(counts.length, greaterThanOrEqualTo(2),
+        reason: 'the picker needs more than one model to pick from');
+    for (final bytes in counts) {
+      expect(bytes, greaterThan(100 * 1000 * 1000),
+          reason: 'a usable model is not under 100 MB');
+      expect(bytes % (1000 * 1000), isNot(0),
+          reason: '$bytes looks rounded by hand, not read off the server');
+    }
+    // And none of them is the 4B that would not fit the phones this runs on.
+    expect(counts.every((b) => b < 2_700_000_000), isTrue);
     final modelManager = readLib('src/services/guide_model_manager.dart');
     expect(modelManager, contains('activeOnDeviceModel.bytes'));
     expect(manifest, isNot(contains('3.1 GB')));
@@ -435,5 +459,90 @@ void main() {
       isNot(File('assets/app_icon.png').readAsBytesSync()),
       reason: 'the in-app mark and the launcher tile are different images',
     );
+  });
+
+  test('v1.1.6 conversations are stored, and the model is told when one ends',
+      () {
+    final db = readLib('src/data/db.dart');
+    expect(db, contains('class ChatSessions extends Table'));
+    expect(db, contains('class ChatMessages extends Table'));
+    // The cascade is the whole reason deleting a conversation does not leave
+    // turns behind, and it only works with foreign keys on.
+    expect(db, contains('onDelete: KeyAction.cascade'));
+    expect(db, contains('PRAGMA foreign_keys = ON'));
+
+    final state = readLib('src/state/chat_sessions.dart');
+    expect(state, contains('class ChatHistoryController'));
+    expect(state, contains('chatTitleFrom'));
+    expect(state, contains('Future<int> addUserTurn'));
+
+    // The screen's list and the model's own history were two records of one
+    // conversation and only one of them was ever cleared. Starting fresh now
+    // ends both; without this call the old bug is back.
+    expect(state, contains('runtime.forgetConversation()'));
+    final runtime = readLib('src/services/guide_runtime_service.dart');
+    expect(runtime, contains('Future<void> forgetConversation()'));
+    expect(runtime, contains('chat.clearHistory()'));
+
+    final screen = readLib('src/screens/chat_history_screen.dart');
+    expect(screen, contains('openChatHistory'));
+    expect(screen, contains('class ChatTranscriptScreen'));
+    expect(screen, contains("label: 'New conversation'"));
+
+    // The chat reads the stored conversation rather than its own State, so
+    // leaving the screen no longer drops what was said.
+    final chat = readLib('src/screens/guides_screen.dart');
+    expect(chat, contains('chatHistoryProvider'));
+    expect(chat, isNot(contains('final List<GuideMessage> _messages')));
+    expect(chat, contains("IconBtn(icon: 'chats'"));
+
+    final fingerprints =
+        File('scripts/release-manifest.txt').readAsStringSync();
+    for (final line in const [
+      'Conversations',
+      'New conversation',
+      'ChatHistoryController',
+      'forgetConversation',
+    ]) {
+      expect(fingerprints, contains(line));
+    }
+  });
+
+  test('v1.1.6 an endpoint user can actually reach the chat', () {
+    // The pill decided readiness one way and the chat decided it another:
+    // with an endpoint set up and tested the pill said "Ask Nova" and the
+    // screen behind it offered a download instead of a conversation. One
+    // function now answers for both, so they cannot drift apart again.
+    final helpers = readLib('src/screens/ai_setup_screen.dart');
+    expect(helpers, contains('bool novaCanAnswer('));
+    expect(helpers, contains('String novaChatSubtitle('));
+
+    final pill = readLib('src/shell/vyana_chrome.dart');
+    expect(pill, contains('novaCanAnswer('));
+
+    final chat = readLib('src/screens/guides_screen.dart');
+    expect(chat, contains('novaCanAnswer('));
+    expect(chat, contains('novaChatSubtitle('));
+    // The app bar claimed on-device whatever the backend was.
+    expect(chat, isNot(contains("sub: 'on-device")));
+    // And the gate offered a 2.6 GB download to someone whose endpoint was
+    // only half set up.
+    expect(chat, contains("'Finish setting up your endpoint'"));
+    expect(chat, contains("label: 'Set up the endpoint'"));
+  });
+
+  test('v1.1.6 saving the profile keeps the fields it does not show', () {
+    final editor = readLib('src/screens/profile_screen.dart');
+    // The whole-object rebuild is what dropped trainingFrequency when that
+    // field arrived after this screen was written.
+    expect(editor, isNot(contains('UserProfile(\n')));
+    expect(editor, contains('.copyWith('));
+    expect(editor, contains('clearHeightCm:'));
+    expect(editor, contains('clearWeightKg:'));
+    expect(editor, contains('clearGender:'));
+    // And an implausible height is refused at the gate rather than stored
+    // and shown on the You row as though it were a measurement.
+    expect(editor, contains('_minHeightCm'));
+    expect(editor, contains('_fieldOk('));
   });
 }

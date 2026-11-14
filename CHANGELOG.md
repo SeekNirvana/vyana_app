@@ -23,6 +23,29 @@ on-device story narrower than anyone intended.
   with it. A SIGKILL is not an exception, so the existing GPU→NPU fallback
   never ran. Phones with memory keep the previous order, and a phone whose
   RAM could not be measured keeps it too.
+- **Saving your profile wiped the training answer.** The editor rebuilt the
+  whole profile from the five fields on screen and carried the rest over by
+  hand. It carried the three cycle fields and missed `trainingFrequency`,
+  which was added to the profile later — so every save silently dropped the
+  one behaviour answer behind the personal resting-heart-rate band, and the
+  band fell back to the clinical 60–100 with nothing said. Anyone whose
+  gender is female walks straight from that save into the cycle sheet, so
+  that is the path it always happened on. The editor copies from the stored
+  profile now, which means a field added after it cannot be dropped by it
+  again.
+- **The profile accepted a height nobody has.** A mistyped 17 showed on the
+  You row as "17 cm", sitting there looking like a measurement. Nothing
+  computes from height, so nothing broke — it was just wrong in public.
+  Height and weight are now held to a range the fields state, and Save greys
+  out until they are, the way an out-of-range age already did.
+- **An endpoint user could not reach the chat at all.** The Nova pill worked
+  out readiness from the backend the user chose; the chat screen worked it out
+  from `modelReady` alone. So with an endpoint set up and tested the pill said
+  "Ask Nova" and the screen behind it offered a 2.6 GB download instead of a
+  conversation — the endpoint could be configured and then never used. One
+  function answers for both now. The chat's app bar also said "on-device"
+  whatever the backend was, and the gate offered that download to someone
+  whose endpoint was merely half filled in; both read the backend.
 - **Nova in You said "On-device model · nothing leaves the phone"** whatever
   the user had chosen, so anyone pointing her at their own endpoint was told
   the opposite of what was happening. It reads the backend now, as does the
@@ -43,6 +66,27 @@ on-device story narrower than anyone intended.
 - **The store hard-coded "Gemma E2B"** rather than reading the model
   definition, so a build pointed at another model still said Gemma.
 
+### Added
+
+- **Conversations are kept.** The chat lived in the chat screen's own state:
+  leaving the screen dropped every word of it. It is now written to the local
+  vault as it happens, and the chat's app bar opens **Conversations** — each
+  row the question that opened it, the time, and which model answered. Opening
+  one shows the transcript as it was on screen; it can be deleted on its own
+  or all at once. Nothing leaves the phone, and You → Nova now counts them
+  rather than listing only the models.
+- **"New conversation", which the model is told about too.** The screen's
+  messages and the model's own history were two records of one conversation
+  and only one of them was ever cleared — leave the chat and come back and a
+  fresh-looking greeting was answered by a model still carrying the previous
+  conversation. Starting a new one now ends both.
+
+A reopened conversation is for reading, and says so instead of offering a
+"continue" that could not work: the whole context window is 1,024 tokens on
+Android and 512 on iOS, shared between the system prompt, the DATA block of
+the user's own numbers, the question and the reply — replaying a stored
+conversation into that would cost the room the next answer needs.
+
 ### Changed
 
 - **One screen for Nova's model, in the order the choices happen.** The AI
@@ -52,12 +96,15 @@ on-device story narrower than anyone intended.
   form; then her voice. The guide store is gone; it was built for a
   multi-guide world that never arrived and had become the place the model and
   voice downloads were parked.
-- **A model picker, with two capable models rather than a ladder.** Gemma E2B
-  (2.6 GB) and Qwen3 4B Instruct (2.7 GB). A 0.6B was tried and answered "I
-  am sorry, but I can't understand what you" to a plain question; offering it
-  would be offering Nova in a state where she cannot read a vitals block and
-  say anything useful. A phone too small for these is better served by an
-  endpoint, one tap away on the same screen.
+- **A model picker: one that answers best, one that fits.** Gemma E2B
+  (2.6 GB) and Qwen3 1.7B (977 MB). Both ends of the range were found by
+  trying them. A 0.6B answered "I am sorry, but I can't understand what you"
+  to a plain question, which is Nova in a state where she cannot read a
+  vitals block and say anything useful. A 4B was simply too large for the
+  phones this runs on — 2.7 GB to fetch and more memory to load it than most
+  of them have. Qwen3 1.7B at int4 sits between them and is the first entry
+  a 4 GB phone holds without the memory warning. A phone too small even for
+  that is better served by an endpoint, one tap away on the same screen.
 - **The RAM warning sits on the model row it concerns**, with the phone's
   measured memory in it, instead of a banner above a screen that also serves
   people running no local model at all.
@@ -68,6 +115,14 @@ on-device story narrower than anyone intended.
   download and again before first load — so what was left to choose on was
   availability and cost. `mirror-voice.yml` fetches the pack, publishes it and
   prints the `PinnedAsset` list with real digests.
+
+- **The chat's app bar plus no longer opens the AI settings.** It was a
+  leftover from the guide library and the fourth way into a screen You already
+  offers twice; it opens Conversations now, where starting a new one also
+  lives.
+- **A size under a megabyte reads in kilobytes.** The footprint screen
+  rounded everything to megabytes, so the stored conversations would have read
+  "0 MB" — which is not nothing, and is the sort of number that gets believed.
 
 ### Known
 

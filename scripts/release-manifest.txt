@@ -204,3 +204,12 @@ Her voice
 Whisper · your voice to text
 Kokoro · her own voice
 Not in this build yet · replies stay on screen
+Conversations
+New conversation
+Kept on this phone, like everything else.
+Delete every conversation?
+ChatHistoryController
+forgetConversation
+novaCanAnswer
+Finish setting up your endpoint
+Set up the endpoint
