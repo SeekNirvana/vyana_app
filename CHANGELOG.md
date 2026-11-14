@@ -151,6 +151,14 @@ conversation into that would cost the room the next answer needs.
   combination sherpa-onnx refuses: every sentence came back as an empty
   waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
   less to download — 341 MB, not the 355 MB the prompt used to quote.
+- **Buying a ring happens on seeknirvana.com now, on every phone.** The
+  in-app checkout wrote your shipping country and a free-text message into
+  the Solana memo — public and permanent, and where people reasonably typed
+  their address — while collecting no name, address or phone, so an order
+  could be paid for and undeliverable. The website already takes card and
+  USDC on Solana or Base and asks for everything needed, privately. Orders
+  placed before this release stay under Your orders; the app no longer
+  creates any.
 - **Ring setup no longer offers to erase your ring by default.** "Erase what
   the ring stored" arrived switched on, with the main button reading "Wipe
   ring data", so a first pairing erased the readings held on the ring itself

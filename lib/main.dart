@@ -32,10 +32,7 @@ import 'src/services/guide_voice_service.dart';
 import 'src/services/nova_voice_assets.dart';
 import 'src/services/guide_persona_prefs_service.dart';
 import 'src/services/meal_photo_service.dart';
-import 'src/services/ring_order_pricing.dart';
-import 'src/services/ring_order_tx_data.dart';
 import 'src/services/ring_order_service.dart';
-import 'src/services/ring_usdc_payment_service.dart';
 import 'src/state/solana_mobile_wallet_service.dart';
 import 'src/state/wallet_platform.dart';
 import 'src/data/db.dart';
@@ -112,7 +109,7 @@ part 'src/screens/ring_data_screen.dart';
 part 'src/screens/ring_onboarding_screen.dart';
 part 'src/mwa_wallet_picker.dart';
 part 'src/screens/wallet_screen.dart';
-part 'src/screens/ring_order_screen.dart';
+part 'src/screens/ring_orders_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

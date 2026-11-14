@@ -402,7 +402,8 @@ class YouScreen extends ConsumerWidget {
               icon: 'ring',
               iconColor: t.heading,
               label: 'Buy a PRANA ring',
-              subtitle: 'Another size, or one for someone else',
+              // Item 61: says where it goes, because it leaves the app.
+              subtitle: 'Opens seeknirvana.com — another size, or a gift',
               onTap: () => openRingOrder(context),
             ),
             if (orders.isNotEmpty)

@@ -1853,4 +1853,52 @@ void main() {
       expect(onboarding, isNot(contains("status.contains('failed')")));
     });
   });
+
+  group('ring orders are placed on the website, not in the app', () {
+    String lib(String relative) => File.fromUri(
+          Directory.current.uri.resolve('lib/src/$relative'),
+        ).readAsStringSync();
+
+    test('buying opens seeknirvana.com over https', () {
+      expect(kRingOrderUrl, 'https://seeknirvana.com/order');
+      expect(Uri.parse(kRingOrderUrl).scheme, 'https');
+    });
+
+    test('the payment and memo code is gone, not merely unreachable', () {
+      // Item 61: the memo is the reason. It is public and permanent, and
+      // the in-app checkout wrote the buyer's shipping country and a free
+      // text message into it — which is where people typed their address —
+      // while collecting no name, address or phone. Leaving the code behind
+      // unreferenced would leave the next person a working path back to it.
+      for (final gone in [
+        'lib/src/services/ring_order_tx_data.dart',
+        'lib/src/services/ring_usdc_payment_service.dart',
+        'lib/src/services/ring_order_pricing.dart',
+        'lib/src/screens/ring_order_screen.dart',
+      ]) {
+        expect(
+          File.fromUri(Directory.current.uri.resolve(gone)).existsSync(),
+          isFalse,
+          reason: '$gone should not exist',
+        );
+      }
+    });
+
+    test('nothing in the app can write a new order', () {
+      // The table stays — orders placed before this release are still
+      // readable — but the only method that inserted into it is gone.
+      expect(lib('data/db.dart'), isNot(contains('insertRingOrder')));
+      final service = lib('services/ring_order_service.dart');
+      expect(service, isNot(contains('savePaidOrder')));
+      expect(service, isNot(contains('saveFailedOrder')));
+      expect(service, contains('watchOrders'));
+    });
+
+    test('orders already on the phone are still readable', () {
+      final screen = lib('screens/ring_orders_screen.dart');
+      expect(screen, contains('class RingOrdersScreen'));
+      expect(screen, contains('Your orders'));
+      expect(screen, contains('ringOrdersProvider'));
+    });
+  });
 }

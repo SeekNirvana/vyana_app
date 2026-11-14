@@ -921,45 +921,10 @@ class VyanaDatabase extends _$VyanaDatabase {
     return rows.isEmpty ? null : rows.first;
   }
 
-  Future<void> insertRingOrder({
-    required String id,
-    required String status,
-    required String productName,
-    required String color,
-    required int size,
-    required double amountUsdc,
-    String? referralCode,
-    required String treasuryAddress,
-    required String walletAddress,
-    String? txSignature,
-    int shippingEtaDays = 30,
-    String? errorMessage,
-    String orderType = 'purchase',
-    String? shippingCountry,
-    String? orderMessage,
-    DateTime? createdAt,
-  }) {
-    return into(ringOrders).insert(
-      RingOrdersCompanion.insert(
-        id: id,
-        status: status,
-        productName: productName,
-        color: color,
-        size: size,
-        amountUsdc: amountUsdc,
-        referralCode: Value(referralCode),
-        treasuryAddress: treasuryAddress,
-        walletAddress: walletAddress,
-        txSignature: Value(txSignature),
-        shippingEtaDays: Value(shippingEtaDays),
-        errorMessage: Value(errorMessage),
-        orderType: Value(orderType),
-        shippingCountry: Value(shippingCountry),
-        orderMessage: Value(orderMessage),
-        createdAt: createdAt ?? DateTime.now(),
-      ),
-    );
-  }
+  // Item 61: the method that wrote a row here is gone. Buying moved to
+  // seeknirvana.com, so nothing in the app creates an order any more. The
+  // table stays, holding the ones placed before this release, and
+  // watchRingOrders reads them.
 
   Stream<List<RingOrderRow>> watchRingOrders() =>
       (select(ringOrders)..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
