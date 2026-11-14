@@ -594,4 +594,18 @@ void main() {
         File('scripts/release-manifest.txt').readAsStringSync();
     expect(fingerprints, contains('Track my cycle'));
   });
+
+  test('#78 the cycle question is asked on the change to female, not forever',
+      () {
+    final profile = readLib('src/screens/profile_screen.dart');
+    // cycleSheetSeen is only set by answering, so swiping the sheet away
+    // left it false and the question came back on every later save — on a
+    // screen somebody opened to correct their height.
+    expect(profile, contains('before?.gender != UserGender.female'));
+    expect(profile, contains('becameFemale'));
+    // Marking it seen on a swipe would be the other way to silence it, and
+    // the wrong one: a swipe is not an answer, and the gender-change path
+    // is the one case where asking again is right.
+    expect(profile, isNot(contains('cycleSheetSeen: true')));
+  });
 }

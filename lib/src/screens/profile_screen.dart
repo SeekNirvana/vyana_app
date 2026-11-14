@@ -128,8 +128,17 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     // would dismiss the sheet the instant it appeared. Age is deliberately
     // not a condition: the offer used to wait for isWellnessReady, so with an
     // empty age it never appeared at all.
-    final offerCycle = _gender == UserGender.female &&
-        !(before?.cycleSheetSeen ?? false);
+    //
+    // Item 78: on the *change* to female, not on every save while female.
+    // cycleSheetSeen is only set by answering, so swiping the sheet away
+    // left it false and the question came back at every later save — on a
+    // screen somebody opened to fix their height. Swiping away is an answer
+    // too: not now, and not again from this screen. Changing gender away and
+    // back asks once more, which is the one case where asking is right.
+    final becameFemale = _gender == UserGender.female &&
+        before?.gender != UserGender.female;
+    final offerCycle =
+        becameFemale && !(before?.cycleSheetSeen ?? false);
     final navigator = Navigator.of(context);
     final shellContext = navigator.context;
     navigator.pop();
