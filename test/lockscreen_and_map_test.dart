@@ -99,11 +99,17 @@ void main() {
       expect(bullets, contains('Show map'));
     });
 
-    test('and the on-phone list still claims nothing it should not', () {
+    test('and the positioning is not weakened', () {
       final panels = read('lib/src/info_panels.dart');
       expect(panels, contains('What stays on your phone'));
-      // The positioning this release is not allowed to weaken.
-      expect(panels, contains('never uploaded'));
+      // The claims this release is not allowed to soften. An earlier
+      // version of this test pinned the exports bullet's "never uploaded",
+      // which item 96 replaced for a good reason: item 65 made exports
+      // shareable, so Vyana does not upload them but the person may, and a
+      // panel saying otherwise would be the untruth.
+      expect(panels, contains('We do not upload'));
+      expect(panels, contains('No sale of personal or health data'));
+      expect(panels, contains('does not require an account'));
     });
   });
 }

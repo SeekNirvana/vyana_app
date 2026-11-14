@@ -140,9 +140,17 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
                     _EthosPillar(
                       step: '01',
                       title: 'Your data',
+                      // Item 96: the text must match the release it ships
+                      // in. "stay on your device" was true but thin: it did
+                      // not say where, it predated Nova's saved
+                      // conversations, and it offered export without saying
+                      // a backup exists.
                       body:
-                          'Ring biometrics and practice history stay on your device. '
-                          'Exportable when you need them — never a platform-owned dataset.',
+                          'Ring biometrics, practice history, journal and '
+                          'Nova\'s conversations stay on your phone, in '
+                          'Vyana\'s private storage. Back them up or export '
+                          'them whenever you want. Never a platform-owned '
+                          'dataset.',
                       icon: 'shield',
                       accent: t.vit('hr'),
                     ),
@@ -150,9 +158,15 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
                     _EthosPillar(
                       step: '02',
                       title: 'Private AI',
+                      // Item 96: "entirely on your phone" is not true for
+                      // anyone using their own AI server — which is also
+                      // the route offered to phones with under 6 GB, so it
+                      // is not a rare case.
                       body:
-                          'Nova, your one guide, runs entirely on your phone. Nothing '
-                          'is sent to analytics in someone else\'s cloud.',
+                          'Nova, your one guide, runs on your phone, and '
+                          'nothing is sent to analytics. If you connect your '
+                          'own AI server, your messages and a summary of '
+                          'your ring data go to that server, and only there.',
                       icon: 'sparkles',
                       accent: t.vit('breath'),
                     ),
@@ -191,8 +205,10 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Nova speaks with an open neural voice that runs on this '
-                      'phone. Their notices travel with the binaries.',
+                      // Item 96: named, and "binaries" was wrong — the
+                      // notices ship with the app, the voice is downloaded.
+                      'Nova speaks with an open neural voice (Kokoro) that '
+                      'runs on this phone. Their notices travel with the app.',
                       style: VyanaType.bodySm.copyWith(
                         color: t.textSec,
                         height: 1.5,
@@ -680,23 +696,42 @@ class AppPrivacyScreen extends StatelessWidget {
               ),
               _PrivacySection(
                 title: 'What stays on your phone',
+                // Item 96: "the vault on your device" said nothing about
+                // where, and this list predated Nova's saved conversations
+                // and the backup exclusion. The last bullet is the one that
+                // matters most and was missing: nothing here is in a Google
+                // or iCloud backup, so uninstalling without a backup loses
+                // it.
                 body:
-                    'Your wellness story lives locally — in the vault on your device.',
+                    'Your wellness story lives locally — in Vyana\'s own '
+                    'private storage on this phone.',
                 bullets: const [
-                  'Practice sessions, routes, and journal notes',
-                  'Ring history pulled from your PRANA device',
-                  'Nova\'s on-device model and the Vani voice model, if you install them',
-                  'Exports you make — written to Vyana\'s own folder, never uploaded',
-                  'Theme, profile, and app preferences',
+                  'Practice sessions, routes and journal notes',
+                  'Ring history from your PRANA ring',
+                  'Nova\'s conversations',
+                  'Nova\'s model, and the listening and voice models, if you install them',
+                  'Theme, profile and app preferences',
+                  'None of it is included in Google or iCloud backups. To keep your history, use Back up in You → Your data.',
                 ],
               ),
               _PrivacySection(
                 title: 'Optional connections you control',
                 body: 'Some features reach outward only when you turn them on:',
                 bullets: const [
-                  'Wallet linking — only if you connect Solana or Reown; keys stay with your wallet app',
-                  'Buying a ring — a USDC payment you sign in your wallet, sent to the Solana network',
-                  'Installing Nova — a one-time model download from Hugging Face; nothing about you is sent',
+                  // Item 96: your own AI server was not listed at all, and
+                  // it is the one connection that carries health data.
+                  'Your own AI server — if you set one, your messages and a summary of your ring data go to that server only',
+                  // Item 96: backups and exports, which item 53 and item 65
+                  // added and nothing here mentioned.
+                  'Backups — encrypted with your passphrase and saved wherever you choose; the weekly automatic backup is off unless you turn it on',
+                  'Exports — saved or shared where you choose',
+                  // Item 96: WalletConnect used to start at launch, so
+                  // "only if you connect" was untrue. Item 66 made it true.
+                  'Wallet — connects only when you open Wallet; keys stay in your wallet app',
+                  // Item 96: ordering moved to the website (item 61), so
+                  // the app no longer takes a payment at all.
+                  'Ordering a ring — happens on seeknirvana.com; the website\'s privacy policy covers your order details',
+                  'Downloads — Nova and the listening model from Hugging Face, Nova\'s voice from SeekNirvana; nothing about you is sent',
                   // Item 82: this was happening and was not written down.
                   // The tiles were fetched automatically from the moment a
                   // GPS session started; now they wait for "Show map", and
@@ -713,9 +748,12 @@ class AppPrivacyScreen extends StatelessWidget {
                 title: 'Your rights',
                 body: 'You remain in charge at every step.',
                 bullets: const [
-                  'Uninstalling removes local Vyana data from your phone',
+                  // Item 96: "removes local Vyana data" was true and
+                  // incomplete — it is the only copy, which is the part
+                  // somebody needs to know before they uninstall.
+                  'Uninstalling deletes all Vyana data on this phone. Back up first if you want to keep it.',
                   'Disconnect or unpair your ring at any time',
-                  'Wallet connections can be revoked in the wallet app',
+                  'Revoke wallet connections in the wallet app',
                   'Export your health report, journal or everything from You at any time',
                   'Back up and restore your whole vault from an encrypted file only your passphrase opens',
                 ],
@@ -753,7 +791,7 @@ class AppPrivacyScreen extends StatelessWidget {
               const SizedBox(height: 14),
               Center(
                 child: Text(
-                  'Last updated September 2026',
+                  'Last updated November 2026',
                   style: VyanaType.caption.copyWith(color: t.textMuted),
                 ),
               ),
