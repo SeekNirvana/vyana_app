@@ -1124,6 +1124,23 @@ void main() {
       expect(novaVoiceApproxSizeLabel, endsWith(' MB'));
     });
 
+    test('the pinned lexicon is ours, not upstream the way it ships', () {
+      // This is the mistake that cost a round trip: upstream's file was put
+      // on the host and the app refused it, because the pin is for
+      // upstream's bytes PLUS scripts/nova-voice-lexicon-additions.txt.
+      // Without the additions the voice is silent on "Vyana", "pranayama",
+      // "HRV" and most of the practice catalogue — and silent is exactly
+      // what it looks like when the right file is not served.
+      const upstreamLexiconBytes = 6305773;
+      final additions = File('scripts/nova-voice-lexicon-additions.txt');
+      expect(additions.existsSync(), isTrue,
+          reason: 'the additions are part of the hosted file');
+      final lexicon =
+          kNovaVoiceFiles.firstWhere((a) => a.name == kNovaVoiceLexiconFile);
+      expect(lexicon.bytes, upstreamLexiconBytes + additions.lengthSync(),
+          reason: 'pin the concatenated file, not either half of it');
+    });
+
     test('the lexicon is pinned, and espeak-ng data is not', () {
       // sherpa-onnx 2.0.1 tokenises Kokoro through the lexicon only. Pinning
       // the espeak directory instead — which is what this did — downloads
