@@ -1,5 +1,82 @@
 # Changelog
 
+## v1.1.6 — 2026-11-14 · Which model, where it thinks, and what it costs
+
+Three problems reported against v1.1.5, which turned out to share a cause:
+screens asserted things the settings below them no longer controlled. Six
+such claims were found, then two bugs underneath them that made the whole
+on-device story narrower than anyone intended.
+
+### Fixed
+
+- **A model smaller than Gemma could never install.** The download validator
+  read `fileLength > 1500 * 1024 * 1024`, commented "Gemma models are
+  typically > 1.5GB" — a floor written for one model and applied to all of
+  them. A 614 MB bundle downloaded perfectly and was then deleted as corrupt,
+  which from outside looked like the progress bar filling and the model
+  simply never appearing. It now checks against the size each model is
+  supposed to be, with 2% of slack; truncated files are still refused, and
+  more precisely than before.
+- **A phone short of memory now tries CPU before GPU.** Loading on the GPU
+  path inflates well past the file's size, and on a 4 GB phone it does not
+  fail politely: the low-memory killer took the app and the system launcher
+  with it. A SIGKILL is not an exception, so the existing GPU→NPU fallback
+  never ran. Phones with memory keep the previous order, and a phone whose
+  RAM could not be measured keeps it too.
+- **Nova in You said "On-device model · nothing leaves the phone"** whatever
+  the user had chosen, so anyone pointing her at their own endpoint was told
+  the opposite of what was happening. It reads the backend now, as does the
+  footprint screen and the guide store's privacy line.
+- **"Where is the audio model in settings" had no answer** — there was no
+  voice row in You at all, only a card under Practice named after something
+  else. There is one, and the voice-cue toggle says it stays silent until the
+  voice is installed rather than promising sound it cannot make.
+- **The footprint screen counted the voice and the listening model as one
+  row.** With the voice never installed, `VOICE (VANI)` showed Whisper's
+  74 MB — the right number against the wrong thing. They are two models doing
+  opposite jobs and are now `LISTENING` and `SPEAKING`.
+- **"Vani Voice" named both and downloaded one**, which is why installing it
+  produced no audio and no explanation.
+- **The install size was wrong.** It read "3.1 GB" against a 2,588,147,712
+  byte file. Sizes come from measured byte counts now, so they cannot drift
+  from the files they describe.
+- **The store hard-coded "Gemma E2B"** rather than reading the model
+  definition, so a build pointed at another model still said Gemma.
+
+### Changed
+
+- **One screen for Nova's model, in the order the choices happen.** The AI
+  settings were three screens with overlapping jobs and five doors between
+  them. Your AI is now the whole flow: where she thinks, then — only once
+  "on this phone" is chosen — which model and its install, or the endpoint
+  form; then her voice. The guide store is gone; it was built for a
+  multi-guide world that never arrived and had become the place the model and
+  voice downloads were parked.
+- **A model picker, with two capable models rather than a ladder.** Gemma E2B
+  (2.6 GB) and Qwen3 4B Instruct (2.7 GB). A 0.6B was tried and answered "I
+  am sorry, but I can't understand what you" to a plain question; offering it
+  would be offering Nova in a state where she cannot read a vitals block and
+  say anything useful. A phone too small for these is better served by an
+  endpoint, one tap away on the same screen.
+- **The RAM warning sits on the model row it concerns**, with the phone's
+  measured memory in it, instead of a banner above a screen that also serves
+  people running no local model at all.
+- **Nova's voice is mirrored on our own GitHub release.** It had never been
+  downloadable: the pinned list was empty and the host it named did not serve
+  it, so v1.1.5 shipped a voice that could not arrive. The pinning does the
+  work a trusted host would — every file carries a SHA-256 checked after
+  download and again before first load — so what was left to choose on was
+  availability and cost. `mirror-voice.yml` fetches the pack, publishes it and
+  prints the `PinnedAsset` list with real digests.
+
+### Known
+
+- Nova's voice is mirrored but not yet pinned: run **Actions → Mirror Nova's
+  voice** once, then paste the printed list into `kNovaVoiceFiles`. Until
+  then Speaking reads "Not in this build yet" and replies stay on screen.
+- Both on-device models want 6 GB of memory. On a smaller phone the endpoint
+  is the honest answer, and the screen says so.
+
 ## v1.1.5 — 2026-11-13 · Last night, the day's shape, and Nova with her eyes open
 
 The 13 Nov handover in full: five bugs that made the app misread its own
