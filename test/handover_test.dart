@@ -1917,6 +1917,18 @@ void main() {
       expect(manifest, contains('android:dataExtractionRules='));
     });
 
+    test('the library that wants backup on is overridden, not merged', () {
+      // A dependency of the ring SDK declares allowBackup="true". Without
+      // naming it in tools:replace the manifest merger refuses outright —
+      // the whole Android build fails, which is how this was found. Worse
+      // would be a merge that quietly took the library's value and left
+      // the vault going to Drive while the manifest said otherwise.
+      final manifest = android('AndroidManifest.xml');
+      final replace = RegExp(r'tools:replace="([^"]*)"').firstMatch(manifest);
+      expect(replace, isNotNull, reason: 'tools:replace must be present');
+      expect(replace!.group(1), contains('android:allowBackup'));
+    });
+
     test('the rules send nothing to the cloud, and allow a phone swap', () {
       // A phone-to-phone transfer never leaves the user's own hands, and
       // losing years of history on a new handset is its own data loss.

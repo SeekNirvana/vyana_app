@@ -53,7 +53,8 @@
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        tools:replace="android:label">
+        android:fullBackupOnly="false"
+        tools:replace="android:label,android:allowBackup">
         <!-- The status bar masks a small icon to its alpha and tints it, so
              the full-colour launcher icon came out as a solid white blob.
              These point every notification at the white-on-transparent
