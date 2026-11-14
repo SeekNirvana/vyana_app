@@ -588,6 +588,16 @@ class YouScreen extends ConsumerWidget {
         const _YouHeading('Your data', 'Export and sovereignty'),
         SettingsGroup(
           rows: [
+            // Item 53: the one row that says where history lives, above
+            // the exports — a backup is the thing that comes back, and an
+            // export is not, so it goes first.
+            SettingsRow(
+              icon: 'shield',
+              iconColor: t.heading,
+              label: 'Your data',
+              subtitle: 'Back up, restore, and exports',
+              onTap: () => openYourData(context),
+            ),
             SettingsRow(
               icon: 'download',
               iconColor: t.heading,
