@@ -74,6 +74,12 @@ final weeklyPlanProvider = Provider<WeeklyPlan>((ref) {
 /// not happened, and the evening belongs to winding down.
 const int kPlannedPracticeUntilHour = 22;
 
+/// Item 79: and not before this. "Planned today" could appear at 01:00 to
+/// someone still awake from the night before, naming a practice for a day
+/// that had not started yet. Five is early enough for anyone who really
+/// trains at dawn and late enough to be on the right side of midnight.
+const int kPlannedPracticeFromHour = 5;
+
 /// A planned practice whose usual start time is before this shows from 05:00
 /// instead of 12:00, so an early trainer sees it when they train.
 const int kPlannedMorningBeforeHour = 12;
@@ -112,6 +118,7 @@ PlannedState? plannedStateFor({
   required List<SessionRow> history,
 }) {
   if (now.hour >= kPlannedPracticeUntilHour) return null;
+  if (now.hour < kPlannedPracticeFromHour) return null;
   final day = plan.forDay(now);
   if (day.isEmpty) return null;
 

@@ -1231,9 +1231,15 @@ class _DoneChip extends StatelessWidget {
     final activity = activityById(row.vyanaActivityType);
     // Bug 32: `.inMinutes` truncates, so a 40-second try read "0m" — which
     // says the session was worth nothing rather than that it was short.
-    final length = sessionLengthLabel(
-      row.endedAt!.difference(row.startedAt),
-    );
+    // Item 80: from the session's own record of how long it ran, so this
+    // pill and the summary behind it cannot disagree about a paused run.
+    final length = sessionLengthLabel(Duration(
+      seconds: sessionSeconds(
+        summaryJson: row.summaryJson,
+        startedAt: row.startedAt,
+        endedAt: row.endedAt,
+      ),
+    ));
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(100),

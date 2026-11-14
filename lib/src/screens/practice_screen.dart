@@ -1983,9 +1983,21 @@ class _ActivityHistory extends StatelessWidget {
         if (s.startedAt.isAfter(cutoff)) s,
     ];
     var totalMinutes = 0;
+    var totalSeconds = 0;
     final hrs = <int>[];
     for (final s in recent) {
-      totalMinutes += s.endedAt!.difference(s.startedAt).inMinutes;
+      // Item 80: active minutes, rounded, so fifty-second sessions add up
+      // to something rather than each truncating to nothing.
+      totalMinutes += sessionMinutes(
+        summaryJson: s.summaryJson,
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+      );
+      totalSeconds += sessionSeconds(
+        summaryJson: s.summaryJson,
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+      );
       final hr = _avgHrOf(s);
       if (hr != null) hrs.add(hr);
     }
@@ -2001,7 +2013,13 @@ class _ActivityHistory extends StatelessWidget {
           children: [
             _HistoryTile(label: 'SESSIONS', value: '${recent.length}'),
             const SizedBox(width: 8),
-            _HistoryTile(label: 'TOTAL', value: '${totalMinutes}m'),
+            // Item 80: "under 1m" rather than "0m". Three fifty-second
+            // practices are not nothing, and a screen saying 0 about them
+            // is simply wrong.
+            _HistoryTile(
+              label: 'TOTAL',
+              value: minutesLabel(totalMinutes, seconds: totalSeconds),
+            ),
             const SizedBox(width: 8),
             _HistoryTile(
               label: 'AVG HR',
@@ -2092,7 +2110,11 @@ class _ActivitySessionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
-    final minutes = row.endedAt!.difference(row.startedAt).inMinutes;
+    final minutes = sessionMinutes(
+      summaryJson: row.summaryJson,
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
+    );
     final avg = _avgHrOf(row);
     final max = _maxHrOf(row);
     return HairlineCard(

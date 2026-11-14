@@ -71,7 +71,11 @@ String? pinMetaFor(List<SessionRow> sessions, String activityId) {
     if (s.vyanaActivityType != activityId || s.endedAt == null) continue;
     final day = const ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][
         s.startedAt.weekday - 1];
-    final minutes = s.endedAt!.difference(s.startedAt).inMinutes;
+    final minutes = sessionMinutes(
+      summaryJson: s.summaryJson,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+    );
     int? avgHr;
     final raw = s.summaryJson;
     if (raw != null) {

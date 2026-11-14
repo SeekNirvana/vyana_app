@@ -63,6 +63,15 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
       final uri = await HomeWidgetService.instance.initialLaunchUri();
       _handleWidgetUri(uri);
       unawaited(_runWeeklyBackupIfDue());
+      // Item 79: one reminder is scheduled at a time, and it was only
+      // re-armed by finishing a session or opening My week. Someone who did
+      // neither — which is to say, someone the reminder was for — got one
+      // and then silence. Launching re-arms it, so every planned day keeps
+      // its reminder whether or not the plan screen is ever opened again.
+      if (!mounted) return;
+      unawaited(
+        ref.read(weeklyPlanReminderProvider.notifier).reschedule(),
+      );
     });
   }
 

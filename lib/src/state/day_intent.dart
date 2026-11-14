@@ -379,7 +379,13 @@ int usualMinutesFor(String activityId, List<SessionRow> history) {
   final durations = <int>[
     for (final s in history)
       if (s.vyanaActivityType == activityId && s.endedAt != null)
-        s.endedAt!.difference(s.startedAt).inMinutes,
+        // Item 80: the same minutes every other screen reports, so "your
+        // usual" cannot be longer than the sessions it was taken from.
+        sessionMinutes(
+          summaryJson: s.summaryJson,
+          startedAt: s.startedAt,
+          endedAt: s.endedAt,
+        ),
   ].where((m) => m > 0).take(5).toList()
     ..sort();
   if (durations.isEmpty) {
@@ -404,17 +410,23 @@ String windDownFor(DateTime now) {
 
 /// A gentler practice to offer beside a planned one on a low-readiness day
 /// (item 46). Uses the same gentle rule as the day slot.
+/// [besides] is the practice already being offered. Item 79: without it the
+/// alternative could be the planned practice itself, so a planned Walk on a
+/// low-readiness day came with "Try Walk instead?" underneath — which reads
+/// as a mistake, because it is one.
 String? _gentleAlternativeFor(
   DayIntent intent,
   List<String> pins,
-  List<SessionRow> todaysFinished,
-) {
+  List<SessionRow> todaysFinished, {
+  String? besides,
+}) {
   final done = {for (final s in todaysFinished) s.vyanaActivityType};
+  bool usable(String id) => id != besides && !done.contains(id);
   for (final id in pins) {
-    if (kGentlePracticeIds.contains(id) && !done.contains(id)) return id;
+    if (kGentlePracticeIds.contains(id) && usable(id)) return id;
   }
   for (final id in kGentlePracticeIds) {
-    if (!done.contains(id)) return id;
+    if (usable(id)) return id;
   }
   return null;
 }
@@ -447,7 +459,12 @@ HomeSuggestion homeSuggestionFor({
   if (planned != null) {
     final usual = usualMinutesFor(planned.activityId, history);
     final gentle = readiness != null && readiness < kGentleOnlyReadiness
-        ? _gentleAlternativeFor(intent, pins, todaysFinished)
+        ? _gentleAlternativeFor(
+            intent,
+            pins,
+            todaysFinished,
+            besides: planned.activityId,
+          )
         : null;
     return HomeSuggestion(
       activityId: planned.activityId,

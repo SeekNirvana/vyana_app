@@ -158,17 +158,22 @@ class PeriodSummary {
 
     for (final s in rows) {
       final ended = s.endedAt;
-      // A session belongs to the day it finished on (bug 32).
-      if (ended == null || ended.isBefore(from) || !ended.isBefore(to)) {
-        continue;
-      }
-      final dayIndex = DateTime(
-        ended.year,
-        ended.month,
-        ended.day,
-      ).difference(from).inDays;
+      if (ended == null) continue;
+      // Item 80: the day it *started* on, which is how the history list has
+      // always grouped it. Grouping by the finish put a session begun at
+      // 23:50 on the next day here and the previous day there.
+      final day = sessionDay(s.startedAt);
+      if (day.isBefore(from) || !day.isBefore(to)) continue;
+      final dayIndex = day.difference(from).inDays;
       if (dayIndex < 0 || dayIndex >= days) continue;
-      final mins = ended.difference(s.startedAt).inMinutes.clamp(0, 600);
+      // Item 80: the minutes the session was running, from its own record,
+      // so a run with a stop at a crossing is not ten minutes longer here
+      // than in its summary.
+      final mins = sessionMinutes(
+        summaryJson: s.summaryJson,
+        startedAt: s.startedAt,
+        endedAt: ended,
+      ).clamp(0, 600);
 
       final bucket = period.month ? (dayIndex ~/ 7) : dayIndex;
       if (bucket >= 0 && bucket < buckets.length) {
