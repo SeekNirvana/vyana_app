@@ -25,11 +25,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// * [rootPath] — the external app directory, unchanged. `models/` and
 ///   `voice/` are public model weights with nothing personal in them, and
 ///   they run to gigabytes; copying them inward would need twice their size
-///   free on the way, and buys no privacy at all. `exports/` stays too, for
-///   a sharper reason: there is no share sheet yet (item 65), so the folder
-///   a person can reach over USB is the *only* way they get their export.
-///   Moving it would make the feature silently useless, which is a worse
-///   outcome than the one being fixed. It moves when 65 gives it a door.
+///   free on the way, and buys no privacy at all. `exports/` stays too, and
+///   item 65 — which gave exports the share sheet this comment once said
+///   they were waiting for — is the reason it stays rather than the reason
+///   it moves. An export is written here first and offered second, so the
+///   file survives a sheet the person closes or a phone that cannot open
+///   one. That fallback is only a fallback while the folder is reachable:
+///   moving it inward would leave someone whose sheet fails with a path
+///   they can read and a file they cannot get at, which is the exact
+///   failure item 65 exists to end. Nothing personal is kept here that is
+///   not already in a file the person asked us to write for them.
 ///
 /// The move itself is built to fail safe: copy, verify every byte, keep the
 /// old copy until a later launch has proved the new one, and on any doubt

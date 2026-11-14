@@ -37,8 +37,10 @@ extension on ExportRange {
 }
 
 /// Your data — a health report over a date range, the journal, and a
-/// machine-readable archive of everything. Files are written to Vyana's own
-/// exports folder on this device; nothing leaves it unless you move it.
+/// machine-readable archive of everything. Each file is written to Vyana's
+/// own exports folder on this device and then offered through the system
+/// sheet, so it can reach Files, Drive or mail; nothing leaves the phone
+/// unless the person sends it.
 class ExportsScreen extends ConsumerStatefulWidget {
   const ExportsScreen({super.key, this.section});
 
@@ -62,11 +64,16 @@ class _ExportsScreenState extends ConsumerState<ExportsScreen> {
       final path = await job();
       if (!mounted) return;
       setState(() => _lastPath = path);
+      // Saved, then offered. The file is written first and kept, so a
+      // closed sheet or a phone that cannot open one still leaves the
+      // person with their export rather than nothing.
+      final delivery = exportDelivery(await _offer(File(path)));
+      if (!mounted) return;
       showVyanaSnackBar(
         context,
-        message: 'Saved $label to your exports folder.',
-        icon: 'check',
-        success: true,
+        message: delivery.message,
+        icon: delivery.success ? 'check' : 'alert',
+        success: delivery.success,
       );
     } catch (e) {
       if (!mounted) return;
@@ -74,6 +81,28 @@ class _ExportsScreenState extends ConsumerState<ExportsScreen> {
     } finally {
       if (mounted) setState(() => _busy = null);
     }
+  }
+
+  Future<FileOfferResult> _offer(File file) {
+    return const FileExchangeService()
+        .offerFile(file: file, subject: 'Vyana export');
+  }
+
+  /// Offers the last export again, for a sheet that was closed by mistake.
+  ///
+  /// Re-offers the file on disk rather than exporting afresh: the same
+  /// bytes, so nothing is recomputed and no second file accumulates.
+  Future<void> _shareLast() async {
+    final path = _lastPath;
+    if (path == null) return;
+    final delivery = exportDelivery(await _offer(File(path)));
+    if (!mounted) return;
+    showVyanaSnackBar(
+      context,
+      message: delivery.message,
+      icon: delivery.success ? 'check' : 'alert',
+      success: delivery.success,
+    );
   }
 
   @override
@@ -96,8 +125,8 @@ class _ExportsScreenState extends ConsumerState<ExportsScreen> {
       onSave: () => Navigator.of(context).pop(),
       children: [
         Text(
-          'Everything here is written to Vyana\'s exports folder on this device. '
-          'Nothing is uploaded.',
+          'Each export is saved on this phone, then you choose where it goes '
+          '\u2014 Files, Drive, mail, anywhere. Vyana uploads nothing.',
           style: VyanaType.caption.copyWith(color: t.textSec, height: 1.45),
         ),
         const SizedBox(height: 16),
@@ -273,16 +302,35 @@ class _ExportsScreenState extends ConsumerState<ExportsScreen> {
                   style: VyanaType.mono10.copyWith(color: t.textSec, height: 1.4),
                 ),
                 const SizedBox(height: 10),
-                Cta(
-                  label: 'Copy path',
-                  icon: 'db',
-                  solid: false,
-                  onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: _lastPath!));
-                    if (!context.mounted) return;
-                    showVyanaSnackBar(context,
-                        message: 'Path copied.', icon: 'check', success: true);
-                  },
+                // Share first: it is the one that gets the file off the
+                // phone, and the path is the fallback for when it cannot.
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    // 'download' rather than a share glyph, because item
+                    // 53's Back up now opens the same sheet with the same
+                    // icon and one gesture should not have two faces.
+                    Cta(
+                      label: 'Share',
+                      icon: 'download',
+                      onTap: _shareLast,
+                    ),
+                    Cta(
+                      label: 'Copy path',
+                      icon: 'db',
+                      solid: false,
+                      onTap: () async {
+                        await Clipboard.setData(
+                            ClipboardData(text: _lastPath!));
+                        if (!context.mounted) return;
+                        showVyanaSnackBar(context,
+                            message: 'Path copied.',
+                            icon: 'check',
+                            success: true);
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),

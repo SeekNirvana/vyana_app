@@ -36,6 +36,8 @@ import 'src/services/ring_order_service.dart';
 import 'src/services/auto_backup.dart';
 import 'src/services/backup_file.dart';
 import 'src/services/backup_service.dart';
+import 'src/services/export_delivery.dart';
+import 'src/services/file_exchange_service.dart';
 import 'src/state/solana_mobile_wallet_service.dart';
 import 'src/state/wallet_platform.dart';
 import 'src/data/db.dart';
