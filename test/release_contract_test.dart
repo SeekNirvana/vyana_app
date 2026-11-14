@@ -194,7 +194,9 @@ void main() {
     final you = readLib('src/screens/you_screen.dart');
     expect(you, contains('Export and sovereignty'));
     expect(you, contains('How often you train'));
-    expect(you, contains('openNovaFootprint'));
+    // The footprint moved to Your AI, beside the choice whose cost it
+    // reports; You now opens that screen instead.
+    expect(you, contains('openAiSetup'));
 
     final engine = readLib('src/state/pattern_engine.dart');
     expect(engine, contains('journalPatternCandidate'));
@@ -212,7 +214,14 @@ void main() {
     final manifest = File('scripts/release-manifest.txt').readAsStringSync();
     expect(manifest, contains('NOVA FOUND A PATTERN'));
     expect(manifest, contains('Search entries'));
-    expect(manifest, contains('3.1 GB'));
+    // The size is derived from a byte count now, precisely because a typed
+    // string drifted from the file it described — it read 3.1 GB against a
+    // 2.59 GB download. Assert the derivation exists and the old literal is
+    // gone, rather than pinning a new string that can drift the same way.
+    final modelManager = readLib('src/services/guide_model_manager.dart');
+    expect(modelManager, contains('const int kGuideModelBytes = 2586706331'));
+    expect(modelManager, contains('formatDownloadSize(kGuideModelBytes)'));
+    expect(manifest, isNot(contains('3.1 GB')));
   });
 
   test('v1.1.1 ring state you can act on', () {

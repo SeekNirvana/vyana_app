@@ -1,5 +1,49 @@
 part of '../../main.dart';
 
+/// The line under the guide store header, which used to promise on-device
+/// thinking regardless of what the user had picked.
+String guideStorePrivacyNote(AiBackend backend) {
+  if (backend == AiBackend.cloud) {
+    return 'Nova is thinking on the endpoint you chose. The voice and the '
+        'listening model still run here, and your journal never leaves this '
+        'phone.';
+  }
+  return 'Nova and the voice model run on-device. Your conversations and '
+      'journal never leave your phone.';
+}
+
+/// What the You row says Nova is thinking with.
+///
+/// Pure, and in one place, because the same answer is needed on the row,
+/// in the footprint screen and in Diagnostics — and they used to disagree,
+/// all three claiming the on-device model regardless of what was chosen.
+String novaThinkingSubtitle({
+  required AiBackend backend,
+  required CloudEndpoint endpoint,
+  required bool localReady,
+}) {
+  if (backend == AiBackend.cloud) {
+    if (!endpoint.isComplete) return 'Endpoint not set up yet';
+    return '${endpoint.model} · ${endpoint.reach.summary.toLowerCase()}';
+  }
+  return localReady
+      ? 'On this phone · nothing leaves it'
+      : 'Not installed · tap to set up';
+}
+
+/// The mono label on the right of that row.
+String novaThinkingTrailing({
+  required AiBackend backend,
+  required CloudEndpoint endpoint,
+  required bool localReady,
+  required String localStatus,
+}) {
+  if (backend == AiBackend.cloud) {
+    return endpoint.isComplete ? 'ENDPOINT' : 'NOT SET';
+  }
+  return localReady ? 'ON DEVICE' : localStatus.toUpperCase();
+}
+
 Future<void> openAiSetup(BuildContext context) {
   return Navigator.of(context).push<void>(
     MaterialPageRoute(builder: (_) => const AiSetupScreen()),
@@ -233,23 +277,35 @@ class _LocalBackendPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.vyana;
     if (manager.modelReady) {
-      return Panel(
-        pad: 14,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            VyanaIcon('checkCircle', size: 18, color: t.green),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Text(
-                'Nova runs here. Nothing she is told, and nothing she is '
-                'shown, leaves this phone.',
-                style:
-                    VyanaType.body.copyWith(color: t.textSec, height: 1.45),
-              ),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Panel(
+            pad: 14,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                VyanaIcon('checkCircle', size: 18, color: t.green),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Text(
+                    'Nova runs here. Nothing she is told, and nothing she is '
+                    'shown, leaves this phone.',
+                    style: VyanaType.body
+                        .copyWith(color: t.textSec, height: 1.45),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 10),
+          // "What is this costing me on disk" belongs next to the choice
+          // that costs it, not on a row in You that now opens this screen.
+          BorderedPill(
+            label: 'What it uses on disk',
+            onTap: () => openNovaFootprint(context),
+          ),
+        ],
       );
     }
     return Column(

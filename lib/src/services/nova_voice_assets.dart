@@ -161,6 +161,20 @@ String get novaVoiceApproxSizeLabel {
   return '${(kNovaVoiceApproxBytes / (1024 * mb)).toStringAsFixed(1)} GB';
 }
 
+/// What the You row says about Nova's voice.
+///
+/// Three states, said plainly, because the old answer was no row at all and
+/// a user asking "where is the audio model" had nowhere to look.
+String novaVoiceRowSubtitle({
+  required bool installed,
+  required bool available,
+  required String size,
+}) {
+  if (installed) return 'Installed · she speaks on this phone';
+  if (available) return 'Not installed · $size, then she can speak';
+  return 'Not in this build yet · replies stay on screen';
+}
+
 /// Whether this build actually has a voice to fetch. False until the files
 /// above are packaged and pinned; everything downstream falls back quietly.
 bool get novaVoiceConfigured => kNovaVoiceFiles.isNotEmpty;

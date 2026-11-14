@@ -205,6 +205,8 @@ class YouScreen extends ConsumerWidget {
     final t = context.vyana;
     final c = ref.watch(ringControllerProvider);
     final mode = ref.watch(themeModeProvider);
+    final ai = ref.watch(aiBackendProvider);
+    final voiceSvc = ref.watch(guideVoiceServiceProvider);
     final displayScale = ref.watch(displayScaleProvider);
     final profile = ref
         .watch(userProfileProvider)
@@ -415,29 +417,63 @@ class YouScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 18),
         // ── Nova ──────────────────────────────────────────────────────────
-        const _YouHeading('Nova', 'Your private guide'),
+        const _YouHeading('Nova', 'Where she thinks, and how she sounds'),
         SettingsGroup(
           rows: [
+            // This row claimed "On-device model · nothing leaves the phone"
+            // whatever the user had actually chosen, so someone running
+            // their own endpoint was told the opposite of what was
+            // happening. It reads the backend now, and says which.
             SettingsRow(
-              icon: 'brain',
+              icon: ai.backend == AiBackend.cloud ? 'cloud' : 'brain',
               iconColor: t.heading,
-              label: 'On-device model',
-              subtitle: guideState.isReady
-                  ? 'Installed · nothing leaves the phone'
-                  : 'Not installed · runs entirely on this phone',
+              label: 'Thinking',
+              subtitle: novaThinkingSubtitle(
+                backend: ai.backend,
+                endpoint: ai.endpoint,
+                localReady: guideState.isReady,
+              ),
               trailing: Text(
-                guideState.isReady
-                    ? kGuideModelSizeLabel
-                    : guideState.statusLabel.toUpperCase(),
+                novaThinkingTrailing(
+                  backend: ai.backend,
+                  endpoint: ai.endpoint,
+                  localReady: guideState.isReady,
+                  localStatus: guideState.statusLabel,
+                ),
                 style: VyanaType.mono10.copyWith(color: t.textMuted),
               ),
-              onTap: () => openNovaFootprint(context),
+              onTap: () => openAiSetup(context),
             ),
+            // Nova's voice had no entry in You at all — it was reachable
+            // only through Practice, behind the guide store, inside a card
+            // named after something else. "Where is the audio model in
+            // settings" had no good answer.
             SettingsRow(
               icon: 'speaker',
               iconColor: t.heading,
+              label: 'Nova\'s voice',
+              subtitle: novaVoiceRowSubtitle(
+                installed: voiceSvc.novaVoiceReady,
+                available: voiceSvc.novaVoiceAvailableToInstall,
+                size: voiceSvc.novaVoiceDownloadSize,
+              ),
+              trailing: Text(
+                voiceSvc.novaVoiceReady
+                    ? 'INSTALLED'
+                    : (voiceSvc.novaVoiceAvailableToInstall
+                        ? voiceSvc.novaVoiceDownloadSize.toUpperCase()
+                        : 'UNAVAILABLE'),
+                style: VyanaType.mono10.copyWith(color: t.textMuted),
+              ),
+              onTap: () => openGuideStore(context),
+            ),
+            SettingsRow(
+              icon: 'waveform',
+              iconColor: t.heading,
               label: 'Voice cues',
-              subtitle: 'Nova speaks during sessions · tap to preview',
+              subtitle: voiceSvc.novaVoiceReady
+                  ? 'Nova speaks during sessions · tap to preview'
+                  : "Silent until Nova's voice is installed",
               chevron: false,
               trailing: VSwitch(
                 on: ref.watch(voiceCuesEnabledProvider),

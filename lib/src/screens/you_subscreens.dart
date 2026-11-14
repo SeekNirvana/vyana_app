@@ -924,9 +924,20 @@ class _NovaFootprintScreenState extends ConsumerState<NovaFootprintScreen> {
     final definition = guidePersonaDefinitions[GuideKind.nova]!;
     final state = manager.stateFor(GuideKind.nova);
     final s = _storage;
+    // The screen used to assert "Nova runs entirely on this phone" whatever
+    // the user had chosen, which is false the moment they point her at
+    // their own endpoint.
+    final ai = ref.watch(aiBackendProvider);
+    final backendNote = ai.backend == AiBackend.cloud && ai.cloudReady
+        ? 'Nova is thinking on your own endpoint (${ai.endpoint.model}), so '
+            'the model below is not in use. What is on disk is the voice and '
+            'the listening model; your journal and vitals never leave either '
+            'way.'
+        : 'One model, one assistant. Nova runs entirely on this phone — '
+            'every reflection, every pattern, every chat stays here.';
     return _EditorScaffold(
       title: 'Nova',
-      sub: 'Private AI guide',
+      sub: ai.backend == AiBackend.cloud ? 'Your own endpoint' : 'On this phone',
       ctaLabel: state.isReady ? 'Remove from this phone' : 'Install Nova',
       ctaIcon: state.isReady ? 'x' : 'download',
       canSave: state.status != GuideModelStatus.downloading,
@@ -935,13 +946,24 @@ class _NovaFootprintScreenState extends ConsumerState<NovaFootprintScreen> {
         _KV('STATUS', state.statusLabel),
         _KV('MODEL', definition.modelLabel),
         _KV('FILE', guideInstalledModelFileName(definition)),
-        _KV('ON DISK', s == null ? '…' : formatBytes(s.guideModelBytes)),
-        _KV('VOICE (VANI)', s == null ? '…' : formatBytes(s.voiceBytes + s.whisperModelBytes)),
+        _KV('THINKING', formatBytes(s?.guideModelBytes ?? 0)),
+        // These were one row labelled VOICE, adding the two together. With
+        // the voice never installed that row showed Whisper's ~74 MB under
+        // the word VOICE — the right number against the wrong thing, which
+        // is worse than no number. They are two models doing opposite jobs
+        // and they are counted separately now.
+        _KV('LISTENING', s == null
+            ? '…'
+            : '${formatBytes(s.whisperModelBytes)} · Whisper, your mic'),
+        _KV('SPEAKING', s == null
+            ? '…'
+            : s.voiceBytes > 0
+                ? '${formatBytes(s.voiceBytes)} · Kokoro, her voice'
+                : 'Not installed · she stays on screen'),
         _KV('TOTAL', s == null ? '…' : formatBytes(s.totalBytes)),
         const SizedBox(height: 10),
         Text(
-          'One model, one assistant. Nova runs entirely on this phone — every '
-          'reflection, every pattern, every chat stays here.',
+          backendNote,
           style: VyanaType.caption.copyWith(color: t.textSec, height: 1.45),
         ),
       ],

@@ -81,7 +81,6 @@ How often you train
 Erases ring data and unpairs
 metrics:hrv-after:
 journal:tag:
-3.1 GB
 
 # v1.1.1 — Ring state you can act on: stale/disconnected pill, alerts persist
 Reaching your ring…
@@ -203,3 +202,6 @@ On this phone
 Test and save
 ic_notification
 kNotificationAccent
+Listening and speaking
+Whisper · your voice to text, on this phone
+Not installed · she stays on screen

@@ -99,7 +99,8 @@ class _GuideStoreScreenState extends ConsumerState<GuideStoreScreen> {
                       child: _PersonaCard(guide: g),
                     ),
                   const SizedBox(height: 8),
-                  const SectionHead(eyebrow: 'Speech', title: 'Vani Voice'),
+                  const SectionHead(
+                      eyebrow: 'Speech', title: 'Listening and speaking'),
                   const _VaniVoiceCard(),
                   const SizedBox(height: 14),
                   Panel(
@@ -111,8 +112,13 @@ class _GuideStoreScreenState extends ConsumerState<GuideStoreScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Nova and the voice model run on-device. Your '
-                            'conversations and journal never leave your phone.',
+                            // Said whatever the user had chosen, so it was
+                            // false for anyone on their own endpoint. The
+                            // journal half is true either way; the thinking
+                            // half depends on the backend.
+                            guideStorePrivacyNote(
+                              ref.watch(aiBackendProvider).backend,
+                            ),
                             style: VyanaType.bodySm
                                 .copyWith(color: t.textSec, height: 1.5),
                           ),
@@ -139,6 +145,10 @@ class _GuideModelCard extends ConsumerWidget {
     final t = context.vyana;
     final manager = ref.watch(guideModelManagerProvider);
     final kind = activeGuideKinds.first;
+    // Read the model's name from its definition rather than typing it in:
+    // this card said "Gemma E2B" regardless of which bundle the build
+    // actually points at.
+    final definition = guidePersonaDefinitions[kind]!;
     final downloading = manager.downloadingState;
     final ready = manager.modelReady;
     final failed = manager.stateFor(kind).status == GuideModelStatus.failed;
@@ -169,7 +179,7 @@ class _GuideModelCard extends ConsumerWidget {
                     Text('Nova\'s model',
                         style:
                             VyanaType.label.copyWith(color: t.text, fontSize: 15)),
-                    Text('Gemma E2B · runs Nova on-device',
+                    Text('${definition.modelLabel} · runs Nova on-device',
                         style: VyanaType.caption.copyWith(color: t.textSec)),
                     Text('On-device LLM · ~$kGuideModelSizeLabel',
                         style: VyanaType.mono10.copyWith(color: t.textMuted)),
@@ -351,7 +361,10 @@ class _PersonaCard extends ConsumerWidget {
   }
 }
 
-/// Vani Voice — offline Whisper STT plus on-device TTS for spoken replies.
+/// Listening — the Whisper speech-to-text model. Speaking is a different
+/// model entirely ([_NovaVoiceBlock]) and lives in its own card below,
+/// because naming them together is what made "I downloaded it and there is
+/// no audio" the expected outcome.
 class _VaniVoiceCard extends ConsumerStatefulWidget {
   const _VaniVoiceCard();
 
@@ -392,10 +405,10 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Vani Voice',
+                    Text('Listening',
                         style: VyanaType.label.copyWith(
                             color: t.text, fontSize: 15)),
-                    Text('Offline STT (Whisper) + Nova\'s own voice',
+                    Text('Whisper · your voice to text, on this phone',
                         style: VyanaType.mono10.copyWith(color: t.textMuted)),
                   ],
                 ),
@@ -404,12 +417,13 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
           ),
           const SizedBox(height: 10),
           Text(
-            // Nova has her own voice, and only her own voice. The phone's
-            // text-to-speech used to stand in for it and sounded like a
-            // screen reader, which is worse than silence for guidance.
-            'Talk with Nova, fully offline — Whisper transcribes your mic '
-            'input on this phone, and Nova answers in her own voice, also '
-            'generated here.',
+            // This card was called "Vani Voice" and described listening and
+            // speaking together, while the button downloaded only Whisper.
+            // You installed it, listening started working, and nothing ever
+            // spoke — with no way to tell why. They are two models doing
+            // opposite jobs and they are two cards now.
+            'Speak to Nova instead of typing. Whisper turns your voice into '
+            'text on this phone — nothing is sent anywhere.',
             style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
           ),
           const SizedBox(height: 12),
@@ -417,7 +431,7 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
             _ProgressBlock(
               progress: voice.whisperDownloadProgress,
               accent: t.cyan,
-              label: 'Downloading Vani Voice…',
+              label: 'Downloading the listening model…',
             )
           else if (installed) ...[
             Row(
@@ -486,7 +500,7 @@ class _VaniVoiceCardState extends ConsumerState<_VaniVoiceCard> {
             ),
           ] else
             Cta(
-              label: 'Download Vani Voice',
+              label: 'Download listening · 74 MB',
               icon: 'download',
               onTap: () => _download(voice),
             ),
