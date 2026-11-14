@@ -184,7 +184,7 @@ List<({DateTime day, int score})> readinessSeries(
       .subtract(Duration(days: days - 1));
   final hrvPoints = vitalHistoryPoints(history, VitalsMetricKind.hrv);
   final out = <({DateTime day, int score})>[];
-  for (final night in sleepDaySummaries(history.sleep).reversed) {
+  for (final night in history.sleepNights.reversed) {
     if (night.day.isBefore(since)) continue;
     // Bug 14(c): a truncated night is a gap, not a low score — including it
     // dragged both the chart and the average that Home compares against.
@@ -897,7 +897,7 @@ List<_VitalRowData> _buildVitalRows(
   // measurement replaced the morning's recovery numbers here too. Both now
   // read the day's value, the same one Home and readiness use. Spot readings
   // stay available in each vital's detail list.
-  final nights = sleepDaySummaries(history.sleep);
+  final nights = history.sleepNights;
   final tonight = sleepNightForToday(nights);
 
   final hrvPoints = vitalHistoryPoints(history, VitalsMetricKind.hrv);
@@ -908,7 +908,7 @@ List<_VitalRowData> _buildVitalRows(
   )?.toDouble();
 
   final sleepPoints = [
-    for (final d in sleepDaySummaries(history.sleep).reversed)
+    for (final d in history.sleepNights.reversed)
       VitalHistoryPoint(
         time: d.day,
         value: d.breakdown.asleepSeconds / 3600,

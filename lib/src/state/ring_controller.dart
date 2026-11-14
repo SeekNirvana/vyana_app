@@ -320,7 +320,7 @@ class RingController extends ChangeNotifier {
   /// "Synced" means complete, so the eyebrow must not say so until this is
   /// true (bug 17).
   bool get hasTonightSleep {
-    final nights = sleepDaySummaries(_history.sleep);
+    final nights = _history.sleepNights;
     return sleepNightForToday(nights) != null;
   }
 
@@ -358,7 +358,7 @@ class RingController extends ChangeNotifier {
 
   /// Why last night is missing or partial, for Home and for Nova (item 51).
   MissingNightReason get missingNightReason {
-    final nights = sleepDaySummaries(_history.sleep);
+    final nights = _history.sleepNights;
     final night = sleepNightForToday(nights);
     return missingNightReasonFor(
       status: sleepNightStatus(night, history: _history),
@@ -1424,7 +1424,7 @@ class RingController extends ChangeNotifier {
     // for everything except sleep; the night is fetched on the first sync
     // after wake. An explicit sync (the user tapping Sync now) always asks.
     final fetchSleep = includeSleep ??
-        !isLikelyAsleep(DateTime.now(), sleepDaySummaries(_history.sleep));
+        !isLikelyAsleep(DateTime.now(), _history.sleepNights);
     final retainedSleep = _history.sleep;
     final wantsTonight = !hasTonightSleep &&
         DateTime.now().hour < kTonightSleepGiveUpHour;

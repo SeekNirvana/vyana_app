@@ -18,7 +18,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   @override
   void initState() {
     super.initState();
-    final days = sleepDaySummaries(widget.history.sleep);
+    final days = widget.history.sleepNights;
     _anchorDay = _clampAnchorToToday(
       days.isEmpty ? _dateOnly(DateTime.now()) : days.first.day,
     );
@@ -28,7 +28,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   void didUpdateWidget(covariant SleepDetailScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.history.sleep != widget.history.sleep) {
-      final days = sleepDaySummaries(widget.history.sleep);
+      final days = widget.history.sleepNights;
       if (days.isNotEmpty && !_hasDay(days, _anchorDay)) {
         _anchorDay = _clampAnchorToToday(days.first.day);
       }
@@ -37,7 +37,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final days = sleepDaySummaries(widget.history.sleep);
+    final days = widget.history.sleepNights;
     final periodDays = _periodDays(days);
     final periodBreakdown = _breakdownForDays(periodDays);
     final score = _scoreForDays(periodDays);
@@ -464,6 +464,16 @@ class _SleepStageDurationGrid extends StatelessWidget {
       ),
       ('REM', breakdown.remSeconds, sleepStageColor(SleepType.rem)),
       ('Awake', breakdown.awakeSeconds, sleepStageColor(SleepType.awake)),
+      // Item 92: only when there is any. These minutes used to be dropped
+      // silently, which is how a night from 00:07 to 09:00 with 0m awake
+      // came to read as 8h 05m. Grey, because it is not a stage and not a
+      // verdict — it is the ring saying it was not there.
+      if (breakdown.notRecordedSeconds > 0)
+        (
+          'Not recorded',
+          breakdown.notRecordedSeconds,
+          context.vyana.mutedInk,
+        ),
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1050,6 +1060,19 @@ class SleepDayCard extends StatelessWidget {
                         'spent awake in bed counts as light sleep.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
+            // Item 92: where the ring recorded nothing, named with its
+            // times. "Not recorded · 40m" in the breakdown answers how
+            // much; this answers when, which is what tells someone it was
+            // the hour their ring sat on the charger.
+            if (day.notRecorded.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              for (final gap in day.notRecorded)
+                Text(
+                  'The ring recorded nothing '
+                  '${timeOfDayLabel(gap.from)}–${timeOfDayLabel(gap.to)}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+            ],
             const SizedBox(height: 12),
             SleepWaveform(day: day),
             const SizedBox(height: 12),

@@ -545,7 +545,7 @@ List<HomeMetricCardData> homeMetricCards(
   );
 
   // ── Sleep: only last night, and only when it is real (bug 14) ───────────
-  final nights = sleepDaySummaries(history.sleep);
+  final nights = history.sleepNights;
   final night = sleepNightForToday(nights, now: DateTime.now());
   final usable = dashboard.sleepStatus == SleepNightStatus.complete;
   final sleepHours =
@@ -724,7 +724,7 @@ class _SleptOnPrompt extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final answered = ref.watch(sleepExtensionProvider);
     final history = controller.history;
-    final night = sleepNightForToday(sleepDaySummaries(history.sleep));
+    final night = sleepNightForToday(history.sleepNights);
     if (night == null) return const SizedBox.shrink();
     if (answered.isAnswered(night.day)) return const SizedBox.shrink();
     final until = sleptOnAfter(night, history);

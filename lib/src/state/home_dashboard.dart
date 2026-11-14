@@ -78,7 +78,7 @@ class HomeDashboard {
     final history = controller.history;
     final vitals = controller.vitals;
     final stepDays = stepDaySummaries(history.steps);
-    final sleepDays = sleepDaySummaries(history.sleep);
+    final sleepDays = history.sleepNights;
     final today = DateTime.now();
     final todayDay = DateTime(today.year, today.month, today.day);
     final todaySteps = stepDayForDate(history.steps, todayDay);

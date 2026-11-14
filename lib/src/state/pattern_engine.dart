@@ -322,7 +322,7 @@ class PatternEngine {
       ];
       final candidates = _candidates(
         entries,
-        sleepDaySummaries(history.sleep),
+        history.sleepNights,
         sessions,
         vitalHistoryPoints(history, VitalsMetricKind.hrv),
         now,

@@ -854,7 +854,7 @@ class _HrvCard extends StatelessWidget {
     final from = period.start(now);
     final to = period.end(now);
     final values = <double>[
-      for (final n in sleepDaySummaries(history.sleep).reversed)
+      for (final n in history.sleepNights.reversed)
         if (!n.day.isBefore(from) && n.day.isBefore(to))
           ?hrvForDay(hrvPoints: hrvPoints, night: n, day: n.day)?.toDouble(),
     ];

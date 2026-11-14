@@ -194,7 +194,7 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
       // §14: the learning phase counts from the oldest day the ring actually
       // covers, and the sleep score's duration target follows the user's own
       // nights once they have said a shorter night leaves them rested.
-      final nights = sleepDaySummaries(c.history.sleep);
+      final nights = c.history.sleepNights;
       if (nights.isNotEmpty) {
         final baselines = ref.read(personalBaselinesProvider.notifier);
         unawaited(baselines.noteDataStart(nights.last.day));

@@ -984,6 +984,18 @@ class RingHistory {
     required this.sport,
   });
 
+  /// Item 92: the nights, with every minute accounted for.
+  ///
+  /// Every screen reads this rather than calling sleepDaySummaries itself.
+  /// There were 28 call sites, each passing `history.sleep` and none of
+  /// them the heart rate needed to tell a gap the ring slept through from a
+  /// gap where it was on its charger — so one of them disagreeing was a
+  /// matter of time. One entry point, one answer.
+  List<SleepDaySummary> get sleepNights => sleepDaySummaries(
+        sleep,
+        measuring: (from, to) => ringMeasuredBetween(this, from, to),
+      );
+
   final List<dynamic> steps;
   final List<dynamic> sleep;
   final List<dynamic> heartRate;
@@ -1294,7 +1306,7 @@ List<VitalHistoryPoint> vitalHistoryPoints(
           )
           .toList();
     case VitalsMetricKind.sleep:
-      return sleepDaySummaries(history.sleep)
+      return history.sleepNights
           .reversed
           .map(
             (day) => VitalHistoryPoint(
@@ -1376,6 +1388,7 @@ class SleepStageBreakdown {
     required this.awakeSeconds,
     required this.segmentCount,
     this.unstagedSeconds = 0,
+    this.notRecordedSeconds = 0,
   });
 
   final int deepSeconds;
@@ -1391,6 +1404,13 @@ class SleepStageBreakdown {
   /// it: nothing is known about how deep that stretch was.
   final int unstagedSeconds;
 
+  /// Item 92: minutes inside the night with no ring data at all — a ring on
+  /// its charger, or out of battery. Not sleep and not awake, so it is
+  /// counted as neither; it exists so the night's parts add up to the night
+  /// and so the breakdown can say "Not recorded · 40m" instead of leaving a
+  /// hole nobody can account for.
+  final int notRecordedSeconds;
+
   int get asleepSeconds =>
       deepSeconds + lightSeconds + remSeconds + unstagedSeconds;
 
@@ -1398,6 +1418,11 @@ class SleepStageBreakdown {
   int get stagedAsleepSeconds => deepSeconds + lightSeconds + remSeconds;
 
   int get totalSeconds => asleepSeconds + awakeSeconds;
+
+  /// Fell asleep to woke up: everything the night covered, including the
+  /// stretches the ring did not record. This is the number that should
+  /// match the two times shown above it.
+  int get nightSeconds => totalSeconds + notRecordedSeconds;
 
   bool get hasAnyStage => totalSeconds > 0;
 
@@ -1408,6 +1433,7 @@ class SleepStageBreakdown {
     'awakeSeconds': awakeSeconds,
     'asleepSeconds': asleepSeconds,
     'totalSeconds': totalSeconds,
+    'notRecordedSeconds': notRecordedSeconds,
     'segmentCount': segmentCount,
   };
 
@@ -1419,6 +1445,7 @@ class SleepStageBreakdown {
       awakeSeconds: awakeSeconds + other.awakeSeconds,
       segmentCount: segmentCount + other.segmentCount,
       unstagedSeconds: unstagedSeconds + other.unstagedSeconds,
+      notRecordedSeconds: notRecordedSeconds + other.notRecordedSeconds,
     );
   }
 
@@ -1429,6 +1456,24 @@ class SleepStageBreakdown {
         awakeSeconds: awakeSeconds,
         segmentCount: segmentCount,
         unstagedSeconds: seconds,
+        notRecordedSeconds: notRecordedSeconds,
+      );
+
+  /// Item 92: the night's unlabelled minutes, once they have been told
+  /// apart. [unstaged] is added to what is already there, because bug
+  /// 14(d)'s extension past the ring's end is unstaged sleep too.
+  SleepStageBreakdown withGaps({
+    required int unstaged,
+    required int notRecorded,
+  }) =>
+      SleepStageBreakdown(
+        deepSeconds: deepSeconds,
+        lightSeconds: lightSeconds,
+        remSeconds: remSeconds,
+        awakeSeconds: awakeSeconds,
+        segmentCount: segmentCount,
+        unstagedSeconds: unstagedSeconds + unstaged,
+        notRecordedSeconds: notRecordedSeconds + notRecorded,
       );
 }
 
@@ -1518,6 +1563,7 @@ class SleepDaySummary {
     required this.sessions,
     required this.breakdown,
     required this.waveform,
+    this.notRecorded = const <SleepGap>[],
   });
 
   final DateTime day;
@@ -1527,6 +1573,10 @@ class SleepDaySummary {
   final List<SleepSessionSummary> sessions;
   final SleepStageBreakdown breakdown;
   final List<SleepWaveSegment> waveform;
+
+  /// Item 92: when the ring recorded nothing inside the night, so the sleep
+  /// screen can say where rather than leaving minutes unaccounted for.
+  final List<SleepGap> notRecorded;
 
   int get score => sleepScoreForBreakdown(breakdown);
 
@@ -1706,7 +1756,17 @@ SleepStageBreakdown _breakdownFromSegments(List<SleepStageSegment> segments) {
 /// way [sleepScoreDurationTarget] is, so every screen reads one night.
 Map<DateTime, DateTime> sleepNightExtensions = {};
 
-List<SleepDaySummary> sleepDaySummaries(List<dynamic> sleepRecords) {
+/// Item 92: the one place a night's unlabelled minutes are accounted for.
+///
+/// [measuring] is how it tells a gap the ring slept through from one where
+/// the ring was not there at all. It is optional only so the pure-records
+/// path in tests and in [latestSleepDaySummary] still works; everything in
+/// the app goes through [RingHistory.sleepNights], which always passes it,
+/// so no two screens can reach different numbers for the same night.
+List<SleepDaySummary> sleepDaySummaries(
+  List<dynamic> sleepRecords, {
+  bool Function(DateTime from, DateTime to)? measuring,
+}) {
   final grouped = <DateTime, List<SleepContinuousSection>>{};
   for (final section in sleepContinuousSections(sleepRecords)) {
     grouped.putIfAbsent(section.day, () => []).add(section);
@@ -1738,15 +1798,52 @@ List<SleepDaySummary> sleepDaySummaries(List<dynamic> sleepRecords) {
         ? extendedTo.difference(windowEnd).inSeconds
         : 0;
 
+    final nightEnd = extraSeconds > 0 ? extendedTo! : windowEnd;
+    var filled =
+        extraSeconds > 0 ? breakdown.withUnstaged(extraSeconds) : breakdown;
+    var notRecorded = const <SleepGap>[];
+
+    // Item 92: whatever the ring did not label, told apart. Without this
+    // the night's parts came to less than the night and nothing said why —
+    // 00:07 to 09:00 with 0m awake reading as 8h 05m of sleep.
+    if (measuring != null) {
+      final split = splitSleepGaps(
+        windowStart: windowStart,
+        // The extension past the ring's end is already unstaged sleep; the
+        // gaps to account for are the ones inside what the ring recorded.
+        windowEnd: windowEnd,
+        labelled: [
+          for (final section in sections)
+            for (final session in section.sessions)
+              if (session.startTimeStamp != null &&
+                  session.endTimeStamp != null)
+                SleepSpan(
+                  from: DateTime.fromMillisecondsSinceEpoch(
+                    session.startTimeStamp! * 1000,
+                  ),
+                  to: DateTime.fromMillisecondsSinceEpoch(
+                    session.endTimeStamp! * 1000,
+                  ),
+                ),
+        ],
+        measuring: measuring,
+      );
+      filled = filled.withGaps(
+        unstaged: split.unstagedSeconds,
+        notRecorded: split.notRecordedSeconds,
+      );
+      notRecorded = split.notRecorded;
+    }
+
     return SleepDaySummary(
       day: entry.key,
       windowStart: windowStart,
-      windowEnd: extraSeconds > 0 ? extendedTo! : windowEnd,
+      windowEnd: nightEnd,
       sections: List.unmodifiable(sections),
       sessions: List.unmodifiable(sessions),
-      breakdown:
-          extraSeconds > 0 ? breakdown.withUnstaged(extraSeconds) : breakdown,
+      breakdown: filled,
       waveform: List.unmodifiable(waveform),
+      notRecorded: notRecorded,
     );
   }).toList()..sort((a, b) => b.day.compareTo(a.day));
 
@@ -1787,13 +1884,17 @@ List<SleepContinuousSection> sleepContinuousSections(
   return clusters.map(_sleepContinuousSectionFromCluster).toList();
 }
 
-SleepDaySummary? latestSleepDaySummary(List<dynamic> sleepRecords) {
-  final days = sleepDaySummaries(sleepRecords);
+/// Item 92: takes the history, so the latest night is the same night every
+/// screen is looking at. It used to take the records alone, which meant it
+/// could not account for the night's unlabelled minutes and so reported a
+/// shorter night than the sleep screen beside it.
+SleepDaySummary? latestSleepDaySummary(RingHistory history) {
+  final days = history.sleepNights;
   return days.isEmpty ? null : days.first;
 }
 
-String? sleepSummaryForLatestSleepDay(List<dynamic> sleepRecords) {
-  final day = latestSleepDaySummary(sleepRecords);
+String? sleepSummaryForLatestSleepDay(RingHistory history) {
+  final day = latestSleepDaySummary(history);
   if (day == null || day.breakdown.asleepSeconds <= 0) return null;
   return durationText(day.breakdown.asleepSeconds);
 }
@@ -2162,7 +2263,7 @@ class RingVitals {
     final latestBp = latestByTimestamp(history.bloodPressure);
     final latestCombined = latestByTimestamp(history.combined);
     final latestInvasive = latestByTimestamp(history.invasive);
-    final latestSleepDay = latestSleepDaySummary(history.sleep);
+    final latestSleepDay = latestSleepDaySummary(history);
     final latestTime =
         [
           latestStep,

@@ -235,7 +235,7 @@ class _JournalEvidence extends ConsumerWidget {
     final entries = ref.watch(_journalEntriesProvider).valueOrNull ?? const [];
     final rows = entries.where((e) => ids.contains(e.id)).toList();
     final nights = {
-      for (final n in sleepDaySummaries(ring.history.sleep)) n.day: n,
+      for (final n in ring.history.sleepNights) n.day: n,
     };
     if (rows.isEmpty) {
       return Text(
@@ -339,7 +339,7 @@ class _CounterEvidence extends ConsumerWidget {
     final rows = entries.where((e) => ids.contains(e.id)).toList();
     if (rows.isEmpty) return const SizedBox.shrink();
     final nights = {
-      for (final n in sleepDaySummaries(ring.history.sleep)) n.day: n,
+      for (final n in ring.history.sleepNights) n.day: n,
     };
 
     return Column(

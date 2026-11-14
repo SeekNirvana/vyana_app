@@ -177,7 +177,7 @@ int? _baseOf(List<VitalHistoryPoint> points, DateTime now) {
 
 /// One day's numbers, built from the same helpers Home and Metrics use.
 NovaDay _dayFrom(RingHistory history, DateTime day) {
-  final nights = sleepDaySummaries(history.sleep);
+  final nights = history.sleepNights;
   final target = DateTime(day.year, day.month, day.day);
   SleepDaySummary? night;
   for (final n in nights) {
@@ -332,7 +332,7 @@ Future<String> novaDataBlockFor(WidgetRef ref, {DateTime? at}) async {
   final planned = plannedDay.isEmpty ? null : plannedDay.activityIds.first;
 
   final todayDay = DateTime(now.year, now.month, now.day);
-  final nights = sleepDaySummaries(history.sleep);
+  final nights = history.sleepNights;
   final tonight = sleepNightForToday(nights, now: now);
   final patterns = ref.read(patternsProvider).valueOrNull ?? const [];
 

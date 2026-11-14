@@ -59,7 +59,7 @@ class _BaselineQuestionCardState extends ConsumerState<BaselineQuestionCard> {
     final ring = ref.read(ringControllerProvider);
     await controller.answer(widget.question.vital, answer);
     final nights = averageableNights(
-      sleepDaySummaries(ring.history.sleep),
+      ring.history.sleepNights,
       history: ring.history,
     );
     controller.applySleepTarget([
@@ -166,7 +166,7 @@ BaselineQuestion? dueBaselineQuestion({
 
   // Sleep first: it is the question users most often have an answer to.
   final nights = averageableNights(
-    sleepDaySummaries(history.sleep),
+    history.sleepNights,
     history: history,
   );
   if (baselines.recordFor(BaselineVital.sleep).askable &&
@@ -310,7 +310,7 @@ Future<void> showBaselineAnswersSheet(BuildContext context, WidgetRef ref) {
                                         ref.read(ringControllerProvider);
                                     controller.applySleepTarget([
                                       for (final n in averageableNights(
-                                        sleepDaySummaries(ring.history.sleep),
+                                        ring.history.sleepNights,
                                         history: ring.history,
                                       ).take(14))
                                         n.breakdown.asleepSeconds,

@@ -555,7 +555,7 @@ Future<String> exportHealthReport(
     hrByDay.putIfAbsent(DateTime(pt.time.year, pt.time.month, pt.time.day), () => [])
         .add(pt.value);
   }
-  final sleepByDay = {for (final d in sleepDaySummaries(history.sleep)) d.day: d};
+  final sleepByDay = {for (final d in history.sleepNights) d.day: d};
   final stepsByDay = {for (final d in stepDaySummaries(history.steps)) d.day: d};
   final readiness = {
     for (final r in readinessSeries(history, 3650)) r.day: r.score,
@@ -664,7 +664,7 @@ Future<String> exportSleepNights(RingHistory history, {DateTime? since}) async {
   final buf = StringBuffer(
     'night,asleep_hours,deep_min,light_min,rem_min,awake_min,score,window_start,window_end\n',
   );
-  for (final n in sleepDaySummaries(history.sleep).reversed) {
+  for (final n in history.sleepNights.reversed) {
     if (since != null && n.day.isBefore(since)) continue;
     final b = n.breakdown;
     buf.writeln([

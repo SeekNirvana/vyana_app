@@ -831,7 +831,7 @@ class MorningAfterBlock extends ConsumerWidget {
       row.startedAt.day,
     );
     final morning = sessionDay.add(const Duration(days: 1));
-    final nights = sleepDaySummaries(history.sleep);
+    final nights = history.sleepNights;
     SleepDaySummary? night;
     for (final n in nights) {
       if (DateTime(n.day.year, n.day.month, n.day.day) == morning) {
