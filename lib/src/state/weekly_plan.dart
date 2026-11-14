@@ -120,6 +120,7 @@ PlannedState? plannedStateFor({
   required DateTime now,
   required List<SessionRow> todaysFinished,
   required List<SessionRow> history,
+  Set<String> skippedToday = const <String>{},
 }) {
   if (now.hour >= kPlannedPracticeUntilHour) return null;
   if (now.hour < kPlannedPracticeFromHour) return null;
@@ -132,6 +133,9 @@ PlannedState? plannedStateFor({
     // Unplanned practices done today never count against the plan, so only
     // the planned ids are checked here.
     if (done.contains(id)) continue;
+    // Item 94: stood down for today. The plan is untouched; this is only
+    // about whether it is on offer now.
+    if (skippedToday.contains(id)) continue;
     // Before noon only an early trainer's practice shows — otherwise the
     // morning keeps its short practice.
     if (now.hour < kPlannedMorningBeforeHour &&
@@ -271,4 +275,60 @@ class WeeklyPlanReminderController extends StateNotifier<bool> {
 final weeklyPlanReminderProvider =
     StateNotifierProvider<WeeklyPlanReminderController, bool>(
   (ref) => WeeklyPlanReminderController(ref),
+);
+
+/// Item 94: the planned practices stood down for today.
+///
+/// Held in a notifier rather than read from preferences on each build, so
+/// the card updates the moment "Not today" is tapped and Undo can put it
+/// back without waiting on a disk read.
+class PlannedSkipsController extends StateNotifier<PlannedSkips> {
+  PlannedSkipsController() : super(PlannedSkips.none(_today())) {
+    unawaited(_load());
+  }
+
+  static DateTime _today() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  Future<void> _load() async {
+    final day = _today();
+    final prefs = await SharedPreferences.getInstance();
+    final ids = prefs.getStringList(plannedSkipKeyFor(day)) ?? const [];
+    state = PlannedSkips(day: day, activityIds: ids.toSet());
+  }
+
+  /// Today's skips, re-seeded if the day has turned over while the app sat
+  /// open — a skip made at 23:50 must not still hold at 00:10.
+  Set<String> get today {
+    if (!state.appliesOn(DateTime.now())) return const <String>{};
+    return state.activityIds;
+  }
+
+  Future<void> skip(String activityId) async {
+    final day = _today();
+    final base = state.appliesOn(day) ? state : PlannedSkips.none(day);
+    state = base.plus(activityId);
+    await _save();
+  }
+
+  Future<void> unskip(String activityId) async {
+    if (!state.appliesOn(DateTime.now())) return;
+    state = state.minus(activityId);
+    await _save();
+  }
+
+  Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      plannedSkipKeyFor(state.day),
+      state.activityIds.toList(),
+    );
+  }
+}
+
+final plannedSkipsProvider =
+    StateNotifierProvider<PlannedSkipsController, PlannedSkips>(
+  (ref) => PlannedSkipsController(),
 );

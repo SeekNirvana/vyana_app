@@ -45,6 +45,7 @@ class NovaFacts {
     this.suggestionMinutes,
     this.plannedActivity,
     this.plannedDone = false,
+    this.plannedSkipped = false,
     this.patterns = const [],
     this.concerns = const [],
   });
@@ -74,6 +75,11 @@ class NovaFacts {
   /// The planned practice from item 46, and whether it is done.
   final String? plannedActivity;
   final bool plannedDone;
+
+  /// Item 94: whether it was stood down for today. Nova is told, because a
+  /// plan someone has declined is not a plan they are ignoring — and asking
+  /// why they have not walked yet would be reading the day wrong.
+  final bool plannedSkipped;
 
   /// Active patterns, one line each — the top three.
   final List<String> patterns;
@@ -146,7 +152,8 @@ String formatNovaData(NovaFacts f) {
       'suggested ${f.suggestion}'
           '${f.suggestionMinutes == null ? '' : ' ${f.suggestionMinutes} min'}',
     if (f.plannedActivity != null)
-      'planned ${f.plannedActivity} (${f.plannedDone ? 'done' : 'not done'})',
+      'planned ${f.plannedActivity} ('
+          '${f.plannedDone ? 'done' : f.plannedSkipped ? 'skipped today' : 'not done'})',
   ];
   lines.add("today's plan: ${plan.join(' · ')}");
 
@@ -369,6 +376,8 @@ Future<String> novaDataBlockFor(WidgetRef ref, {DateTime? at}) async {
       suggestionMinutes: suggestion.minutes,
       plannedActivity: planned == null ? null : activityById(planned)?.name,
       plannedDone: planned != null && doneIds.contains(planned),
+      plannedSkipped: planned != null &&
+          ref.read(plannedSkipsProvider.notifier).today.contains(planned),
       patterns: [
         for (final p in patterns)
           if (p.endedAt == null) '${p.claim} (${p.status})',

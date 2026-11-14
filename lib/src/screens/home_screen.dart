@@ -871,6 +871,7 @@ class SuggestedPracticeBlock extends StatelessWidget {
     this.setsTarget = true,
     this.footnote,
     this.onPin,
+    this.onSkipToday,
   });
 
   final DayIntent intent;
@@ -898,6 +899,10 @@ class SuggestedPracticeBlock extends StatelessWidget {
   final Widget? footnote;
 
   final VoidCallback? onPin;
+
+  /// Item 94: shown as "Not today" when this is a planned practice. Null
+  /// on an ordinary suggestion, which there is nothing to stand down from.
+  final VoidCallback? onSkipToday;
 
   /// §3: once the suggestion itself has been done, the play button becomes a
   /// grey tick — the card stays tappable, to do it again.
@@ -1045,6 +1050,34 @@ class SuggestedPracticeBlock extends StatelessWidget {
           ),
         ),
       ],
+      // Item 94: a planned practice could only be changed by editing My
+      // week, which changes it every week. Someone who simply cannot run
+      // today had the choice of looking at it until the evening or
+      // rewriting their week.
+      if (onSkipToday case final skip?) ...[
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: skip,
+          borderRadius: BorderRadius.circular(6),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 36),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                VyanaIcon('x', size: 13, color: t.mutedInk),
+                const SizedBox(width: 5),
+                Text(
+                  'Not today',
+                  style: VyanaType.caption.copyWith(
+                    color: t.textSec,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     ];
     if (compact) {
       if (extras.isEmpty) return card;
@@ -1107,6 +1140,9 @@ class _SuggestedPractice extends ConsumerWidget {
       ],
       todaysFinished: today,
       plan: ref.watch(weeklyPlanProvider),
+      // Item 94: what has been stood down for today, so both screens agree
+      // about which planned practice is on offer.
+      skippedToday: ref.watch(plannedSkipsProvider.notifier).today,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1126,6 +1162,9 @@ class _SuggestedPractice extends ConsumerWidget {
                 .read(pinnedPracticesProvider.notifier)
                 .pin(suggestion.activityId),
           ),
+          onSkipToday: suggestion.canSkipToday
+              ? () => unawaited(_skipPlannedToday(context, ref, suggestion))
+              : null,
           doneToday:
               today.any((s) => s.vyanaActivityType == suggestion.activityId),
         ),
@@ -1133,6 +1172,41 @@ class _SuggestedPractice extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// Item 94: stands a planned practice down for today, and says so with a
+/// way back.
+///
+/// The weekly plan is not touched. Today's reminder for it is cancelled,
+/// because a reminder for something the person has just declined is the
+/// app not listening — and re-armed by Undo through the same reschedule
+/// every other change goes through.
+Future<void> _skipPlannedToday(
+  BuildContext context,
+  WidgetRef ref,
+  HomeSuggestion suggestion,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final skips = ref.read(plannedSkipsProvider.notifier);
+  final reminders = ref.read(weeklyPlanReminderProvider.notifier);
+  final id = suggestion.activityId;
+
+  await skips.skip(id);
+  await reminders.reschedule();
+
+  messenger.showSnackBar(
+    SnackBar(
+      content: const Text('Skipped for today'),
+      duration: const Duration(seconds: 6),
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () async {
+          await skips.unskip(id);
+          await reminders.reschedule();
+        },
+      ),
+    ),
+  );
 }
 
 /// Item 46: one line under a planned practice on a low-readiness day. The

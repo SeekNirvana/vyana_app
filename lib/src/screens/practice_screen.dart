@@ -56,6 +56,9 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       ],
       todaysFinished: todaysFinishedSessions(sessions),
       plan: ref.watch(weeklyPlanProvider),
+      // Item 94: what has been stood down for today, so both screens agree
+      // about which planned practice is on offer.
+      skippedToday: ref.watch(plannedSkipsProvider.notifier).today,
     );
     final suggested = suggestion.activity;
     final look = scoreLook(

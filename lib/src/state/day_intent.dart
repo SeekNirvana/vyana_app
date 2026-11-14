@@ -299,6 +299,7 @@ class HomeSuggestion {
     this.minutes,
     this.meta,
     this.offerPin = false,
+    this.canSkipToday = false,
     this.setsTarget = true,
     this.lowReadinessAlternative,
   });
@@ -323,6 +324,11 @@ class HomeSuggestion {
   /// Bug 45: shown when the suggestion came from a fallback rather than a
   /// pin, so the user can make it a pin in one tap.
   final bool offerPin;
+
+  /// Item 94: whether this is a planned practice that can be stood down for
+  /// today. Only the Planned card offers it — "Not today" on an ordinary
+  /// suggestion would be refusing something nobody asked for.
+  final bool canSkipToday;
 
   /// The day slot opens the practice with no target set.
   final bool setsTarget;
@@ -500,6 +506,9 @@ HomeSuggestion homeSuggestionFor({
   required int? readiness,
   required HomeMoment moment,
   required DateTime now,
+  /// Item 94: planned practices stood down for today. The plan is
+  /// unchanged; these are simply not on offer.
+  Set<String> skippedToday = const <String>{},
   List<String> pins = const [],
   List<SessionRow> history = const [],
   List<SessionRow> todaysFinished = const [],
@@ -513,6 +522,7 @@ HomeSuggestion homeSuggestionFor({
     now: now,
     todaysFinished: todaysFinished,
     history: history,
+    skippedToday: skippedToday,
   );
   if (planned != null) {
     final gentle = readiness != null && readiness < kGentleOnlyReadiness
@@ -535,6 +545,7 @@ HomeSuggestion homeSuggestionFor({
       setsTarget: false,
       // Never swapped silently: the plan stands, with one line underneath.
       lowReadinessAlternative: gentle,
+      canSkipToday: true,
     );
   }
 
