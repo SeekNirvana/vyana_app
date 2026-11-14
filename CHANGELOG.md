@@ -2,10 +2,18 @@
 
 ## v1.1.6 — 2026-11-14 · Which model, where it thinks, and what it costs
 
-Three problems reported against v1.1.5, which turned out to share a cause:
-screens asserted things the settings below them no longer controlled. Six
-such claims were found, then two bugs underneath them that made the whole
-on-device story narrower than anyone intended.
+Three problems were reported against v1.1.5 and turned out to share a cause:
+screens asserted things the settings below them no longer controlled. Looking
+for that shape on purpose found six more of them, and then the bugs
+underneath — a validator that made any model under 1.5 GB uninstallable, a
+load order that took the whole phone down, a chat an endpoint user could not
+open, and a model picker that downloaded something other than what it named.
+
+Two of those were introduced inside this release and caught before it
+shipped. One claim this entry made about a model's quality turned out to be
+wrong about its cause, and is corrected below rather than quietly dropped.
+Nova's conversations are also kept now, which is the one thing here that is
+a feature rather than a correction.
 
 ### Fixed
 
@@ -155,8 +163,10 @@ conversation into that would cost the room the next answer needs.
 - Nova's voice is mirrored but not yet pinned: run **Actions → Mirror Nova's
   voice** once, then paste the printed list into `kNovaVoiceFiles`. Until
   then Speaking reads "Not in this build yet" and replies stay on screen.
-- Both on-device models want 6 GB of memory. On a smaller phone the endpoint
-  is the honest answer, and the screen says so.
+- Gemma E2B wants 6 GB of memory and is the only on-device model this
+  release ships. On a smaller phone the endpoint is the honest answer, and
+  the screen says so on the row that offers the download. A second, smaller
+  model waits on the flutter_gemma upgrade described above.
 
 ## v1.1.5 — 2026-11-13 · Last night, the day's shape, and Nova with her eyes open
 
