@@ -34,9 +34,7 @@ class GuidesScreen extends ConsumerStatefulWidget {
 class _GuidesScreenState extends ConsumerState<GuidesScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
-  final List<GuideMessage> _messages = [];
   bool _sending = false;
-  String? _greetedFor;
 
   @override
   void dispose() {
@@ -45,15 +43,14 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     super.dispose();
   }
 
-  void _ensureGreeting(GuidePersona guide) {
-    if (_greetedFor == guide.id) return;
-    _greetedFor = guide.id;
-    _messages
-      ..clear()
-      ..add(GuideMessage(
-        fromUser: false,
-        text: guideDefinitionFor(guide).starterMessage,
-      ));
+  /// The conversation outlives this screen now, so coming back shows what
+  /// was said rather than a greeting the model had already forgotten about.
+  /// Idempotent: called from every build.
+  void _ensureConversation(GuidePersona guide) {
+    ref.read(chatHistoryProvider).resume(
+          personaId: guide.id,
+          starter: guideDefinitionFor(guide).starterMessage,
+        );
   }
 
   Future<void> _send(GuidePersona guide, {String? text}) async {
@@ -76,15 +73,26 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     final runtime = ref.read(guideRuntimeServiceProvider);
     final manager = ref.read(guideModelManagerProvider);
     final voice = ref.read(guideVoiceServiceProvider);
+    final history = ref.read(chatHistoryProvider);
+    final backend = ref.read(aiBackendProvider);
+    final onCloud = backend.backend == AiBackend.cloud && backend.cloudReady;
 
-    // user bubble + empty guide bubble (rendered as a typing indicator).
-    final replyIndex = _messages.length + 1;
     setState(() {
-      _messages.add(GuideMessage(fromUser: true, text: prompt));
-      _messages.add(const GuideMessage(fromUser: false, text: ''));
       _input.clear();
       _sending = true;
     });
+
+    // The user bubble and the empty one the reply streams into. Written to
+    // the vault as it goes, so closing the app mid-answer loses the answer
+    // rather than the question.
+    final replyIndex = await history.addUserTurn(
+      personaId: guide.id,
+      text: prompt,
+      backend: onCloud ? 'cloud' : 'device',
+      modelLabel: onCloud
+          ? backend.endpoint.model
+          : ref.read(onDeviceModelProvider).label,
+    );
     _scrollToEnd();
 
     try {
@@ -94,8 +102,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
         await for (final partial
             in runtime.streamResponse(guide: kind, prompt: modelPrompt)) {
           if (!mounted) return;
-          setState(() => _messages[replyIndex] =
-              GuideMessage(fromUser: false, text: partial));
+          history.updateReply(replyIndex, partial);
           if (voice.voiceResponsesEnabled) {
             final unspoken = partial.substring(spokenUpTo);
             final matches = sentenceEnd.allMatches(unspoken);
@@ -113,7 +120,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
         }
         if (voice.voiceResponsesEnabled) {
           final remaining = stripGuideMarkdown(
-            _messages[replyIndex].text.substring(spokenUpTo).trim(),
+            history.messages[replyIndex].text.substring(spokenUpTo).trim(),
           );
           if (remaining.isNotEmpty) voice.queueSpeak(remaining);
         }
@@ -121,19 +128,20 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
         final reply =
             await runtime.generateResponse(guide: kind, prompt: modelPrompt);
         if (!mounted) return;
-        setState(() => _messages[replyIndex] =
-            GuideMessage(fromUser: false, text: reply));
+        history.updateReply(replyIndex, reply);
         if (voice.voiceResponsesEnabled && reply.trim().isNotEmpty) {
           unawaited(voice.speak(stripGuideMarkdown(reply)));
         }
       }
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _messages[replyIndex] = GuideMessage(
-            fromUser: false,
-            text: 'I couldn\'t finish that just now. Please try again.\n\n($e)',
-          ));
+      history.updateReply(
+        replyIndex,
+        'I couldn\'t finish that just now. Please try again.\n\n($e)',
+      );
     } finally {
+      // Whatever the bubble ended up saying — the answer, or the apology —
+      // is what the transcript should show, so it is stored either way.
+      await history.finishReply(replyIndex);
       if (mounted) setState(() => _sending = false);
       _scrollToEnd();
     }
@@ -183,8 +191,17 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     final activeId = ref.watch(activeGuideIdProvider);
     final guide = guideById(activeId) ?? kActiveGuides.first;
     final ac = t.vit(guide.accent);
-    final modelReady = manager.modelReady;
-    _ensureGreeting(guide);
+    final ai = ref.watch(aiBackendProvider);
+    // Not `manager.modelReady`: an endpoint that is set up and tested is a
+    // Nova who can answer, and gating her chat on a model that backend never
+    // loads left those users at a download screen with nothing to download.
+    final modelReady = novaCanAnswer(
+      backend: ai.backend,
+      cloudReady: ai.cloudReady,
+      localReady: manager.modelReady,
+    );
+    _ensureConversation(guide);
+    final messages = ref.watch(chatHistoryProvider).messages;
 
     final installedGuides = [
       ...kActiveGuides,
@@ -197,7 +214,11 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: VAppBar(
             title: guide.name,
-            sub: 'on-device · ${guide.role}',
+            sub: novaChatSubtitle(
+              backend: ai.backend,
+              endpoint: ai.endpoint,
+              role: guide.role,
+            ),
             leading: widget.pushed
                 ? IconBtn(
                     icon: 'chevL',
@@ -227,7 +248,11 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
                   onTap: () => voice
                       .setVoiceResponsesEnabled(!voice.voiceResponsesEnabled),
                 ),
-              IconBtn(icon: 'plus', onTap: () => openAiSetup(context)),
+              // Was a plus that opened the AI settings — a leftover from
+              // the guide library, and the fourth way into a screen You
+              // already offers twice. Both conversation actions, the list
+              // and starting a new one, live behind this.
+              IconBtn(icon: 'chats', onTap: () => openChatHistory(context)),
             ],
           ),
         ),
@@ -255,8 +280,8 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
           ),
         Expanded(
           child: modelReady
-              ? _buildChat(guide, ac)
-              : _GuideDownloadGate(guide: guide),
+              ? _buildChat(guide, ac, messages)
+              : _GuideDownloadGate(guide: guide, backend: ai.backend),
         ),
         if (modelReady)
           _Composer(
@@ -273,22 +298,23 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     );
   }
 
-  Widget _buildChat(GuidePersona guide, Color ac) {
-    final showQuickPrompts = _messages.length <= 1 && !_sending;
+  Widget _buildChat(
+      GuidePersona guide, Color ac, List<GuideMessage> messages) {
+    final showQuickPrompts = messages.length <= 1 && !_sending;
     final quickPrompts = guideDefinitionFor(guide).quickPrompts;
     return ListView.builder(
       controller: _scroll,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      itemCount: _messages.length + (showQuickPrompts ? 1 : 0),
+      itemCount: messages.length + (showQuickPrompts ? 1 : 0),
       itemBuilder: (context, i) {
-        if (i >= _messages.length) {
+        if (i >= messages.length) {
           return _QuickPrompts(
             prompts: quickPrompts,
             accent: ac,
             onTap: (p) => _send(guide, text: p),
           );
         }
-        final m = _messages[i];
+        final m = messages[i];
         final pending = !m.fromUser && m.text.isEmpty;
         return _Bubble(
           fromUser: m.fromUser,
@@ -303,8 +329,12 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
 /// Model-not-downloaded state shown inside the chat tab. Lets the user pull the
 /// shared guide model without leaving the screen, with live progress.
 class _GuideDownloadGate extends ConsumerWidget {
-  const _GuideDownloadGate({required this.guide});
+  const _GuideDownloadGate({required this.guide, required this.backend});
   final GuidePersona guide;
+
+  /// Which backend is chosen. Someone whose endpoint is half set up was
+  /// offered a 2.6 GB download for a model that backend never loads.
+  final AiBackend backend;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -316,6 +346,7 @@ class _GuideDownloadGate extends ConsumerWidget {
     final downloading = manager.downloadingState;
     final isDownloading = downloading != null;
     final failed = state.status == GuideModelStatus.failed;
+    final onCloud = backend == AiBackend.cloud;
 
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
@@ -333,17 +364,30 @@ class _GuideDownloadGate extends ConsumerWidget {
             child: Center(child: VyanaIcon(guide.icon, size: 34, color: ac)),
           ),
           const SizedBox(height: 16),
-          Text('Bring ${guide.name} on-device',
+          Text(
+              onCloud
+                  ? 'Finish setting up your endpoint'
+                  : 'Bring ${guide.name} on-device',
               textAlign: TextAlign.center,
               style: VyanaType.titleSerif.copyWith(color: t.text)),
           const SizedBox(height: 8),
           Text(
-            guideDefinitionFor(guide).shortDescription,
+            onCloud
+                ? 'Nova is set to think on your own server, and it still '
+                    'needs an address and a model name before she can answer.'
+                : guideDefinitionFor(guide).shortDescription,
             textAlign: TextAlign.center,
             style: VyanaType.body.copyWith(color: t.textSec, height: 1.5),
           ),
           const SizedBox(height: 18),
-          Panel(
+          if (onCloud)
+            Cta(
+              label: 'Set up the endpoint',
+              icon: 'cloud',
+              onTap: () => openAiSetup(context),
+            )
+          else
+            Panel(
             pad: 16,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,11 +436,12 @@ class _GuideDownloadGate extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 12),
-          TextButton(
-            onPressed: () => openAiSetup(context),
-            child: Text('Model, voice and storage',
-                style: VyanaType.label.copyWith(color: t.green)),
-          ),
+          if (!onCloud)
+            TextButton(
+              onPressed: () => openAiSetup(context),
+              child: Text('Model, voice and storage',
+                  style: VyanaType.label.copyWith(color: t.green)),
+            ),
         ],
       ),
     );

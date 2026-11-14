@@ -243,9 +243,11 @@ class NovaPill extends ConsumerWidget {
     // the on-device model happens to be installed. Someone running their
     // own endpoint should never be told to download a 3.1 GB model they
     // have no use for.
-    final ready = ai.backend == AiBackend.cloud
-        ? ai.cloudReady
-        : manager.modelReady;
+    final ready = novaCanAnswer(
+      backend: ai.backend,
+      cloudReady: ai.cloudReady,
+      localReady: manager.modelReady,
+    );
     final tint = t.mutedInk;
     final bright = t.heading;
 

@@ -1,5 +1,32 @@
 part of '../../main.dart';
 
+/// Whether Nova can answer right now — on the backend the user chose, not
+/// on whichever one happens to be installed.
+///
+/// The Nova pill worked this out for itself and the chat screen worked it
+/// out differently, reading `modelReady` alone. With an endpoint configured
+/// and tested, the pill said "Ask Nova" and the screen behind it offered a
+/// 2.6 GB download instead of a conversation, so the endpoint could be set up
+/// and never used. One function, two callers, no room to disagree.
+bool novaCanAnswer({
+  required AiBackend backend,
+  required bool cloudReady,
+  required bool localReady,
+}) =>
+    backend == AiBackend.cloud ? cloudReady : localReady;
+
+/// What the chat's app bar says under Nova's name.
+String novaChatSubtitle({
+  required AiBackend backend,
+  required CloudEndpoint endpoint,
+  required String role,
+}) {
+  if (backend == AiBackend.cloud && endpoint.isComplete) {
+    return 'your endpoint · $role';
+  }
+  return 'on-device · $role';
+}
+
 /// The line under the guide store header, which used to promise on-device
 /// thinking regardless of what the user had picked.
 String guideStorePrivacyNote(AiBackend backend) {
