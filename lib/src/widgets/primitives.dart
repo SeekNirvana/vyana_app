@@ -154,30 +154,46 @@ class Pill extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final c = accent ?? t.green;
+    final body = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: active ? c : t.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            VyanaIcon(icon!, size: 15, color: active ? c : t.textSec),
+            const SizedBox(width: 6),
+          ],
+          Text(label,
+              style: VyanaType.label.copyWith(color: active ? c : t.textSec)),
+        ],
+      ),
+    );
+
+    // Item 55: a pill with nothing to do is a label, and is built as one —
+    // no InkWell, so nothing to press, nothing to ripple, and nothing for a
+    // screen reader to announce as a control. Two in Wallet were wired to
+    // `onTap: () {}`, which looks exactly like a button that is broken.
+    if (onTap == null) {
+      return Material(
+        color: active
+            ? c.withValues(alpha: t.isDark ? 0.18 : 0.12)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(100),
+        child: body,
+      );
+    }
+
     return Material(
       color: active ? c.withValues(alpha: t.isDark ? 0.18 : 0.12) : Colors.transparent,
       borderRadius: BorderRadius.circular(100),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(100),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(100),
-            border: Border.all(color: active ? c : t.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                VyanaIcon(icon!, size: 15, color: active ? c : t.textSec),
-                const SizedBox(width: 6),
-              ],
-              Text(label,
-                  style: VyanaType.label.copyWith(color: active ? c : t.textSec)),
-            ],
-          ),
-        ),
+        child: body,
       ),
     );
   }

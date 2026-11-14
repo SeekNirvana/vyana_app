@@ -443,11 +443,9 @@ class _ConnectedWalletView extends StatelessWidget {
                     Text('Your address',
                         style: VyanaType.label.copyWith(color: t.textSec)),
                     const Spacer(),
-                    Pill(
-                      label: chain.currency,
-                      active: true,
-                      onTap: () {},
-                    ),
+                    // Item 55: the currency is a fact about the address
+                    // above it, not a choice. No onTap, so no ink.
+                    Pill(label: chain.currency, active: true),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -691,7 +689,8 @@ class _WalletFutureTile extends StatelessWidget {
               ],
             ),
           ),
-          Pill(label: badge, active: false, onTap: () {}),
+          // Item 55: a status badge, not a control.
+          Pill(label: badge, active: false),
         ],
       ),
     );
