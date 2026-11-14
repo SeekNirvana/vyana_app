@@ -1042,23 +1042,22 @@ class PatternCard extends StatelessWidget {
   VyanaColors t, {
   bool hrvOnly = false,
 }) {
+  // Item 74: the state word comes from readinessStateWord, in
+  // wellness_state.dart, which the notification and the home-screen widget
+  // also read. Only the colours and the short badge word are decided here.
+  final state = readinessStateWord(score, hrvOnly: hrvOnly);
   if (score == null) {
     // No score is not a verdict: neutral grey, not the amber band.
-    return (hue: t.mutedInk, soft: t.mutedInk, word: '—', state: 'No read yet');
+    return (hue: t.mutedInk, soft: t.mutedInk, word: '—', state: state);
   }
   if (hrvOnly) {
-    return (
-      hue: t.mutedInk,
-      soft: t.mutedInk,
-      word: 'HRV',
-      state: 'Partial read',
-    );
+    return (hue: t.mutedInk, soft: t.mutedInk, word: 'HRV', state: state);
   }
-  if (score >= 70) {
-    return (hue: t.qGood, soft: t.qGoodSoft, word: 'READY', state: 'Ready');
+  if (score >= kReadinessReadyFrom) {
+    return (hue: t.qGood, soft: t.qGoodSoft, word: 'READY', state: state);
   }
-  if (score >= 50) {
-    return (hue: t.qLevel, soft: t.qLevelSoft, word: 'FAIR', state: 'Balanced');
+  if (score >= kReadinessBalancedFrom) {
+    return (hue: t.qLevel, soft: t.qLevelSoft, word: 'FAIR', state: state);
   }
-  return (hue: t.qPoor, soft: t.qPoorSoft, word: 'LOW', state: 'Depleted');
+  return (hue: t.qPoor, soft: t.qPoorSoft, word: 'LOW', state: state);
 }

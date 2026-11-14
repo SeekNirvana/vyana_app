@@ -227,6 +227,10 @@ class RingController extends ChangeNotifier {
       temperature: _vitals.temperature,
       stressIndex: _vitals.pressure,
       readinessScore: dashboard.readinessScore,
+      // Item 74: passed on, so a score built from HRV with no night behind
+      // it reads as "Partial read" in the notification and the widget too,
+      // rather than earning a verdict the screen would not give it.
+      readinessIsHrvOnly: dashboard.readinessIsHrvOnly,
     );
   }
 

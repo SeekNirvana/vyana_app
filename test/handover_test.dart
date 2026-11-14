@@ -218,7 +218,6 @@ void main() {
         todayActiveMinutes: 0,
         lastSleepDuration: null,
         readinessScore: 78,
-        readinessLabel: 'Steady',
         readinessDelta: null,
         drivers: const [],
         insights: const [],
