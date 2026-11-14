@@ -570,12 +570,15 @@ class CycleCalendarScreen extends ConsumerStatefulWidget {
 class _CycleCalendarScreenState extends ConsumerState<CycleCalendarScreen> {
   late DateTime _month;
 
-  /// Whether the user changed any logged day on this visit. Bug 34: editing
-  /// the dates *is* the answer to "did your period end on …?", so Done
-  /// confirms the run — but only when something was actually edited, so
-  /// simply looking at the calendar cannot close a period that is still
-  /// running.
-  bool _edited = false;
+  /// Which logged days the user changed on this visit. Bug 34: editing the
+  /// dates *is* the answer to "did your period end on …?", so Done confirms
+  /// the run — but only when something was actually edited, so simply
+  /// looking at the calendar cannot close a period that is still running.
+  ///
+  /// Item 84 (bug 34): the days, not a flag. A flag meant editing *any*
+  /// month confirmed the latest period, so correcting a date from two years
+  /// ago silently closed the run that ended last week.
+  final Set<DateTime> _editedDays = {};
 
   @override
   void initState() {
@@ -591,19 +594,29 @@ class _CycleCalendarScreenState extends ConsumerState<CycleCalendarScreen> {
     } else {
       await db.addCycleDay(day);
     }
-    if (mounted) setState(() => _edited = true);
+    if (mounted) setState(() => _editedDays.add(day));
   }
 
   /// Bug 34: the calendar only ever added and removed days, so correcting the
   /// dates yourself left the question in place for good. On Done, a latest run
   /// whose last day is already past is a finished run — record it as one.
   Future<void> _confirmEditedRun() async {
-    if (!_edited) return;
+    if (_editedDays.isEmpty) return;
     final rows = ref.read(cycleDaysProvider).valueOrNull ?? const [];
     final runs = periodRuns(rows);
     if (runs.isEmpty) return;
     final latest = runs.first;
     if (latest.endConfirmed) return;
+    // Item 84 (bug 34): the edit has to be about this run. One day's slack
+    // past the end, because removing the final day is exactly the edit that
+    // answers "did it end?" — and that day sits just outside the run it
+    // shortened.
+    final touchesLatest = _editedDays.any(
+      (d) =>
+          !d.isBefore(latest.start) &&
+          !d.isAfter(latest.end.add(const Duration(days: 1))),
+    );
+    if (!touchesLatest) return;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     // Still running if it reaches today: there is nothing to confirm yet.

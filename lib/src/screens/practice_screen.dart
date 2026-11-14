@@ -156,6 +156,11 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
           meta: suggestion.meta,
           offerPin: suggestion.offerPin,
           setsTarget: suggestion.setsTarget,
+          // Item 84 (bug 45): the same line Home shows. Both screens read
+          // one suggestion, so showing the alternative on one and not the
+          // other meant the plan was offered a gentler option in one place
+          // and presented flat in the other.
+          footnote: _LowReadinessAlternative(suggestion: suggestion),
           onPin: () => unawaited(
             ref
                 .read(pinnedPracticesProvider.notifier)

@@ -276,6 +276,19 @@ class RingController extends ChangeNotifier {
   /// screen, so a ring out of reach failed silently.
   bool get isUserReconnecting => _isUserReconnecting;
 
+  /// Stops claiming a user-driven reconnect is still being waited for.
+  ///
+  /// Item 84 (bug 48): reconnectWithFeedback gives up after twenty seconds,
+  /// but the BLE attempt underneath can run far longer — and the pill, the
+  /// eyebrow and the banner all read this flag, so they went on saying
+  /// CONNECTING after the person had already been told it failed. The
+  /// attempt is left to finish on its own; only the claim that we are still
+  /// waiting is withdrawn.
+  void giveUpUserReconnect() {
+    if (!_isUserReconnecting) return;
+    _set(() => _isUserReconnecting = false);
+  }
+
   /// The outcome of the most recent one-shot measurement, kept after it ends
   /// so the detail screen can show success or failure instead of dropping
   /// back to its default subtitle (bug 15). Cleared when a new one starts.
@@ -369,8 +382,18 @@ class RingController extends ChangeNotifier {
   /// ring on its charger often drops out of range; it is still off the
   /// finger on purpose, so the low-battery and out-of-reach alerts have
   /// nothing to warn about (bug 43).
-  bool get wasChargingWhenLastSeen =>
-      normalizedBatteryStatus(batteryStatus) == 'charging';
+  bool get wasChargingWhenLastSeen {
+    if (normalizedBatteryStatus(batteryStatus) != 'charging') return false;
+    if (_isConnected) return true;
+    // Item 84 (bug 43, second half): believed for a while, not forever. A
+    // ring is full inside two hours, so a status that still says "charging"
+    // long after the ring went out of reach is a stale reading — and
+    // believing it muted every battery and out-of-reach alert indefinitely,
+    // which is the opposite of what bug 43 was for.
+    final seen = _lastConnectionConfirmedAt;
+    if (seen == null) return false;
+    return DateTime.now().difference(seen) <= kChargingBelievedFor;
+  }
 
   /// Battery percent from the newest source that reported one.
   int? get batteryPercent {
@@ -402,7 +425,14 @@ class RingController extends ChangeNotifier {
     if (battery == null ||
         battery <= 0 ||
         battery > kBatteryRecoveredPercent ||
-        _pairedRing == null) {
+        _pairedRing == null ||
+        // Item 84 (bug 47): a ring on its charger is on its way up by
+        // choice. The live Android check already declines in that case;
+        // the scheduled one did not, so an iPhone could be told at nine in
+        // the evening about a battery that had been charging since seven.
+        // Cancelling rather than skipping also withdraws one scheduled
+        // before the ring went on charge.
+        wasChargingWhenLastSeen) {
       await notify.cancelOvernightBattery();
       return;
     }
@@ -1475,6 +1505,11 @@ class RingController extends ChangeNotifier {
           _status = 'Sync failed: $error';
         }
       });
+      // Item 84 (bug 36): also on the way out. Waiting for last night only
+      // stops when this runs, so a failed sync left "Reading last night…"
+      // on Home until noon — a spinner standing in for an error nobody was
+      // told about.
+      _evaluateTonightSleep();
       _publishMeasurementSnapshot();
     } finally {
       if (!_disposed) {

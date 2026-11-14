@@ -364,13 +364,29 @@ bool _fitsIntent(Activity a, DayIntent intent, int? readiness) {
 
 /// The mindfulness practice each intent falls back to when the user has no
 /// history to suggest from. Catalogue length, catalogue practice.
-String _mindfulnessFallback(DayIntent intent, int? readiness) {
-  if (readiness != null && readiness < kGentleOnlyReadiness) return 'bodyScan';
-  return switch (intent) {
-    DayIntent.recover => 'bodyScan',
-    DayIntent.perform => 'hrvBreathing',
-    DayIntent.settle => 'walkingMed',
-  };
+/// Item 84 (bug 45): [todaysFinished] so the last resort does not suggest
+/// the practice that was just finished. The others all check; this one did
+/// not, and it is the one reached when nothing else fits.
+String _mindfulnessFallback(
+  DayIntent intent,
+  int? readiness,
+  List<SessionRow> todaysFinished,
+) {
+  final done = {for (final s in todaysFinished) s.vyanaActivityType};
+  final preferred = readiness != null && readiness < kGentleOnlyReadiness
+      ? 'bodyScan'
+      : switch (intent) {
+          DayIntent.recover => 'bodyScan',
+          DayIntent.perform => 'hrvBreathing',
+          DayIntent.settle => 'walkingMed',
+        };
+  if (!done.contains(preferred)) return preferred;
+  // Anything gentle that has not been done yet, then the preferred one
+  // again — suggesting a repeat is better than suggesting nothing.
+  for (final id in kGentlePracticeIds) {
+    if (!done.contains(id)) return id;
+  }
+  return preferred;
 }
 
 /// "YOUR USUAL · 32 MIN" — the median of the user's last five sessions of
@@ -534,13 +550,21 @@ HomeSuggestion homeSuggestionFor({
         if (usable(id)) return day(id, offerPin: true);
       }
       // 3 · a mindfulness practice from the catalogue, at its own length.
-      final id = _mindfulnessFallback(intent, readiness);
+      //
+      // Item 84 (bug 45): the catalogue one, and not called "your usual".
+      // It was labelled "YOUR USUAL · 15 MIN" for a practice the person had
+      // never done once — a number presented as their own history when it
+      // came out of a list. And the fallback ignored what was done today,
+      // so finishing a body scan could be answered by suggesting a body
+      // scan.
+      final id = _mindfulnessFallback(intent, readiness, todaysFinished);
+      final catalogueMinutes = activityById(id)?.dur;
       return HomeSuggestion(
         activityId: id,
         heading: 'Suggested activity',
         reason: suggestedReasonFor(intent, readiness),
-        minutes: activityById(id)?.dur ?? kSuggestedMaxMinutes,
-        meta: 'YOUR USUAL · ${activityById(id)?.dur ?? 0} MIN',
+        minutes: catalogueMinutes ?? kSuggestedMaxMinutes,
+        meta: catalogueMinutes == null ? null : '$catalogueMinutes MIN',
         offerPin: true,
         setsTarget: false,
       );

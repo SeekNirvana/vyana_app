@@ -77,7 +77,12 @@ Future<void> reconnectWithFeedback(
   try {
     connected = await c
         .reconnectSavedRing(force: true)
-        .timeout(kReconnectTimeout, onTimeout: () => c.isConnected);
+        .timeout(kReconnectTimeout, onTimeout: () {
+      // Item 84 (bug 48): the pill has to stop saying CONNECTING at the
+      // same moment the snack bar says it did not work.
+      c.giveUpUserReconnect();
+      return c.isConnected;
+    });
   } on Object catch (error) {
     debugPrint('Reconnect with feedback failed: $error');
   }

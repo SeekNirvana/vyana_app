@@ -884,6 +884,14 @@ enum MissingNightReason {
 
   /// A night is on the record but the recording stopped early.
   stoppedEarly,
+
+  /// The ring measured across the night but produced no sleep record.
+  ///
+  /// Item 84 (bug 36): this used to be reported as "ring not worn", which
+  /// is contradicted by the readings sitting in the history. Telling
+  /// someone they did not wear a ring they did wear sends them to fix the
+  /// wrong thing, and makes every other reason harder to believe.
+  noSleepDetected,
 }
 
 extension MissingNightReasonCopy on MissingNightReason {
@@ -897,6 +905,7 @@ extension MissingNightReasonCopy on MissingNightReason {
     MissingNightReason.batteryDied => 'ring battery died',
     MissingNightReason.notWorn => 'ring not worn',
     MissingNightReason.stoppedEarly => 'recording stopped early',
+    MissingNightReason.noSleepDetected => 'no sleep detected overnight',
   };
 
   /// What the user can check, for the "name what to check" rule in item 51.
@@ -907,6 +916,9 @@ extension MissingNightReasonCopy on MissingNightReason {
     MissingNightReason.batteryDied => 'charge the ring before bed',
     MissingNightReason.notWorn ||
     MissingNightReason.stoppedEarly => 'wear the ring overnight',
+    // It was worn and it was reading. Snugness is the thing that stops a
+    // ring finding sleep in readings it did take.
+    MissingNightReason.noSleepDetected => 'wear the ring a little snugger',
   };
 }
 
@@ -973,7 +985,10 @@ MissingNightReason missingNightReasonFor({
   if (!ringMeasuredBetween(history, window.start, window.end)) {
     return flat ? MissingNightReason.batteryDied : MissingNightReason.notWorn;
   }
-  return MissingNightReason.notWorn;
+  // Item 84 (bug 36): the ring *did* measure across the night, so "not
+  // worn" is contradicted by the app's own history. It was on the finger
+  // and reading; it simply did not produce a night.
+  return MissingNightReason.noSleepDetected;
 }
 
 /// The single readiness computation, so Home's score and the Metrics chart
