@@ -395,6 +395,28 @@ class _SleepDayAnalytics extends StatelessWidget {
         _SleepVitalsPanel(vitals: vitals, average: false),
         const SizedBox(height: 16),
         _SleepSectionsPanel(day: day),
+        // Item 92: where the ring recorded nothing, named with its times.
+        // "Not recorded" in the breakdown answers how much; this answers
+        // when, which is what tells someone it was the hour their ring sat
+        // on the charger.
+        //
+        // This lives here, in _SleepDayAnalytics, because that is what the
+        // sleep screen actually builds. The first version went into
+        // SleepDayCard, which is declared further down this file and used
+        // nowhere — so the line compiled, read correctly, and could never
+        // appear. The release manifest caught it.
+        if (day.notRecorded.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          for (final gap in day.notRecorded)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                'The ring recorded nothing '
+                '${timeOfDayLabel(gap.from)}-${timeOfDayLabel(gap.to)}',
+                style: VyanaType.caption.copyWith(color: t.textSec),
+              ),
+            ),
+        ],
       ],
     );
   }
@@ -1060,19 +1082,6 @@ class SleepDayCard extends StatelessWidget {
                         'spent awake in bed counts as light sleep.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            // Item 92: where the ring recorded nothing, named with its
-            // times. "Not recorded · 40m" in the breakdown answers how
-            // much; this answers when, which is what tells someone it was
-            // the hour their ring sat on the charger.
-            if (day.notRecorded.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              for (final gap in day.notRecorded)
-                Text(
-                  'The ring recorded nothing '
-                  '${timeOfDayLabel(gap.from)}–${timeOfDayLabel(gap.to)}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-            ],
             const SizedBox(height: 12),
             SleepWaveform(day: day),
             const SizedBox(height: 12),

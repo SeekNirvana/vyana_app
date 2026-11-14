@@ -1,21 +1,114 @@
 # Changelog
 
-## v1.1.6 — 2026-11-14 · Which model, where it thinks, and what it costs
+## v1.1.6 — 2026-11-15 · What the app knows, and what it only claimed
 
-Three problems were reported against v1.1.5 and turned out to share a cause:
-screens asserted things the settings below them no longer controlled. Looking
-for that shape on purpose found six more of them, and then the bugs
-underneath — a validator that made any model under 1.5 GB uninstallable, a
-load order that took the whole phone down, a chat an endpoint user could not
-open, and a model picker that downloaded something other than what it named.
+This release started as a model-selection fix and became an audit. Three
+problems reported against v1.1.5 shared a cause: screens asserted things the
+settings below them no longer controlled. Looking for that shape on purpose
+found six more, and then the bugs underneath — a validator that made any
+model under 1.5 GB uninstallable, a load order that took the whole phone
+down, a chat an endpoint user could not open, and a model picker that
+downloaded something other than what it named.
 
-Two of those were introduced inside this release and caught before it
-shipped. One claim this entry made about a model's quality turned out to be
-wrong about its cause, and is corrected below rather than quietly dropped.
-Nova's conversations are also kept now, which is the one thing here that is
-a feature rather than a correction.
+Reading the rest of the app for the same shape found forty more, and they
+turned out to be one shape: the app told you things it could not back. A
+night's length that did not match the times above it. "YOUR USUAL · 15 MIN"
+for a practice never done once. A readiness word that meant one thing on
+screen and another in the notification about it. "Nova runs entirely on your
+phone", with your own server configured. A Cloud sync switch with nothing
+behind it. A greyed-out Pair button with no reason. Nine actions that failed
+without a word.
+
+Two things from this release were introduced inside it and caught before it
+shipped. One claim an earlier draft of this entry made about a model's
+quality was wrong about its cause, and is corrected below rather than
+quietly dropped.
+
+The largest single change is that your history can now be backed up and
+restored, because until now deleting the app deleted it and no platform
+backup held a copy.
 
 ### Fixed
+
+- **A night's length did not match the times above it.** Fell asleep 00:07,
+  woke 09:00, awake 0m, sleep length 8h 05m — 48 minutes unaccounted for.
+  The times were the ring's first and last sleep record; the length added up
+  only minutes labelled deep, light or REM. Unlabelled minutes were counted
+  as neither sleep nor awake and simply vanished. Sleep length is now fell
+  asleep to woke up minus awake minutes: unlabelled time the ring was still
+  taking readings through is unstaged sleep, and time with no readings at
+  all is not counted and is named. Twenty-eight call sites each worked the
+  night out for themselves; they all read one answer now.
+- **Upgrading from schema 4 or older never opened the database.** The
+  migration created the ring-orders table with its current columns and then
+  added three of them again, so `onUpgrade` threw "duplicate column name"
+  and the app was dead on launch with every record intact and unreachable.
+- **A planned practice claimed a length the app did not know.** "YOUR USUAL
+  · 15 MIN" appeared for practices never done once, and My week's picker put
+  a length beside every practice as though the plan set one. A length is now
+  shown only when it is the person's own — three sessions, not one — or when
+  the practice is timed, where it is a fact about the practice.
+- **The notification and the widget used different readiness words.** A 68
+  was "Balanced" on screen and "Steady" in the notification about the same
+  reading, on different cut-offs. One set of words now, and the colour comes
+  from the same function as the word so they cannot disagree. A score built
+  from HRV with no night behind it reads as a partial read on all three
+  surfaces instead of earning a verdict.
+- **Health values were on the lock screen.** The ongoing notification
+  carried heart rate, SpO₂ and HRV, and alerts name values; none set a
+  lock-screen visibility and the foreground plugin defaults to public.
+- **The session map fetched tiles before you asked.** Zoom-16 tiles of the
+  live route went to OpenStreetMap from the moment a GPS session started,
+  which tells a third party roughly where you are every few seconds. It
+  waits for "Show map" now, and the privacy panel says what that tap does.
+- **Tapping Save twice saved twice** — and popped twice, the second pop
+  closing whatever screen had come up underneath.
+- **Nova showed canned text as if she wrote it**, and "Ask Nova again"
+  overwrote a real reflection with it on any error. Nothing becomes a
+  reflection now unless Nova said it.
+- **Your own AI server was sent your health data with none of Nova's
+  instructions**, and an API key followed a changed address — the secret for
+  one server went to whatever host was typed next. There is now one line
+  before the first message to a server, naming both halves of what travels.
+- **WalletConnect started at launch** on every non-Solana phone, opening
+  relay connections and asking Reown's API whether to report on you, before
+  anyone had been near the Wallet screen.
+- **Android asked for "Allow all the time" location on every session.** The
+  foreground service needs only "while using"; the extra permission bought
+  nothing and is a common reason for Play Store rejection.
+- **An overnight sync could drop stored sleep from the cache**, because the
+  cache was saved from the sync's own history, which deliberately has no
+  sleep in it.
+- **Session minutes differed between four screens.** The summary excluded
+  pauses; everything else counted end minus start. Three fifty-second
+  sessions summed to "0m".
+- **Nine actions failed without a word** — a ring already paired in system
+  Bluetooth skipped setup, a failed rename showed the new name anyway, a
+  snack-bar Retry did nothing once its screen had closed, Resume on a
+  recovered session failed silently, "Allow" on the battery card hid it
+  forever whether or not settings opened, Begin on one practice opened
+  another, and an SDK that would not start left Pair greyed with no reason.
+- **"Your normal" asked about questions it had never put** — three options,
+  no values, for vitals Metrics had not asked about. It now says what it is,
+  shows only what was asked, and shows the numbers behind it.
+- **The sync log grew forever**, with the ring's MAC address in it and a
+  hard-coded `/data/user/0/…` path. It keeps seven days and drops the
+  address.
+- **iPhone was promised a background service it has not got**, and alerts
+  never asked for permission — the switches defaulted on and nothing
+  arrived. GPS also stopped when the phone locked, because
+  `allowBackgroundLocationUpdates` was set with no `location` background
+  mode.
+- **The iPhone app was named "Test Vyana"**, and its widget used another
+  app's app group.
+- **Smaller gaps from v1.1.5's items:** editing any month confirmed the
+  latest period; a failed sync left "Reading last night…" until noon; a
+  night the ring had measured was reported as "ring not worn"; charging
+  never withdrew a standing out-of-reach alert and a stale "charging" muted
+  alerts indefinitely; the scheduled battery alert ignored charging; and the
+  pill said CONNECTING after the reconnect had already been called a
+  failure.
+
 
 - **A model smaller than Gemma could never install.** The download validator
   read `fileLength > 1500 * 1024 * 1024`, commented "Gemma models are
@@ -86,6 +179,31 @@ a feature rather than a correction.
 
 ### Added
 
+- **Your data: back up, restore, and where your history lives.** Deleting the
+  app deleted everything, and neither Android nor iPhone tells an app it is
+  being removed. One encrypted file now holds the whole vault — ring history,
+  sessions, journal, meals, cycle, patterns, the weekly plan and Nova's
+  conversations — with AES-256-GCM and a key from your passphrase through
+  Argon2id. Vyana never stores the passphrase and says so once: without it
+  the backup cannot be opened. Restore is offered on a phone with nothing on
+  it, before profile setup, and again in You → Your data. A backup from a
+  newer version says "Update Vyana first" rather than failing; a wrong
+  passphrase and a damaged file are told apart, because they send you to
+  different places. Weekly automatic backup is there and off by default.
+- **Exports can be reached.** They were written to Application Support,
+  which Files cannot see, and the only action was "Copy path" — the file
+  existed and there was no way to get it. Every export now goes through the
+  system sheet, and the saved-path panel gained a Share button so a sheet
+  closed by accident does not mean exporting again.
+- **"Not today" on a planned practice.** A planned practice stayed on Home
+  until done or 22:00, and the only way to change it was editing My week,
+  which changes it every week. It can now be stood down for today alone,
+  with Undo, and the plan is untouched.
+- **A night says when the ring recorded nothing.** Where minutes used to
+  vanish, the breakdown says "Not recorded" and the sleep screen names the
+  times.
+
+
 - **Conversations are kept.** The chat lived in the chat screen's own state:
   leaving the screen dropped every word of it. It is now written to the local
   vault as it happens, and the chat's app bar opens **Conversations** — each
@@ -106,6 +224,38 @@ the user's own numbers, the question and the reply — replaying a stored
 conversation into that would cost the room the next answer needs.
 
 ### Changed
+
+- **The vault moved to app-private storage.** It was under
+  `Android/data/com.seeknirvana.vyana/files`, which is readable over USB and
+  adb on every Android version. Ring history, journal and cycle days are
+  app-private now; model and voice downloads stay where they were, since
+  they are public weights and run to gigabytes. The move copies, verifies
+  every byte, and keeps the old copy until a later launch has proved the new
+  one.
+- **Vyana is excluded from Google and iCloud backups**, which were taking
+  the vault to a cloud nobody had opted into. Backing up is now something
+  you do on purpose, with a passphrase only you hold.
+- **Ordering a ring happens on the website.** The in-app checkout put the
+  buyer's country and a free-text message into a public, permanent Solana
+  memo while collecting no name, address or phone — an order could be paid
+  for and undeliverable.
+- **The baseline answers are renamed everywhere:** This is normal for me ·
+  Keep flagging it · Ask me later. "It is a real signal" did not say what it
+  does. Behaviour is unchanged.
+- **Two unused Android permissions are gone**, along with the service one of
+  them existed for. `SCHEDULE_EXACT_ALARM` is no longer declared by this
+  app, though it remains in the merged manifest: the ring SDK declares it
+  for itself, and forcing it out would leave a vendor blob calling
+  `setExact` without it.
+- **About and Privacy describe this release.** Several lines had stopped
+  being true, and the connections that carry data outward — your own AI
+  server, backups, exports, map tiles — were not all listed. The positioning
+  is unchanged: no account, nothing uploaded to SeekNirvana servers, no sale
+  of data, never a platform-owned dataset.
+- **The Cloud sync row is gone.** It was a switch with no backend, and
+  "not yet live" under a switch somebody has turned on is a thing they will
+  reasonably forget they read.
+
 
 - **One screen for Nova's model, in the order the choices happen.** The AI
   settings were three screens with overlapping jobs and five doors between
@@ -253,9 +403,15 @@ conversation into that would cost the room the next answer needs.
 
 ### Known
 
-- Nova's voice is mirrored but not yet pinned: run **Actions → Mirror Nova's
-  voice** once, then paste the printed list into `kNovaVoiceFiles`. Until
-  then Speaking reads "Not in this build yet" and replies stay on screen.
+- Nothing in this release has been run on a phone. Everything above was
+  checked by test and by reading the built APK; the fixes that need a night,
+  a walk or a ring are listed as unverified in the handover and stay there
+  until a device confirms them.
+- PRANA rings are still not discovered on Android by this app, while an
+  iPhone sees them. The ring SDK's scanner rejects a device whose cached
+  name is empty and requires one of five manufacturer prefixes; a patch
+  exists and is deliberately not in this release, because it has not been
+  tested against a real ring.
 - Gemma E2B wants 6 GB of memory and is the only on-device model this
   release ships. On a smaller phone the endpoint is the honest answer, and
   the screen says so on the row that offers the download. A second, smaller
