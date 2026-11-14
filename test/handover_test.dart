@@ -1901,4 +1901,33 @@ void main() {
       expect(screen, contains('ringOrdersProvider'));
     });
   });
+
+  group('health data does not go to Google backup', () {
+    String android(String relative) => File.fromUri(
+          Directory.current.uri.resolve('android/app/src/main/$relative'),
+        ).readAsStringSync();
+
+    test('backup is off, not merely unconfigured', () {
+      // Item 54: with no attribute at all Android defaults to ON, so the
+      // vault — ring history, journal, cycle days — could be copied to the
+      // user's Google Drive. "On this phone only" has to be true in the
+      // manifest, not just in the copy.
+      final manifest = android('AndroidManifest.xml');
+      expect(manifest, contains('android:allowBackup="false"'));
+      expect(manifest, contains('android:dataExtractionRules='));
+    });
+
+    test('the rules send nothing to the cloud, and allow a phone swap', () {
+      // A phone-to-phone transfer never leaves the user's own hands, and
+      // losing years of history on a new handset is its own data loss.
+      final rules = android('res/xml/data_extraction_rules.xml');
+      expect(rules, contains('<cloud-backup>'));
+      for (final domain in ['root', 'file', 'database', 'sharedpref']) {
+        expect(rules, contains('<exclude domain="$domain" />'),
+            reason: '$domain must not reach the cloud');
+      }
+      expect(rules, contains('<device-transfer>'));
+      expect(rules, contains('<include domain="database"'));
+    });
+  });
 }

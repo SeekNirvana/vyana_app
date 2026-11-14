@@ -151,6 +151,13 @@ conversation into that would cost the room the next answer needs.
   combination sherpa-onnx refuses: every sentence came back as an empty
   waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
   less to download — 341 MB, not the 355 MB the prompt used to quote.
+- **Android no longer copies your health data to Google Drive.** The manifest
+  set no backup attribute, and Android's default is on — so the vault, with
+  ring history, journal entries and cycle days, could be uploaded to your
+  Drive. Nobody chose that, it contradicts "on this phone only", and on the
+  14 Nov reinstall nothing came back from it anyway. Cloud backup is off and
+  every data domain excluded; a phone-to-phone transfer is still allowed,
+  because that never leaves your own hands.
 - **Buying a ring happens on seeknirvana.com now, on every phone.** The
   in-app checkout wrote your shipping country and a free-text message into
   the Solana memo — public and permanent, and where people reasonably typed
