@@ -142,13 +142,15 @@ conversation into that would cost the room the next answer needs.
 - **The RAM warning sits on the model row it concerns**, with the phone's
   measured memory in it, instead of a banner above a screen that also serves
   people running no local model at all.
-- **Nova's voice is mirrored on our own GitHub release.** It had never been
-  downloadable: the pinned list was empty and the host it named did not serve
-  it, so v1.1.5 shipped a voice that could not arrive. The pinning does the
-  work a trusted host would — every file carries a SHA-256 checked after
-  download and again before first load — so what was left to choose on was
-  availability and cost. `mirror-voice.yml` fetches the pack, publishes it and
-  prints the `PinnedAsset` list with real digests.
+- **Nova's voice can arrive now, and speak when it does.** It had never been
+  downloadable: the pinned list was empty, so v1.1.5 shipped a voice that
+  could not be fetched. The four files are hosted on seeknirvana.com and
+  pinned by SHA-256, checked after download and again before first load.
+- **The voice would not have spoken even once the files were there.** The
+  runtime was handed an espeak-ng directory and no lexicon, which is the one
+  combination sherpa-onnx refuses: every sentence came back as an empty
+  waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
+  less to download — 341 MB, not the 355 MB the prompt used to quote.
 
 - **The chat's app bar plus no longer opens the AI settings.** It was a
   leftover from the guide library and the fourth way into a screen You already

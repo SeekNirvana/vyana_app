@@ -76,14 +76,18 @@ class NovaVoiceService {
       }
 
       final dir = await novaVoiceDirectory();
-      final dataDir = p.join(dir, kNovaVoiceDataDir);
       final config = sherpa.OfflineTtsConfig(
         model: sherpa.OfflineTtsModelConfig(
           kokoro: sherpa.OfflineTtsKokoroModelConfig(
             model: p.join(dir, kNovaVoiceModelFile),
             voices: p.join(dir, kNovaVoiceVoicesFile),
             tokens: p.join(dir, kNovaVoiceTokensFile),
-            dataDir: dataDir,
+            // Not `dataDir`. sherpa-onnx 2.0.1 tokenises Kokoro through the
+            // lexicon only: with an espeak directory and no lexicon every
+            // sentence fails with "No lexicon available" and generate()
+            // hands back an empty waveform — silence that looks like a
+            // working voice. See nova_voice_assets.dart.
+            lexicon: p.join(dir, kNovaVoiceLexiconFile),
           ),
           numThreads: 2,
           debug: false,

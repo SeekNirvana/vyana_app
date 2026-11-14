@@ -1115,10 +1115,23 @@ void main() {
     });
 
     test('the install prompt states the real size, in MB', () {
-      // 355 MB, not the 90 MB an int8 build would have been. "0.35 GB"
-      // reads as a rounding error, so anything under a gigabyte is MB.
+      // Measured from the files, not estimated: the sum of what is pinned,
+      // so the prompt and the download cannot disagree. "0.34 GB" reads as
+      // a rounding error, so anything under a gigabyte is MB.
       expect(kNovaVoiceApproxBytes, greaterThan(300 * 1024 * 1024));
-      expect(novaVoiceApproxSizeLabel, '355 MB');
+      final pinned = kNovaVoiceFiles.fold<int>(0, (sum, a) => sum + a.bytes);
+      expect(kNovaVoiceApproxBytes, pinned);
+      expect(novaVoiceApproxSizeLabel, endsWith(' MB'));
+    });
+
+    test('the lexicon is pinned, and espeak-ng data is not', () {
+      // sherpa-onnx 2.0.1 tokenises Kokoro through the lexicon only. Pinning
+      // the espeak directory instead — which is what this did — downloads
+      // 18 MB the runtime never opens and leaves generate() returning an
+      // empty waveform for every sentence.
+      final names = kNovaVoiceFiles.map((a) => a.name).toList();
+      expect(names, contains(kNovaVoiceLexiconFile));
+      expect(names.any((n) => n.contains('espeak')), isFalse);
     });
 
   });
@@ -1646,32 +1659,20 @@ void main() {
 
 
   group("Nova's voice is fetched from one place, by digest", () {
-    test('mirrored on our own GitHub release', () {
-      expect(kNovaVoiceHost, 'github.com');
-      expect(kNovaVoiceReleaseTag, startsWith('voice-'));
+    test('hosted on our own site', () {
+      expect(kNovaVoiceHost, 'seeknirvana.com');
+      expect(kNovaVoiceBasePath, startsWith('/resources/'));
+      // No trailing slash: the site 308-redirects `/resources/` to
+      // `/resources`, and a download that needs a redirect to start is a
+      // download with one more way to fail.
+      expect(kNovaVoiceBasePath, isNot(endsWith('/')));
     });
 
-    test('the redirect rule follows a domain, not a hostname', () {
-      // GitHub has already moved this once — objects.githubusercontent.com
-      // became release-assets.githubusercontent.com. Pinning the exact host
-      // would turn their next rename into every download failing on a
-      // phone. Nobody else can register under the domain, and the SHA-256
-      // is what decides whether what arrives gets used.
-      expect(kNovaVoiceRedirectSuffix, '.githubusercontent.com');
-      for (final host in [
-        'release-assets.githubusercontent.com',
-        'objects.githubusercontent.com',
-      ]) {
-        expect(host.endsWith(kNovaVoiceRedirectSuffix), isTrue, reason: host);
-      }
-      for (final host in [
-        'githubusercontent.com.evil.test',
-        'notgithubusercontent.com',
-        'cdn.example.com',
-      ]) {
-        expect(host.endsWith(kNovaVoiceRedirectSuffix), isFalse,
-            reason: host);
-      }
+    test('the build actually has a voice to fetch', () {
+      // This was empty for the whole of v1.1.5 and most of v1.1.6, which is
+      // why nothing Vyana said was ever heard.
+      expect(kNovaVoiceFiles, isNotEmpty);
+      expect(novaVoiceConfigured, isTrue);
     });
 
     test('every pinned file is on that host, by digest', () {
@@ -1680,9 +1681,26 @@ void main() {
         final uri = Uri.parse(asset.url);
         expect(uri.scheme, 'https');
         expect(uri.host, kNovaVoiceHost);
-        expect(uri.path, contains(kNovaVoiceReleaseTag));
+        expect(uri.path, startsWith(kNovaVoiceBasePath));
+        expect(uri.path, contains(kNovaVoiceVersion));
+        expect(uri.path, endsWith(asset.name));
         expect(asset.sha256, matches(RegExp(r'^[0-9a-f]{64}$')));
         expect(asset.bytes, greaterThan(0));
+      }
+    });
+
+    test('every file the runtime loads is one of the pinned ones', () {
+      // The gap this closes: the config asked for a path that nothing
+      // downloaded, so the voice could never have loaded even once the
+      // files were hosted.
+      final names = kNovaVoiceFiles.map((a) => a.name).toSet();
+      for (final needed in [
+        kNovaVoiceModelFile,
+        kNovaVoiceVoicesFile,
+        kNovaVoiceTokensFile,
+        kNovaVoiceLexiconFile,
+      ]) {
+        expect(names, contains(needed), reason: needed);
       }
     });
   });

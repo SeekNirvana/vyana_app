@@ -17,14 +17,33 @@
 /// * **App-private storage**, so deleting Nova deletes the voice with it.
 ///
 /// **The exact artifact.** `kokoro-en-v0_19` from sherpa-onnx's pretrained
-/// TTS models — English, 11 voices, full fp32 weights:
+/// TTS models — English, 11 voices, full fp32 weights — plus the English
+/// lexicon published alongside it on the same release:
 ///
-/// | File | Size |
-/// |---|---|
-/// | `model.onnx` | 330 MB |
-/// | `voices.bin` | 5.5 MB |
-/// | `tokens.txt` | 1.1 KB |
-/// | `espeak-ng-data/` | ~18 MB |
+/// | File | Bytes | Source |
+/// |---|---|---|
+/// | `model.onnx` | 345,555,491 | `kokoro-en-v0_19.tar.bz2` |
+/// | `voices.bin` | 5,755,904 | `kokoro-en-v0_19.tar.bz2` |
+/// | `tokens.txt` | 1,078 | `kokoro-en-v0_19.tar.bz2` |
+/// | `lexicon-en-us.txt` | 6,305,773 | published beside the pack |
+///
+/// **The lexicon is not optional, and `espeak-ng-data` is not used.** The
+/// pack ships an 18 MB `espeak-ng-data/` directory and this file used to
+/// pin it. It was never reachable: sherpa-onnx 2.0.1 tokenises Kokoro
+/// through a lexicon and nothing else, so a config carrying `dataDir` and
+/// no `lexicon` fails every sentence with "No lexicon available" and
+/// returns an empty waveform. Measured both ways against this exact model:
+/// lexicon alone and lexicon-plus-espeak produce byte-identical sample
+/// counts, and espeak alone produces none. So the espeak directory is not
+/// hosted, not downloaded and not referenced — 18 MB nobody would have
+/// heard, and a tarball nothing ever unpacked.
+///
+/// One consequence worth knowing: a word outside the lexicon's ~168,000
+/// entries is skipped rather than guessed at. The sentence around it still
+/// speaks. Sanskrit practice names (`pranayama`, `savasana`, `nadi`) are
+/// among the missing, as is `HRV` — the lexicon is plain
+/// `word || phones` text on our own host, so those are entries to add
+/// rather than a limit to live with.
 ///
 /// **Deliberately not quantised.** int8 roughly thirds the model but its
 /// spectral correlation against fp32 is about 0.92 — audible, and this is a
@@ -35,14 +54,14 @@
 /// English-only pack's `voices.bin` is 5.5 MB, which is where the real
 /// saving is.
 ///
-/// > **Packaging step, before this can ship.** [kNovaVoiceFiles] is empty
-/// > until the Kokoro release is mirrored on our own host. For each file:
-/// > take it from the official sherpa-onnx release, check it against the
-/// > checksum published with that release, upload that exact file to
-/// > `https://$kNovaVoiceHost/voices/kokoro/<version>/`, then record its URL,
-/// > its `sha256sum` and its size below. Until then [novaVoiceConfigured] is
-/// > false, no download is attempted, and the read-out feature is simply
-/// > unavailable — it never falls back to a system voice or a cloud one.
+/// > **Re-cutting this pin.** Take each file from the official sherpa-onnx
+/// > `tts-models` release, check the tarball against the SHA-256 GitHub
+/// > publishes for the asset, upload the four files above to
+/// > `https://$kNovaVoiceHost/resources/voices/kokoro/$kNovaVoiceVersion/`,
+/// > and record each one's URL, `sha256sum` and size below. While
+/// > [kNovaVoiceFiles] is empty [novaVoiceConfigured] is false, no download
+/// > is attempted, and reading aloud is simply unavailable — it never falls
+/// > back to a system voice or a cloud one.
 /// The only host Nova's voice may be fetched from. We mirror Kokoro's release
 /// ourselves so a third party cannot change what the app downloads.
 
@@ -57,7 +76,7 @@ import 'package:path/path.dart' as p;
 
 import 'vyana_storage_service.dart';
 
-/// The host Nova's voice is mirrored on: our own GitHub releases.
+/// The only host Nova's voice is fetched from: our own site.
 ///
 /// It is worth being clear about what this rule does and does not buy.
 /// Every file is pinned by SHA-256 in the build and verified after download
@@ -66,27 +85,16 @@ import 'vyana_storage_service.dart';
 /// model. The host restriction is availability and defence in depth, not
 /// the control that makes this safe.
 ///
-/// GitHub was chosen over a CDN of our own because the pinning makes the
-/// trust question moot, release assets are immutable per tag, and the
-/// bandwidth for a 355 MB file is free rather than a bill that grows with
-/// every install.
-const String kNovaVoiceHost = 'github.com';
+/// This used to be `github.com`, with a workflow that mirrored the pack onto
+/// our own releases. Hosting it where the rest of our downloads live is one
+/// fewer account to keep, one fewer URL shape to explain, and it ends the
+/// GitHub redirect hop the download code had to special-case.
+const String kNovaVoiceHost = 'seeknirvana.com';
 
-/// The domain GitHub serves release assets from, permitted as a single hop
-/// from [kNovaVoiceHost] and nowhere else.
-///
-/// A suffix rather than one host on purpose. GitHub has moved this at least
-/// once — it was `objects.githubusercontent.com` and is now
-/// `release-assets.githubusercontent.com` — and pinning the exact name
-/// would turn their next rename into every download failing on a phone with
-/// a message about a refused redirect. The suffix is a domain GitHub owns,
-/// so nobody else can register under it, and the SHA-256 on every file is
-/// what actually decides whether what arrives is used.
-const String kNovaVoiceRedirectSuffix = '.githubusercontent.com';
-
-/// The release tag the voice files hang off, separate from the app's own
-/// version tags so re-cutting an app release never touches them.
-const String kNovaVoiceReleaseTag = 'voice-kokoro-en-v0_19';
+/// Where the files sit under [kNovaVoiceHost], without a trailing slash —
+/// the site 308-redirects `/resources/` to `/resources`, and a download that
+/// needs a redirect to start is a download with one more way to fail.
+const String kNovaVoiceBasePath = '/resources/voices/kokoro';
 
 /// The Kokoro release this build is pinned to. Part of the stored path, so a
 /// new version lands beside the old one rather than half-overwriting it.
@@ -125,30 +133,62 @@ class PinnedAsset {
   final int bytes;
 }
 
-/// The files Kokoro needs through sherpa-onnx: the model, the voice
-/// embeddings, the token table and the espeak-ng data directory.
+/// The four files Kokoro needs through sherpa-onnx: the model, the voice
+/// embeddings, the token table and the English lexicon.
 ///
-/// Empty until the packaging step above is done. See the library doc.
-const List<PinnedAsset> kNovaVoiceFiles = <PinnedAsset>[];
+/// Digests taken from `kokoro-en-v0_19.tar.bz2` and `lexicon-en-us.txt` on
+/// sherpa-onnx's `tts-models` release, after checking the tarball against
+/// the SHA-256 GitHub publishes for it
+/// (`912804855a04745fa77a30be545b3f9a5d15c4d66db00b88cbcd4921df605ac7`).
+const List<PinnedAsset> kNovaVoiceFiles = <PinnedAsset>[
+  PinnedAsset(
+    name: kNovaVoiceModelFile,
+    url: 'https://seeknirvana.com/resources/voices/kokoro/kokoro-en-v0_19/'
+        'model.onnx',
+    sha256: '10ff414106a038ce7e9e0126c6461e4dc8a86efaa89dc91d2009d69fe635e339',
+    bytes: 345555491,
+  ),
+  PinnedAsset(
+    name: kNovaVoiceVoicesFile,
+    url: 'https://seeknirvana.com/resources/voices/kokoro/kokoro-en-v0_19/'
+        'voices.bin',
+    sha256: 'a372c67b056ef0b695c375d39b99630d23fb07ad4c8d87aa32a19a62fca523ad',
+    bytes: 5755904,
+  ),
+  PinnedAsset(
+    name: kNovaVoiceTokensFile,
+    url: 'https://seeknirvana.com/resources/voices/kokoro/kokoro-en-v0_19/'
+        'tokens.txt',
+    sha256: '4f31c71282d14af4e926cd12462078fe9d20d00c589e63fe2750a8f56d6d7f7b',
+    bytes: 1078,
+  ),
+  PinnedAsset(
+    name: kNovaVoiceLexiconFile,
+    url: 'https://seeknirvana.com/resources/voices/kokoro/kokoro-en-v0_19/'
+        'lexicon-en-us.txt',
+    sha256: '8b67ae549a465eee78f92ecb74644ad90c3c58ce65f19c68baf85878a10ef73a',
+    bytes: 6305773,
+  ),
+];
 
-/// The name of the ONNX model inside [kNovaVoiceFiles], once it is populated.
+/// The name of the ONNX model inside [kNovaVoiceFiles].
 /// Full-precision weights, as shipped — see the library doc on why.
 const String kNovaVoiceModelFile = 'model.onnx';
 const String kNovaVoiceVoicesFile = 'voices.bin';
 const String kNovaVoiceTokensFile = 'tokens.txt';
 
-/// The espeak-ng data directory, shipped as a tarball and expanded on first
-/// use. sherpa-onnx wants a directory path, not a file.
-const String kNovaVoiceDataArchive = 'espeak-ng-data.tar';
-const String kNovaVoiceDataDir = 'espeak-ng-data';
+/// How Kokoro is tokenised. Without this the runtime has no way to turn a
+/// sentence into tokens and every reply comes back as an empty waveform —
+/// see the library doc.
+const String kNovaVoiceLexiconFile = 'lexicon-en-us.txt';
 
-/// Roughly the model plus its data, for the install prompt: 330 MB of
-/// weights, 5.5 MB of voices and about 18 MB of espeak-ng data. Confirm
-/// against the real files on a device once they are packaged.
+/// The real total of [kNovaVoiceFiles], measured rather than estimated —
+/// 341 MB, not the 355 MB this guessed while it was also counting an
+/// espeak-ng directory the runtime never loads.
 ///
 /// This is large enough that it must stay an opt-in download the user asks
 /// for — never part of the APK, and never fetched on first launch.
-const int kNovaVoiceApproxBytes = 355 * 1024 * 1024;
+const int kNovaVoiceApproxBytes = 357618246;
 
 /// The download size as the UI should say it, so the prompt, the settings
 /// row and the progress bar cannot drift apart. MB below a gigabyte —
@@ -276,10 +316,13 @@ Future<void> downloadNovaVoice({
   }
 }
 
-/// GETs [uri], following at most one redirect, and only to a
-/// [kNovaVoiceRedirectSuffix] host — which is where GitHub serves release
-/// assets from. Hand-rolled rather than `followRedirects = true` so the hop
-/// is bounded and its destination is checked rather than trusted.
+/// GETs [uri], following at most one redirect, and only to [kNovaVoiceHost]
+/// itself. Hand-rolled rather than `followRedirects = true` so the hop is
+/// bounded and its destination is checked rather than trusted.
+///
+/// The hop is kept although our own host does not currently use one: a
+/// trailing-slash normalisation or a move behind a CDN on the same name
+/// would otherwise turn into every download failing on a phone.
 Future<HttpClientResponse> _getFollowingOneHop(
   HttpClient client,
   Uri uri,
@@ -303,13 +346,10 @@ Future<HttpClientResponse> _getFollowingOneHop(
     throw HttpException('Redirect without a location', uri: uri);
   }
   final next = uri.resolve(location);
-  final allowed = next.host == kNovaVoiceHost ||
-      next.host.endsWith(kNovaVoiceRedirectSuffix);
-  if (next.scheme != 'https' || !allowed) {
+  if (next.scheme != 'https' || next.host != kNovaVoiceHost) {
     throw StateError(
-      'Nova voice download redirected to ${next.host}, which is neither '
-      '$kNovaVoiceHost nor a $kNovaVoiceRedirectSuffix host — refusing to '
-      'follow it.',
+      'Nova voice download redirected to ${next.host}, which is not '
+      '$kNovaVoiceHost — refusing to follow it.',
     );
   }
 
