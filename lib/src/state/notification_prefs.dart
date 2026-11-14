@@ -348,6 +348,22 @@ const int kBatteryRecoveredPercent = 30;
 /// often than a ring stays offline for two hours, and an alert that resets on
 /// every launch never fires. Shared by both isolates, so neither can fire an
 /// alert the other has already sent.
+/// Everything the alert checks remember, so unpairing can forget all of it.
+///
+/// Item 64: unpair cleared the ring but not the state that decides whether
+/// to warn about one, so "Nothing is reading you right now" arrived about a
+/// ring that had been removed — which reads as the app watching something
+/// that is not there.
+const List<String> kRingAlertStateKeys = [
+  'vyana.ring.alert.offlineSince',
+  'vyana.ring.alert.offlineFired',
+  'vyana.ring.alert.lowBatteryFiredAt',
+  'vyana.ring.alert.overnightBatteryFiredOn',
+  'vyana.ring.alert.staleFired',
+  'vyana.ring.alert.healthFiredAt',
+  'vyana.ring.alert.snapshot',
+];
+
 class _AlertKeys {
   static const offlineSince = 'vyana.ring.alert.offlineSince';
   static const offlineFired = 'vyana.ring.alert.offlineFired';
@@ -376,6 +392,14 @@ int _dayStamp(DateTime at) => at.year * 10000 + at.month * 100 + at.day;
 /// BLE stack, so the foreground-service isolate can run it on every heartbeat
 /// without waking the UI isolate. It needs SharedPreferences and the
 /// notifications plugin, both of which work in a background isolate.
+/// Whether this platform decides the stale and offline alerts live.
+///
+/// Android runs a foreground service that can evaluate the real state;
+/// iOS has no background timer, so there the alert must be scheduled in
+/// advance or it never happens at all. Running both is what made them
+/// arrive twice.
+bool get liveChecksRunHere => !kIsWeb && Platform.isAndroid;
+
 /// How old a snapshot may be before the service stops believing it.
 ///
 /// Item 63: the service isolate judges alerts from a snapshot only the app
@@ -416,10 +440,18 @@ Future<void> evaluateRingAlerts({
     // asUnknown clears it so the check declines rather than deciding from
     // a number that stopped moving hours ago.
     await _evaluateBattery(usable, store, notify, at);
-    await _evaluateStaleSync(usable, store, notify);
-    // Offline is the one that must still run. A frozen `connected: true`
-    // is precisely why an out-of-range ring went unreported all night.
-    await _evaluateOffline(usable, store, notify, at);
+
+    // Item 64: stale and offline are also handed to the OS as scheduled
+    // notifications, and the scheduled path never set the "already fired"
+    // flags — so both arrived, about the same ring, minutes apart. One
+    // path each. iOS has no background timer (bug 47), so there the
+    // schedule is the only thing that can fire; Android has the service,
+    // which can look at what is actually true now rather than what was
+    // predicted hours ago.
+    if (liveChecksRunHere) {
+      await _evaluateStaleSync(usable, store, notify);
+      await _evaluateOffline(usable, store, notify, at);
+    }
   }
 
   if (prefs.healthAlerts && !stale) {

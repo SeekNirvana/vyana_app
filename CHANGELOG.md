@@ -151,6 +151,16 @@ conversation into that would cost the room the next answer needs.
   combination sherpa-onnx refuses: every sentence came back as an empty
   waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
   less to download — 341 MB, not the 355 MB the prompt used to quote.
+- **Unpairing a ring stops the alerts about it.** Unpair and reset cleared
+  the ring but not the notifications already handed to the OS, nor the
+  flags that decide whether to warn about one — so "Nothing is reading you
+  right now" arrived about a ring that had been removed. Both are cleared
+  now.
+- **The stale and out-of-range alerts stop arriving twice.** Each was both
+  scheduled in advance and checked live, and the scheduled one never
+  recorded that it had fired. One path each now: scheduled on iPhone,
+  which has no background timer, and checked live on Android, which has a
+  service that can see what is actually true.
 - **Overnight alerts work from what is known, not what was true at
   bedtime.** The background service judged alerts from a snapshot only the
   app writes, so once your phone suspended Vyana the readings stopped

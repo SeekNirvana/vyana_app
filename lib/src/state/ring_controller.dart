@@ -718,12 +718,16 @@ class RingController extends ChangeNotifier {
       _isConnecting = false;
       _lastConnectionConfirmedAt = DateTime.now();
       _reconnectFailedThisLaunch = false;
-      // Bug 6: re-arm the offline alert from this moment, so two hours out of
-      // reach is announced even if the app never runs again in between.
-      unawaited(
-        VitalsNotificationService.instance
-            .scheduleRingOfflineAlert(DateTime.now()),
-      );
+      // Bug 6: re-arm the offline alert from this moment, so two hours out
+      // of reach is announced even if the app never runs again in between.
+      // Item 64: only where the schedule is the only path. On Android the
+      // service checks it live, and arming both is why it arrived twice.
+      if (!liveChecksRunHere) {
+        unawaited(
+          VitalsNotificationService.instance
+              .scheduleRingOfflineAlert(DateTime.now()),
+        );
+      }
       _resetReconnectBackoff();
       if (deviceInfo != null) {
         _selectedDevice = deviceInfo;
@@ -1258,6 +1262,16 @@ class RingController extends ChangeNotifier {
     await prefs.remove(_healthMonitoringEnabledKey);
     await prefs.remove(_healthMonitoringIntervalKey);
     await prefs.remove(_healthMonitoringAckKey);
+
+    // Item 64: a removed ring must stop being watched. Two separate things
+    // outlived it — notifications already handed to the OS, which arrive
+    // whatever the app thinks, and the flags that decide whether to warn
+    // about a ring at all. Without both, "Nothing is reading you right
+    // now" turned up about a ring that had been unpaired.
+    await VitalsNotificationService.instance.cancelRingAlerts();
+    for (final key in kRingAlertStateKeys) {
+      await prefs.remove(key);
+    }
     await _historyCache?.clearAll();
     await _historyLogger.clear();
     if (_disposed) return;
@@ -1419,10 +1433,12 @@ class RingController extends ChangeNotifier {
       // Bug 6 (2): the 24-hour stale alert is handed to the OS, so it arrives
       // even if the app never runs again before then. Re-armed here, which is
       // the only place a sync is known to have succeeded.
-      unawaited(
-        VitalsNotificationService.instance
-            .scheduleStaleRingAlert(DateTime.now()),
-      );
+      if (!liveChecksRunHere) {
+        unawaited(
+          VitalsNotificationService.instance
+              .scheduleStaleRingAlert(DateTime.now()),
+        );
+      }
       unawaited(_persistHistoryToCache(result));
       final deviceForStore = _selectedDevice ?? _pairedRing?.toDeviceMap();
       if (deviceForStore != null) {

@@ -224,6 +224,24 @@ class VitalsNotificationService {
     } on Object catch (_) {}
   }
 
+  /// Takes back every ring alert already handed to the OS.
+  ///
+  /// Item 64: a scheduled notification outlives the thing it is about. The
+  /// ring can be unpaired, reset, or given away, and the OS will still
+  /// deliver "Nothing is reading you right now" at the appointed hour
+  /// unless it is told otherwise.
+  Future<void> cancelRingAlerts() async {
+    await cancelStaleRingAlert();
+    await cancelRingOfflineAlert();
+    for (final id in const [4301, 4302, 4303, 4306, 4307]) {
+      try {
+        await _plugin.cancel(id);
+      } on Object catch (_) {
+        // One that was never scheduled is not an error.
+      }
+    }
+  }
+
   Future<void> cancelRingOfflineAlert() async {
     try {
       await _plugin.cancel(_ringOfflineId);
