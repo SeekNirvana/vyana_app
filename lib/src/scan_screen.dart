@@ -100,6 +100,21 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
     });
 
     try {
+      // Before permissions: with the radio off the scan returns nothing and
+      // the screen said "Scanning for PRANA rings" until it gave up, which
+      // reads as "no ring found" rather than "turn Bluetooth on".
+      if (await widget.repo.bluetoothState() == BluetoothState.off) {
+        final shown = await widget.repo.requestEnableBluetooth();
+        if (!mounted) return;
+        setState(() {
+          _status = 'Bluetooth is off';
+          _scanHint = shown
+              ? 'Turn it on and scan again.'
+              : 'Turn Bluetooth on in Settings, then scan again.';
+        });
+        return;
+      }
+
       final scanAccess = await widget.repo.ensureScanAccess();
       if (!scanAccess.granted) {
         if (!mounted) return;

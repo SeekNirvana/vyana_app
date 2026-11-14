@@ -46,6 +46,23 @@ class RingRepository {
     }
   }
 
+  /// Ask the system to turn Bluetooth on, returning whether anything was
+  /// shown. iOS has no equivalent — no app may enable the radio or open that
+  /// settings pane — so there the caller says what to do instead.
+  Future<bool> requestEnableBluetooth() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      final shown = await _deviceChannel
+          .invokeMethod<bool>('requestEnableBluetooth');
+      return shown ?? false;
+    } on MissingPluginException {
+      return false;
+    } on Object catch (error) {
+      debugPrint('ANDROID_BLUETOOTH_ENABLE_FAILED $error');
+      return false;
+    }
+  }
+
   Future<bool?> _androidBluetoothEnabled() async {
     if (!Platform.isAndroid) return null;
 

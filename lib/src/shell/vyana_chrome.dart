@@ -338,6 +338,11 @@ enum RingUiState {
 
   /// Bug 48: a reconnect the user asked for, in flight.
   connecting,
+
+  /// The phone's Bluetooth radio is off. Distinct from [disconnected]:
+  /// reconnecting cannot work and the fix is one tap, so saying "Reconnect"
+  /// here is an instruction that fails every time it is followed.
+  bluetoothOff,
 }
 
 RingUiState ringUiStateOf(RingController c) {
@@ -345,6 +350,9 @@ RingUiState ringUiStateOf(RingController c) {
   // leaving the pill on CONNECT while the attempt runs.
   if (c.isUserReconnecting) return RingUiState.connecting;
   if (c.isSyncing) return RingUiState.syncing;
+  // Before every other not-connected state: with the radio off they are all
+  // true and only this one can be acted on.
+  if (c.bluetoothIsOff && c.hasRingContext) return RingUiState.bluetoothOff;
   // Bug 43: the state existed and the mock had it, but nothing ever returned
   // it, so a charging ring showed a plain percentage. The SDK reports the
   // status; this is the one place that has to read it.
@@ -382,6 +390,10 @@ String _agoLabel(DateTime at) {
       return (text: 'SYNCING YOUR RING', color: t.gold, pulse: true);
     case RingUiState.disconnected:
       return (text: 'RING NOT CONNECTED', color: t.qPoor, pulse: false);
+    case RingUiState.bluetoothOff:
+      // Not "NOT CONNECTED": that reads as a ring problem and sends people
+      // looking at the ring. The phone's radio is off and it is one tap.
+      return (text: 'BLUETOOTH IS OFF', color: t.qPoor, pulse: false);
     case RingUiState.stale:
       return (
         text: last == null ? 'NOT SYNCED YET' : 'LAST SYNC ${_agoLabel(last)}',
@@ -521,6 +533,95 @@ class _ReachingRingBanner extends StatelessWidget {
   }
 }
 
+/// "Bluetooth is off" with the one tap that fixes it.
+///
+/// The app detected this already and said nothing: the pill offered
+/// Reconnect, every tap started a connection that could not succeed, and the
+/// two-second poll retried for as long as the screen was open. Telling
+/// somebody to reconnect when the radio is off is an instruction that fails
+/// every time it is followed.
+class _BluetoothOffBanner extends StatefulWidget {
+  const _BluetoothOffBanner({required this.controller, required this.margin});
+
+  final RingController controller;
+  final EdgeInsets margin;
+
+  @override
+  State<_BluetoothOffBanner> createState() => _BluetoothOffBannerState();
+}
+
+class _BluetoothOffBannerState extends State<_BluetoothOffBanner> {
+  bool _asking = false;
+
+  Future<void> _ask() async {
+    if (_asking) return;
+    setState(() => _asking = true);
+    try {
+      await widget.controller.askToEnableBluetooth();
+    } finally {
+      if (mounted) setState(() => _asking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final tone = t.vit('hr');
+    return Padding(
+      padding: widget.margin,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(13, 10, 13, 10),
+        decoration: BoxDecoration(
+          color: tone.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: tone.withValues(alpha: 0.32)),
+        ),
+        child: Row(
+          children: [
+            VyanaIcon('bluetooth', size: 17, color: tone),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Bluetooth is off',
+                    style: VyanaType.caption.copyWith(
+                      color: t.text,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    Platform.isIOS
+                        ? 'Your ring needs it. Turn it on in Settings.'
+                        : 'Your ring needs it to reach the phone.',
+                    style: VyanaType.caption.copyWith(color: t.textSec),
+                  ),
+                ],
+              ),
+            ),
+            if (!Platform.isIOS) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _asking ? null : _ask,
+                child: Text(
+                  _asking ? 'Opening…' : 'Turn on',
+                  style: VyanaType.label.copyWith(
+                    color: tone,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// An icon turning once a second — a ring-sync state in motion. Gold by
 /// default, because that is what reaching or syncing a ring looks like.
 class SpinningIcon extends StatefulWidget {
@@ -590,6 +691,9 @@ class RingStaleBanner extends StatelessWidget {
     // the attempt too instead of looking untouched.
     if (state == RingUiState.connecting) {
       return _ReachingRingBanner(margin: margin);
+    }
+    if (state == RingUiState.bluetoothOff) {
+      return _BluetoothOffBanner(controller: c, margin: margin);
     }
     if (state != RingUiState.stale && state != RingUiState.disconnected) {
       return const SizedBox.shrink();

@@ -1,8 +1,11 @@
 package com.seeknirvana.vyana
 
 import android.Manifest
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Build
@@ -45,6 +48,7 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "setDeviceName" -> setDeviceName(call.argument<String>("name"), result)
                     "isBluetoothEnabled" -> isBluetoothEnabled(result)
+                    "requestEnableBluetooth" -> requestEnableBluetooth(result)
                     else -> result.notImplemented()
                 }
             }
@@ -72,6 +76,39 @@ class MainActivity : FlutterActivity() {
         pendingPermissionResult?.success(scanAccessPayload(missing))
         pendingPermissionResult = result
         requestPermissions(missing.toTypedArray(), BLE_PERMISSION_REQUEST)
+    }
+
+    /**
+     * Ask the system to turn Bluetooth on.
+     *
+     * The app had no way to say this at all: with the adapter off it simply
+     * retried the connection forever, so the ring never came back and nothing
+     * on screen explained why. ACTION_REQUEST_ENABLE is the system's own
+     * "an app wants to turn on Bluetooth" dialog, which is one tap and does
+     * not leave Vyana.
+     *
+     * On Android 12+ that intent needs BLUETOOTH_CONNECT. Where it is not
+     * granted the call throws, so fall back to the Bluetooth settings screen,
+     * which always opens. Returns false only if neither could be shown, so
+     * the caller can say so rather than look like it did nothing.
+     */
+    private fun requestEnableBluetooth(result: MethodChannel.Result) {
+        try {
+            startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            result.success(true)
+            return
+        } catch (_: Throwable) {
+            // Falls through to settings.
+        }
+        try {
+            startActivity(
+                Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            result.success(true)
+        } catch (_: Throwable) {
+            result.success(false)
+        }
     }
 
     private fun isBluetoothEnabled(result: MethodChannel.Result) {

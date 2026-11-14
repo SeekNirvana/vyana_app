@@ -154,6 +154,31 @@ class RingController extends ChangeNotifier {
   SavedPranaRing? get pairedRing => _pairedRing;
   bool get isReady => _isReady;
   bool get isConnecting => _isConnecting;
+
+  /// Whether the phone's Bluetooth radio is off.
+  ///
+  /// The app knew this already — _applyBluetoothStateToModel has set the
+  /// status string "Bluetooth is off" for a long time — but nothing read it,
+  /// so the pill kept saying CONNECT, every tap started a connection that
+  /// could not succeed, and the poll quietly retried forever. Nothing on
+  /// screen said the one thing that would have fixed it in a tap.
+  bool get bluetoothIsOff => _bluetoothIsOff;
+  bool _bluetoothIsOff = false;
+
+  /// Ask the system to turn Bluetooth on.
+  ///
+  /// Android shows its own "an app wants to turn on Bluetooth" dialog, or
+  /// the Bluetooth settings screen where that is not permitted. iOS allows
+  /// neither, so there this returns false and the caller says what to do.
+  Future<bool> askToEnableBluetooth() async {
+    final shown = await _repo.requestEnableBluetooth();
+    if (!shown) {
+      _set(() => _status = Platform.isIOS
+          ? 'Turn Bluetooth on in Settings, then come back.'
+          : 'Could not open Bluetooth settings.');
+    }
+    return shown;
+  }
   bool get isSyncing => _isSyncing;
   bool get isMeasuring => _isMeasuring;
   bool get isConnected => _isConnected;
@@ -673,6 +698,7 @@ class RingController extends ChangeNotifier {
     final failedConnectionEvent =
         bluetoothState == BluetoothState.connectFailed;
     final bluetoothOffEvent = bluetoothState == BluetoothState.off;
+    _bluetoothIsOff = bluetoothOffEvent;
     final disconnectedEvent =
         bluetoothState == BluetoothState.disconnected || bluetoothOffEvent;
     final bluetoothOnEvent = bluetoothState == BluetoothState.on;
@@ -898,6 +924,19 @@ class RingController extends ChangeNotifier {
         _isConnecting ||
         _isAutoReconnecting) {
       return _isConnected;
+    }
+
+    // With the radio off this can only fail, and failing quietly is what
+    // made it look like the app was trying: the poll called it every two
+    // seconds for as long as the screen was open. Record the state so the
+    // pill and the banner can say so, and stop.
+    if (await _repo.bluetoothState() == BluetoothState.off) {
+      _set(() {
+        _bluetoothIsOff = true;
+        _isUserReconnecting = false;
+        _status = 'Bluetooth is off';
+      });
+      return false;
     }
 
     final now = DateTime.now();
@@ -1840,6 +1879,22 @@ class RingController extends ChangeNotifier {
         _allVitalsMessage =
             'Finish your active session before a full check-in.';
       });
+      return;
+    }
+
+    // Same as the reconnect above: "Check vitals" went straight to
+    // "Connecting to your ring…" and retried against a radio that was off,
+    // which is the other half of the report. Ask for the one thing that
+    // would let it work.
+    if (await _repo.bluetoothState() == BluetoothState.off) {
+      _bluetoothIsOff = true;
+      _set(() {
+        _allVitalsPhase = AllVitalsPhase.failed;
+        _allVitalsMessage = Platform.isIOS
+            ? 'Bluetooth is off. Turn it on in Settings, then try again.'
+            : 'Bluetooth is off — turning it on lets your ring answer.';
+      });
+      unawaited(askToEnableBluetooth());
       return;
     }
 
