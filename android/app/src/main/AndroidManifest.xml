@@ -15,10 +15,15 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Bug 13(a): an outdoor session must keep recording with the phone in a
-         pocket and the screen locked. On Android 10+ that needs background
-         location plus a location-typed foreground service, or the position
-         stream is cut and distance stops growing. -->
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+         pocket and the screen locked. The location-typed foreground service
+         below is what does that, and it is started while the app is in the
+         foreground, so "while using this app" is the only grant it needs.
+         Item 67: ACCESS_BACKGROUND_LOCATION used to be declared here as
+         well. It bought nothing — a foreground service started from the
+         foreground keeps delivering fixes without it — while costing a
+         second, frightening "Allow all the time" prompt and a common
+         reason for Play Store rejection. It is not declared on purpose;
+         re-adding it is a regression, and the permissions test says so. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
