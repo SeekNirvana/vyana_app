@@ -702,7 +702,11 @@ class AppPrivacyScreen extends StatelessWidget {
                   // GPS session started; now they wait for "Show map", and
                   // the person reading this can see what that tap does.
                   'Session map — only if you tap "Show map"; tiles come from OpenStreetMap, which means sending them roughly where you are',
-                  'Cloud sync — an opt-in switch that is not live yet; today nothing leaves the phone either way',
+                  // Item 88: the Cloud sync switch is gone, so the line
+                  // describing it is too — a privacy panel listing a
+                  // feature that does not exist is as wrong as one leaving
+                  // out a feature that does.
+                  'Backing up — an encrypted file you make yourself and put where you choose; Vyana never sends it anywhere',
                 ],
               ),
               _PrivacySection(
@@ -713,7 +717,7 @@ class AppPrivacyScreen extends StatelessWidget {
                   'Disconnect or unpair your ring at any time',
                   'Wallet connections can be revoked in the wallet app',
                   'Export your health report, journal or everything from You at any time',
-                  'If cloud sync goes live it stays opt-in, with clear export and delete controls',
+                  'Back up and restore your whole vault from an encrypted file only your passphrase opens',
                 ],
               ),
               const SizedBox(height: 6),
@@ -1300,6 +1304,15 @@ class HistoryLogStatus {
   );
 }
 
+/// How much of the sync log is kept.
+///
+/// Item 90: it was kept forever. Every sync appended the whole raw batch,
+/// so the file grew without limit and every status read parsed all of it.
+/// A week is what a diagnostic log is for — long enough to explain a
+/// problem someone noticed, short enough to stay small. The health history
+/// itself is untouched by this; it lives in the vault.
+const Duration kHistoryLogKeepFor = Duration(days: 7);
+
 class HistorySyncLogger {
   Future<HistoryLogStatus> appendSync({
     required dynamic device,
@@ -1314,7 +1327,15 @@ class HistorySyncLogger {
       features: features,
       history: history,
     );
+    // Item 90: the ring's MAC address is not needed to explain a sync, and
+    // a diagnostic file is the last place it should be sitting in plain
+    // text. buildCloudHistoryBatch keeps it for exports, where the person
+    // is deliberately taking their own data; this strips it on the way in
+    // here.
+    final device_ = batch['device'];
+    if (device_ is Map) device_.remove('address');
     await file.writeAsString('${jsonEncode(batch)}\n', mode: FileMode.append);
+    await _pruneOlderThan(file, DateTime.now().subtract(kHistoryLogKeepFor));
     return status();
   }
 
@@ -1369,18 +1390,60 @@ class HistorySyncLogger {
     );
   }
 
+  /// Drops batches logged before [cutoff], rewriting the file once.
+  ///
+  /// A line that cannot be parsed, or carries no timestamp, is kept: this
+  /// is a diagnostic file, and throwing away the lines we understand least
+  /// would remove exactly the ones worth reading.
+  Future<void> _pruneOlderThan(File file, DateTime cutoff) async {
+    try {
+      if (!await file.exists()) return;
+      final lines = await file.readAsLines();
+      final kept = <String>[];
+      var dropped = 0;
+      for (final line in lines) {
+        if (line.trim().isEmpty) continue;
+        final at = _loggedAtOf(line);
+        if (at != null && at.isBefore(cutoff)) {
+          dropped += 1;
+          continue;
+        }
+        kept.add(line);
+      }
+      if (dropped == 0) return;
+      await file.writeAsString(kept.isEmpty ? '' : '${kept.join('\n')}\n');
+    } on Object catch (error) {
+      // A log that cannot be pruned is not worth failing a sync for.
+      debugPrint('[HistoryLog] prune failed: $error');
+    }
+  }
+
+  static DateTime? _loggedAtOf(String line) {
+    try {
+      final decoded = jsonDecode(line);
+      if (decoded is! Map) return null;
+      final sync = decoded['sync'];
+      if (sync is! Map) return null;
+      final pulledAt = sync['pulledAt']?.toString();
+      return pulledAt == null ? null : DateTime.tryParse(pulledAt);
+    } on Object {
+      return null;
+    }
+  }
+
   Future<File> _logFile() async {
-    final directory = _logDirectory();
+    final directory = await _logDirectory();
     await directory.create(recursive: true);
     return File('${directory.path}/vyana_ring_history_sync.jsonl');
   }
 
-  Directory _logDirectory() {
-    if (Platform.isAndroid) {
-      return Directory('/data/user/0/com.seeknirvana.vyana/files');
-    }
-    if (Platform.isIOS) {
-      return Directory('${Directory.systemTemp.parent.path}/Documents');
+  /// Item 90: asked for, not hard-coded. The Android path was written out
+  /// as `/data/user/0/com.seeknirvana.vyana/files`, which is wrong for a
+  /// second user profile, a work profile or a renamed package — and the iOS
+  /// one was derived from the temp directory's parent, which is a guess.
+  Future<Directory> _logDirectory() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      return getApplicationSupportDirectory();
     }
     return Directory('${Directory.current.path}/.vyana');
   }
@@ -1419,7 +1482,20 @@ class HistoryLogScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Every successful sync appends one JSON line with the SDK batch, normalized records, device identity, feature flags, and raw SDK values needed for later analysis.',
+                      'Every successful sync appends one JSON line with the '
+                      'SDK batch, normalized records, device identity, '
+                      'feature flags, and raw SDK values needed for later '
+                      'analysis.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                    // Item 90: said here, because a screen reporting a
+                    // batch count that quietly stops growing looks broken,
+                    // and because nobody should read "the last 7 days" and
+                    // wonder whether their health history was trimmed too.
+                    Text(
+                      'Shows the last 7 days of syncs. Your health history '
+                      'is kept in full.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 12),

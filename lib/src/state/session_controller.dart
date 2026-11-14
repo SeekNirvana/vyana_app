@@ -933,9 +933,9 @@ class SessionController extends ChangeNotifier {
     final summary = _computeSummary();
     if (id != null) {
       await _db.finishSession(id, endedAt, jsonEncode(summary));
-      if (_ref.read(sessionSyncEnabledProvider)) {
-        unawaited(_ref.read(sessionSyncServiceProvider).queue(id));
-      }
+      // Item 88: nothing is queued for a cloud that does not exist. The
+      // queue was written to and never read from.
+
     }
     // Lucid dreaming is the one practice whose result arrives the next
     // morning: finishing it arms the Journal's wake capture.

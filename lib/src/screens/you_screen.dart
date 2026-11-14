@@ -654,23 +654,12 @@ class YouScreen extends ConsumerWidget {
               subtitle: 'Machine-readable archive',
               onTap: () => openExports(context, ref, section: ExportSection.archive),
             ),
-            SettingsRow(
-              icon: 'shield',
-              iconColor: t.heading,
-              label: 'Cloud sync',
-              subtitle: 'Opt-in backup · not yet live, nothing leaves this phone',
-              chevron: false,
-              trailing: VSwitch(
-                on: ref.watch(sessionSyncEnabledProvider),
-                color: t.green,
-                onTap: () => ref
-                    .read(sessionSyncEnabledProvider.notifier)
-                    .set(!ref.read(sessionSyncEnabledProvider)),
-              ),
-              onTap: () => ref
-                  .read(sessionSyncEnabledProvider.notifier)
-                  .set(!ref.read(sessionSyncEnabledProvider)),
-            ),
+            // Item 88: the Cloud sync row is gone. It was a switch that
+            // looked like it worked, with no backend behind it — and
+            // "not yet live" under a switch somebody has turned on is a
+            // thing they will reasonably forget they read. Backing up is
+            // Vyana's own encrypted file now (item 53), which is a real
+            // answer to the question this row was pretending to answer.
           ],
         ),
         const _YouHeading('Vyana', 'About & privacy'),

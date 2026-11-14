@@ -719,7 +719,8 @@ class _Composer extends StatelessWidget {
                     decoration: InputDecoration(
                       border: InputBorder.none,
                       isDense: true,
-                      hintText: 'Ask your guide…',
+                      // Item 89: there is one guide, and she has a name.
+                      hintText: 'Ask Nova…',
                       hintStyle: VyanaType.body.copyWith(color: t.textMuted),
                     ),
                   ),

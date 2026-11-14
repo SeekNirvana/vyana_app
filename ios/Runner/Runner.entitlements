@@ -4,7 +4,10 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.erebrus.keys</string>
+		<!-- Item 86: this was another app's group. A shared container is
+		     how the widget reads Vyana's data, so borrowing one means the
+		     widget's data sits in a container Vyana does not own. -->
+		<string>group.com.seeknirvana.vyana</string>
 	</array>
 </dict>
 </plist>

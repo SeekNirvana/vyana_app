@@ -17,7 +17,15 @@ class HomeWidgetService {
 
   /// iOS app group + Android shared-prefs key the widgets read from. Must match
   /// the App Group configured on the WidgetKit extension.
-  static const String appGroupId = 'group.com.erebrus.keys';
+  /// Item 86: Vyana's own group. This was `group.com.erebrus.keys` — a
+  /// different app's — so on iOS the widget's data was written into a
+  /// container Vyana does not own, and would not be there at all on a phone
+  /// without that app's entitlement.
+  ///
+  /// Changing it needs the matching group to exist on the Apple developer
+  /// account and be enabled for both the app and the widget extension;
+  /// that is an Xcode and portal step, not a code one.
+  static const String appGroupId = 'group.com.seeknirvana.vyana';
 
   /// WidgetKit `kind`s (iOS) and provider class names (Android).
   static const String _iosVitalsWidget = 'VyanaWidget';

@@ -38,6 +38,7 @@ import 'src/services/backup_file.dart';
 import 'src/services/backup_service.dart';
 import 'src/services/nova_budget.dart';
 import 'src/services/session_minutes.dart';
+import 'package:path_provider/path_provider.dart';
 import 'src/services/export_delivery.dart';
 import 'src/services/file_exchange_service.dart';
 import 'src/state/solana_mobile_wallet_service.dart';
@@ -86,7 +87,6 @@ part 'src/state/pattern_engine.dart';
 part 'src/state/pinned_practices.dart';
 part 'src/state/sleep_extension.dart';
 part 'src/state/notification_prefs.dart';
-part 'src/state/session_sync.dart';
 part 'src/state/location_service.dart';
 part 'src/state/voice_cue_service.dart';
 part 'src/shell/vyana_shell.dart';
@@ -136,7 +136,7 @@ Future<void> main() async {
   );
 }
 
-class RingApp extends ConsumerWidget {
+class RingApp extends ConsumerStatefulWidget {
   const RingApp({
     super.key,
     required this.storageReady,
@@ -147,7 +147,27 @@ class RingApp extends ConsumerWidget {
   final String? storageFailureReason;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RingApp> createState() => _RingAppState();
+}
+
+/// Item 91: the storage result is held in state rather than read once from
+/// the constructor, so Retry on the storage screen has somewhere to put a
+/// better answer. Without that the screen could only say "restart the app".
+class _RingAppState extends ConsumerState<RingApp> {
+  late bool _storageReady = widget.storageReady;
+  late String? _failureReason = widget.storageFailureReason;
+
+  Future<void> _retryStorage() async {
+    await VyanaStorageService.instance.retry();
+    if (!mounted) return;
+    setState(() {
+      _storageReady = VyanaStorageService.instance.isReady;
+      _failureReason = VyanaStorageService.instance.failureReason;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final mode = ref.watch(themeModeProvider);
     final displayScale = ref.watch(displayScaleProvider);
     return MaterialApp(
@@ -162,11 +182,12 @@ class RingApp extends ConsumerWidget {
         scale: displayScale,
         child: child ?? const SizedBox.shrink(),
       ),
-      home: storageReady
+      home: _storageReady
           ? const VyanaShell()
           : _StorageUnavailableScreen(
-              message: storageFailureReason ??
+              message: _failureReason ??
                   'Vyana needs app storage access to save your data.',
+              onRetry: _retryStorage,
             ),
     );
   }
@@ -174,14 +195,37 @@ class RingApp extends ConsumerWidget {
 
 /// Shown only when app-scoped storage cannot be initialized (permission denied
 /// or storage unavailable).
-class _StorageUnavailableScreen extends StatelessWidget {
-  const _StorageUnavailableScreen({required this.message});
+class _StorageUnavailableScreen extends StatefulWidget {
+  const _StorageUnavailableScreen({
+    required this.message,
+    required this.onRetry,
+  });
 
   final String message;
+  final Future<void> Function() onRetry;
+
+  @override
+  State<_StorageUnavailableScreen> createState() =>
+      _StorageUnavailableScreenState();
+}
+
+class _StorageUnavailableScreenState extends State<_StorageUnavailableScreen> {
+  bool _retrying = false;
+
+  Future<void> _retry() async {
+    if (_retrying) return;
+    setState(() => _retrying = true);
+    try {
+      await widget.onRetry();
+    } finally {
+      if (mounted) setState(() => _retrying = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = context.vyana;
+    final message = widget.message;
     return Scaffold(
       body: DecoratedBox(
         decoration: BoxDecoration(gradient: t.bgGradient),
@@ -204,10 +248,16 @@ class _StorageUnavailableScreen extends StatelessWidget {
                   message: message,
                   icon: 'lock',
                   hint:
-                      'Grant storage access for Vyana in system settings, then '
-                      'restart the app.',
+                      'Grant storage access for Vyana in system settings, '
+                      'then try again. Nothing has been lost — Vyana has '
+                      'not been able to open its storage, not emptied it.',
                   primaryLabel: 'Open settings',
                   onPrimary: () => unawaited(Geolocator.openAppSettings()),
+                  // Item 91: granting access in settings and coming back
+                  // left the person stuck, because the only instruction was
+                  // to restart an app that was already running.
+                  secondaryLabel: _retrying ? 'Trying…' : 'Try again',
+                  onSecondary: _retrying ? null : () => unawaited(_retry()),
                 ),
               ],
             ),

@@ -705,7 +705,7 @@ class RingStaleBanner extends StatelessWidget {
         ? 'Nothing is reading you right now'
         : last == null
         ? 'Today is missing'
-        : 'Today is missing ${DateTime.now().difference(last).inHours} hours';
+        : 'Today is missing ${staleGapLabel(DateTime.now().difference(last))}';
     final line =
         body ??
         (error

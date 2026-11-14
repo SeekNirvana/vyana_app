@@ -1244,7 +1244,8 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                     hint: _onMyOwn
                         ? 'Start and end. No voice or cues. The ring still '
                             'measures how it helps.'
-                        : "Vyana's voice, pacer and cues lead the practice.",
+                        // Item 89: the voice is Nova's, not the app's.
+                        : "Nova's voice, pacer and cues lead the practice.",
                     onPick: (value) async {
                       setState(() => _onMyOwn = value);
                       final prefs = await SharedPreferences.getInstance();

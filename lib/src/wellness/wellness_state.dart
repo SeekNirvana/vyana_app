@@ -22,6 +22,21 @@ enum WellnessTone { good, steady, watch, unknown }
 // can import, because a word about someone's body must not depend on which
 // surface is saying it.
 
+/// How long the ring has been quiet, for the stale banner.
+///
+/// Item 91: it was always hours, so a ring left in a drawer over a long
+/// weekend produced "Today is missing 50 hours" — a true number that reads
+/// as a fault in the app rather than a ring nobody has worn. Past a day it
+/// counts days, which is how anyone would say it.
+String staleGapLabel(Duration gap) {
+  if (gap.inHours < 24) {
+    final hours = gap.inHours;
+    return hours <= 1 ? 'an hour' : '$hours hours';
+  }
+  final days = gap.inDays;
+  return days == 1 ? 'a day' : '$days days';
+}
+
 /// At or above this, a readiness score reads as Ready.
 const int kReadinessReadyFrom = 70;
 

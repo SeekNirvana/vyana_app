@@ -534,10 +534,14 @@ List<HomeMetricCardData> homeMetricCards(
     baselines: baselines,
     personalAverage: _baseline(hrvPoints, kBaselineWindowDays),
   );
+  // Item 89: "Steady", not "Balanced". Balanced is readiness's middle word,
+  // and the HRV chip sits right beside the readiness ring — so a depleted
+  // morning could read "Depleted" in the ring and "Balanced" underneath it,
+  // about the same body, with nothing to say which was meant.
   final (hrvVerdict, hrvQ) = verdictFor(
     value: hrv,
     base: hrvBase,
-    words: ('Recovered', 'Balanced', 'Take it easy'),
+    words: ('Recovered', 'Steady', 'Take it easy'),
   );
 
   // ── Sleep: only last night, and only when it is real (bug 14) ───────────

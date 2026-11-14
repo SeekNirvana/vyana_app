@@ -156,12 +156,36 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
   Widget build(BuildContext context) {
     final t = context.vyana;
     final profileAsync = ref.watch(userProfileProvider);
+    // Item 91: both of these had no way back. Setup cannot be backed out of
+    // by a swipe, so a profile that will not load — or is slow to — left
+    // the person on a screen with nothing on it and nowhere to go.
     return profileAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      loading: () => Scaffold(
+        appBar: AppBar(
+          leading: IconBtn(
+            icon: 'chevL',
+            onTap: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
       ),
       error: (error, _) => Scaffold(
-        body: Center(child: Text('Could not load profile: $error')),
+        appBar: AppBar(
+          leading: IconBtn(
+            icon: 'chevL',
+            onTap: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Could not load your profile. $error',
+              textAlign: TextAlign.center,
+              style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.5),
+            ),
+          ),
+        ),
       ),
       data: (profile) {
         _seedFrom(profile);

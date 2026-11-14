@@ -106,6 +106,19 @@ class VyanaStorageService {
     return _initFuture ??= _initialize();
   }
 
+  /// Tries again after a failure, for the Retry on the storage screen.
+  ///
+  /// Item 91: [ensureReady] caches its attempt, so calling it again after a
+  /// refusal returned the same refusal — which is why the screen could only
+  /// say "restart the app". Clearing the cached attempt is what makes a
+  /// retry mean anything. A successful init is never redone.
+  Future<void> retry() async {
+    if (_ready) return;
+    _initFuture = null;
+    _failureReason = null;
+    await ensureReady();
+  }
+
   Future<void> _initialize() async {
     if (_ready) return;
 
