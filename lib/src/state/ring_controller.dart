@@ -1753,22 +1753,50 @@ class RingController extends ChangeNotifier {
     _set(() => _status = response);
   }
 
-  Future<void> renameRing(String name) async {
-    if (!_isConnected) return;
+  /// Renames the connected ring, and says what happened.
+  ///
+  /// Item 60: this used to return void and, when the ring was not connected,
+  /// return having changed nothing at all — no status, no error, no signal
+  /// of any kind. Setup's first step read the status string to guess whether
+  /// it had worked, so a failure left the button doing nothing and a
+  /// disconnected ring let it walk straight past the step it had not done.
+  /// The result is the answer now; nobody has to infer it.
+  Future<RingNameUpdateResult> renameRing(String name) async {
+    if (!_isConnected) {
+      const message =
+          'Your ring is not connected, so it cannot be renamed yet.';
+      _set(() => _status = message);
+      return const RingNameUpdateResult(
+        successful: false,
+        name: '',
+        message: message,
+      );
+    }
     final validationError = validateRingName(name);
     if (validationError != null) {
       _set(() => _status = validationError);
-      return;
+      return RingNameUpdateResult(
+        successful: false,
+        name: '',
+        message: validationError,
+      );
     }
     _set(() => _status = 'Updating ring name');
     final result = await _repo.renameConnectedRing(name);
-    if (_disposed) return;
+    if (_disposed) {
+      return const RingNameUpdateResult(
+        successful: false,
+        name: '',
+        message: 'Renaming was cancelled.',
+      );
+    }
     if (result.successful && _pairedRing != null) {
       final updated = _pairedRing!.copyWith(name: result.name);
       await PranaRingStore.save(updated);
       _set(() => _pairedRing = updated);
     }
     _set(() => _status = result.message);
+    return result;
   }
 
   // ── Measurements & ECG ────────────────────────────────────────────────────

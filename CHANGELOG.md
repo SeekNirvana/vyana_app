@@ -151,6 +151,20 @@ conversation into that would cost the room the next answer needs.
   combination sherpa-onnx refuses: every sentence came back as an empty
   waveform. Kokoro is tokenised from the lexicon now, which is also 18 MB
   less to download — 341 MB, not the 355 MB the prompt used to quote.
+- **Ring setup no longer offers to erase your ring by default.** "Erase what
+  the ring stored" arrived switched on, with the main button reading "Wipe
+  ring data", so a first pairing erased the readings held on the ring itself
+  — which after a reinstall is the only copy of them left. It starts off now,
+  and switches on only when you are replacing a different ring, which is the
+  case it was meant for. Its caption said Vyana would "start fresh from your
+  first sync"; the sync had already happened.
+- **A ring that will not take a name no longer traps setup on its first
+  step.** The step decided whether the rename had worked by looking for the
+  word "failed" in a status line, so a failure worded any other way read as
+  success — and a ring that was merely out of range walked straight past the
+  step without renaming anything. The rename reports its own result now, the
+  reason appears under the field, and because setup cannot be backed out of
+  there is a "Skip, keep current name".
 - **She says the numbers.** Kokoro has no lexicon entry for any digit, and a
   word it cannot find is skipped rather than mispronounced, so every figure
   came out as a hole in the sentence: "Halfway. 5 minutes." was spoken as

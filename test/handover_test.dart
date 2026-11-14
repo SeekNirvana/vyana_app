@@ -1807,4 +1807,50 @@ void main() {
       expect(formatDownloadSize(kGuideModelBytes), matches(RegExp(r'^[\d.]+ (MB|GB)$')));
     });
   });
+
+  group('ring setup does not erase the ring because a switch was already on',
+      () {
+    test('a first pairing leaves the ring\'s own history alone', () {
+      // Item 60: this defaulted to on. The main button then read "Wipe ring
+      // data", and a first pairing erased the readings the ring had stored
+      // — which after a reinstall is the only copy of them left anywhere.
+      expect(wipeRingDefaultFor(previousRingRows: 0), isFalse);
+    });
+
+    test('replacing a ring turns it on, which is the case it is for', () {
+      // Two rings' readings in one chart is the wrongness nobody goes
+      // looking for, so here erasing is the point.
+      expect(wipeRingDefaultFor(previousRingRows: 1), isTrue);
+      expect(wipeRingDefaultFor(previousRingRows: 240), isTrue);
+    });
+  });
+
+  group('a rename that fails says so', () {
+    test('the result carries the reason, rather than a status to read', () {
+      // Item 60: setup used to guess from the controller's status string,
+      // looking for the word "failed". A failure worded any other way read
+      // as success and the step moved on from work it had not done.
+      const failed = RingNameUpdateResult(
+        successful: false,
+        name: '',
+        message: 'Your ring is not connected, so it cannot be renamed yet.',
+      );
+      expect(failed.successful, isFalse);
+      expect(failed.message, isNotEmpty);
+      // Nothing in the message needs to match a keyword for the screen to
+      // know what happened.
+      expect(failed.message.toLowerCase(), isNot(contains('failed')));
+    });
+
+    test('the step offers a way out, because it cannot be backed out of', () {
+      final onboarding = File.fromUri(
+        Directory.current.uri.resolve(
+          'lib/src/screens/ring_onboarding_screen.dart',
+        ),
+      ).readAsStringSync();
+      expect(onboarding, contains('Skip, keep current name'));
+      // The old guessing is gone with it.
+      expect(onboarding, isNot(contains("status.contains('failed')")));
+    });
+  });
 }
