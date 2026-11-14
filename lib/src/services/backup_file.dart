@@ -10,12 +10,24 @@
 /// not a cloud account: the user chooses where it lands, and nothing about
 /// it reaches us.
 ///
-/// **Shape.** One plaintext header line, then the encrypted body:
+/// **Shape.** One plaintext header line, the encrypted body, then one line
+/// per attached file:
 ///
 /// ```
-/// {"format":"vyana-backup","version":1,"kdf":{...},"salt":"…","nonce":"…"}
-/// <base64 ciphertext+mac>
+/// {"format":"vyana-backup","version":1,"kdf":{...},"attachments":12,…}
+/// <base64 ciphertext+mac>            — the vault, settings, and the
+///                                      manifest naming the files below
+/// <base64 nonce+ciphertext+mac>      — meal photo 1
+/// <base64 nonce+ciphertext+mac>      — meal photo 2
 /// ```
+///
+/// Photos are a section of their own rather than base64 inside the JSON,
+/// and the reason is memory. Inline, a long history means building a
+/// hundred-megabyte string, encoding it, and encrypting it — three copies
+/// alive at once on a phone that may have 4 GB. Separately encrypted, only
+/// one photo is in hand at a time. Each gets its own nonce, because
+/// reusing one with the same key is the way AES-GCM is broken. Their names
+/// live in the encrypted manifest, not in the plaintext header.
 ///
 /// The header is readable without the passphrase on purpose. A backup from
 /// a newer Vyana has to be able to say "Update Vyana first" rather than
@@ -110,6 +122,21 @@ class BackupException implements Exception {
   String toString() => 'BackupException(${failure.name}): $message';
 }
 
+/// Reads a file's bytes, one at a time, when the backup is written.
+typedef BackupFileReader = Future<List<int>> Function();
+
+/// What came out of a backup: the record, and the files that go with it.
+@immutable
+class BackupContents {
+  const BackupContents({required this.payload, required this.files});
+
+  final Map<String, Object?> payload;
+
+  /// File name to bytes — meal photos, which unlike the model and the
+  /// voice do not download again.
+  final Map<String, Uint8List> files;
+}
+
 /// What a backup says about itself before it is opened.
 @immutable
 class BackupHeader {
@@ -122,6 +149,7 @@ class BackupHeader {
     required this.memoryKb,
     required this.iterations,
     required this.parallelism,
+    this.attachments = 0,
   });
 
   final int version;
@@ -135,6 +163,10 @@ class BackupHeader {
   final int memoryKb;
   final int iterations;
   final int parallelism;
+
+  /// How many files follow the body. A count only — the names are inside
+  /// the encrypted manifest, because a meal photo's name is the user's.
+  final int attachments;
 
   /// Whether this build can open it at all.
   bool get isReadable => version <= kBackupFormatVersion;
@@ -152,6 +184,7 @@ class BackupHeader {
         },
         'salt': base64Encode(salt),
         'nonce': base64Encode(nonce),
+        'attachments': attachments,
       };
 }
 
@@ -200,6 +233,7 @@ BackupHeader readBackupHeader(List<int> bytes) {
     memoryKb: kdfMap['memoryKb'] as int? ?? kBackupKdfMemoryKb,
     iterations: kdfMap['iterations'] as int? ?? kBackupKdfIterations,
     parallelism: kdfMap['parallelism'] as int? ?? kBackupKdfParallelism,
+    attachments: json['attachments'] as int? ?? 0,
   );
 }
 
@@ -222,6 +256,7 @@ Future<Uint8List> writeBackup({
   required Map<String, Object?> payload,
   required String passphrase,
   required String appVersion,
+  Map<String, BackupFileReader> files = const {},
   DateTime? createdAt,
   Random? random,
 }) async {
@@ -233,12 +268,12 @@ Future<Uint8List> writeBackup({
   }
 
   final rng = random ?? Random.secure();
-  final salt = Uint8List.fromList(
-    List<int>.generate(16, (_) => rng.nextInt(256)),
-  );
-  final nonce = Uint8List.fromList(
-    List<int>.generate(12, (_) => rng.nextInt(256)),
-  );
+  Uint8List bytes(int length) =>
+      Uint8List.fromList(List<int>.generate(length, (_) => rng.nextInt(256)));
+
+  final salt = bytes(16);
+  final nonce = bytes(12);
+  final names = files.keys.toList();
 
   final header = BackupHeader(
     version: kBackupFormatVersion,
@@ -249,23 +284,49 @@ Future<Uint8List> writeBackup({
     memoryKb: kBackupKdfMemoryKb,
     iterations: kBackupKdfIterations,
     parallelism: kBackupKdfParallelism,
+    attachments: names.length,
   );
 
   final key = await _deriveKey(passphrase, header);
-  final plain = utf8.encode(jsonEncode(payload));
-  final box = await AesGcm.with256bits().encrypt(
-    plain,
+  final aes = AesGcm.with256bits();
+
+  // The manifest travels inside the encrypted body, so the plaintext
+  // header never carries a file name.
+  final body = <String, Object?>{...payload, 'files': names};
+  final box = await aes.encrypt(
+    utf8.encode(jsonEncode(body)),
     secretKey: key,
     nonce: nonce,
   );
 
-  final headerLine = utf8.encode(jsonEncode(header.toJson()));
-  final body = base64Encode([...box.cipherText, ...box.mac.bytes]);
-  return Uint8List.fromList([...headerLine, 0x0a, ...utf8.encode(body)]);
+  final out = <int>[
+    ...utf8.encode(jsonEncode(header.toJson())),
+    0x0a,
+    ...utf8.encode(base64Encode([...box.cipherText, ...box.mac.bytes])),
+  ];
+
+  // One file at a time: read, encrypt, append, let it go. A long history
+  // of meal photos must not need all of them in memory at once.
+  for (final name in names) {
+    final fileNonce = bytes(12);
+    final content = await files[name]!();
+    final sealed = await aes.encrypt(
+      content,
+      secretKey: key,
+      nonce: fileNonce,
+    );
+    out
+      ..add(0x0a)
+      ..addAll(utf8.encode(base64Encode(
+        [...fileNonce, ...sealed.cipherText, ...sealed.mac.bytes],
+      )));
+  }
+
+  return Uint8List.fromList(out);
 }
 
 /// Opens a backup, or says precisely why it could not.
-Future<Map<String, Object?>> openBackup({
+Future<BackupContents> openBackup({
   required List<int> bytes,
   required String passphrase,
 }) async {
@@ -277,43 +338,117 @@ Future<Map<String, Object?>> openBackup({
     throw const BackupException(BackupFailure.damaged, 'no salt or nonce');
   }
 
-  final newline = bytes.indexOf(0x0a);
-  final List<int> raw;
-  try {
-    raw = base64Decode(utf8.decode(bytes.sublist(newline + 1)).trim());
-  } on Object {
-    throw const BackupException(BackupFailure.damaged, 'body not base64');
-  }
-  if (raw.length <= 16) {
-    throw const BackupException(BackupFailure.damaged, 'body too short');
+  final lines = _lines(bytes);
+  if (lines.length < 2) {
+    throw const BackupException(BackupFailure.damaged, 'no body');
   }
 
   final key = await _deriveKey(passphrase, header);
-  final cipherText = raw.sublist(0, raw.length - 16);
-  final mac = Mac(raw.sublist(raw.length - 16));
+  final aes = AesGcm.with256bits();
 
-  final List<int> plain;
-  try {
-    plain = await AesGcm.with256bits().decrypt(
-      SecretBox(cipherText, nonce: header.nonce, mac: mac),
-      secretKey: key,
-    );
-  } on SecretBoxAuthenticationError {
-    // GCM cannot tell "wrong key" from "edited file", and for someone
-    // holding their only backup the first is overwhelmingly the likelier.
-    throw const BackupException(BackupFailure.wrongPassphrase);
-  } on Object catch (error) {
-    throw BackupException(BackupFailure.damaged, '$error');
-  }
+  final plain = await _open(
+    aes: aes,
+    key: key,
+    nonce: header.nonce,
+    raw: _base64(lines[1], 'body'),
+    // The body is the first thing decrypted, so a wrong passphrase shows
+    // up here — which is where it should be reported from.
+    blameThePassphrase: true,
+  );
 
+  final Map<String, Object?> payload;
   try {
     final decoded = jsonDecode(utf8.decode(plain));
     if (decoded is! Map) {
       throw const BackupException(BackupFailure.damaged, 'payload not a map');
     }
-    return Map<String, Object?>.from(decoded);
+    payload = Map<String, Object?>.from(decoded);
   } on BackupException {
     rethrow;
+  } on Object catch (error) {
+    throw BackupException(BackupFailure.damaged, '$error');
+  }
+
+  final manifest = payload['files'];
+  final names = manifest is List ? manifest.whereType<String>().toList() : [];
+  if (names.length != header.attachments || lines.length - 2 < names.length) {
+    throw const BackupException(
+      BackupFailure.damaged,
+      'the file list and the files do not agree',
+    );
+  }
+
+  final files = <String, Uint8List>{};
+  for (var i = 0; i < names.length; i++) {
+    final raw = _base64(lines[2 + i], 'attachment ${i + 1}');
+    if (raw.length <= 28) {
+      throw const BackupException(BackupFailure.damaged, 'attachment too short');
+    }
+    files[names[i]] = Uint8List.fromList(
+      await _open(
+        aes: aes,
+        key: key,
+        nonce: raw.sublist(0, 12),
+        raw: raw.sublist(12),
+        blameThePassphrase: false,
+      ),
+    );
+  }
+
+  return BackupContents(payload: payload, files: files);
+}
+
+/// Splits on newlines without decoding the whole file as text first.
+List<List<int>> _lines(List<int> bytes) {
+  final out = <List<int>>[];
+  var start = 0;
+  for (var i = 0; i < bytes.length; i++) {
+    if (bytes[i] == 0x0a) {
+      out.add(bytes.sublist(start, i));
+      start = i + 1;
+    }
+  }
+  if (start < bytes.length) out.add(bytes.sublist(start));
+  return out;
+}
+
+List<int> _base64(List<int> line, String what) {
+  try {
+    return base64Decode(utf8.decode(line).trim());
+  } on Object {
+    throw BackupException(BackupFailure.damaged, '$what is not base64');
+  }
+}
+
+Future<List<int>> _open({
+  required AesGcm aes,
+  required SecretKey key,
+  required List<int> nonce,
+  required List<int> raw,
+  required bool blameThePassphrase,
+}) async {
+  if (raw.length <= 16) {
+    throw const BackupException(BackupFailure.damaged, 'section too short');
+  }
+  try {
+    return await aes.decrypt(
+      SecretBox(
+        raw.sublist(0, raw.length - 16),
+        nonce: nonce,
+        mac: Mac(raw.sublist(raw.length - 16)),
+      ),
+      secretKey: key,
+    );
+  } on SecretBoxAuthenticationError {
+    // GCM cannot tell "wrong key" from "edited file". For the body, the
+    // first is overwhelmingly likelier and the message has to be useful.
+    // For an attachment the key has already been proved by the body, so a
+    // failure there really is damage.
+    throw BackupException(
+      blameThePassphrase
+          ? BackupFailure.wrongPassphrase
+          : BackupFailure.damaged,
+    );
   } on Object catch (error) {
     throw BackupException(BackupFailure.damaged, '$error');
   }

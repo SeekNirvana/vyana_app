@@ -16,10 +16,14 @@
 /// reported.
 library;
 
+import 'dart:io';
+
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart' show immutable;
+import 'package:path/path.dart' as p;
 
 import '../data/db.dart';
+import 'backup_file.dart';
 
 /// Bumped when the shape of the payload changes in a way an older app
 /// could not read. Adding a table does not need it — an older app simply
@@ -66,6 +70,7 @@ class BackupRestoreReport {
     required this.rowsByTable,
     required this.skippedTables,
     required this.skippedColumns,
+    this.photos = 0,
   });
 
   /// Rows written, per table.
@@ -78,6 +83,9 @@ class BackupRestoreReport {
   /// `table.column`.
   final List<String> skippedColumns;
 
+  /// Meal photos written back.
+  final int photos;
+
   int get totalRows =>
       rowsByTable.values.fold(0, (sum, count) => sum + count);
 
@@ -89,8 +97,76 @@ class BackupRestoreReport {
   String get summary {
     final rows = totalRows;
     final label = rows == 1 ? 'record' : 'records';
-    return '$rows $label restored';
+    if (photos == 0) return '$rows $label restored';
+    final photoLabel = photos == 1 ? 'photo' : 'photos';
+    return '$rows $label and $photos $photoLabel restored';
   }
+
+  BackupRestoreReport withPhotos(int count) => BackupRestoreReport(
+        rowsByTable: rowsByTable,
+        skippedTables: skippedTables,
+        skippedColumns: skippedColumns,
+        photos: count,
+      );
+}
+
+/// The meal photos a backup should carry, keyed by file name.
+///
+/// Photos are files rather than rows, and unlike the model and the voice
+/// they do not download again — a restore without them hands someone their
+/// meals with the pictures missing. They are collected by name, not by
+/// path, because [resolveMealPhoto] looks them up by name on the way back:
+/// a photo restored onto a different phone lands in that phone's meals
+/// folder and the stored path still finds it.
+///
+/// Readers rather than bytes, so the caller holds one photo at a time.
+Future<Map<String, BackupFileReader>> collectMealPhotos({
+  required VyanaDatabase db,
+  required String mealPhotosPath,
+}) async {
+  if (!await _tableExists(db, 'meals')) return const {};
+  final rows = await db
+      .customSelect('SELECT photo_path FROM meals WHERE photo_path IS NOT NULL')
+      .get();
+
+  final files = <String, BackupFileReader>{};
+  for (final row in rows) {
+    final stored = row.data['photo_path'] as String?;
+    if (stored == null || stored.trim().isEmpty) continue;
+    final name = p.basename(stored);
+    if (files.containsKey(name)) continue;
+
+    // Where it is now, which after item 59 may not be where it was saved.
+    final candidates = [File(stored), File(p.join(mealPhotosPath, name))];
+    for (final file in candidates) {
+      if (file.existsSync()) {
+        files[name] = () => file.readAsBytes();
+        break;
+      }
+    }
+  }
+  return files;
+}
+
+/// Writes restored photos into this phone's meals folder.
+///
+/// By name, so the absolute paths in the restored rows do not have to be
+/// rewritten — [resolveMealPhoto] already falls back to the name under the
+/// current folder, which is what makes a backup portable between phones.
+Future<int> restoreMealPhotos({
+  required Map<String, Uint8List> files,
+  required String mealPhotosPath,
+}) async {
+  if (files.isEmpty) return 0;
+  final dir = Directory(mealPhotosPath);
+  await dir.create(recursive: true);
+  var written = 0;
+  for (final entry in files.entries) {
+    final target = File(p.join(mealPhotosPath, p.basename(entry.key)));
+    await target.writeAsBytes(entry.value, flush: true);
+    written++;
+  }
+  return written;
 }
 
 /// Reads the whole vault, plus [settings], into the map that gets encrypted.

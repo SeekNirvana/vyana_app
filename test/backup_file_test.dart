@@ -43,10 +43,12 @@ void main() {
   group('a backup goes out and comes back whole', () {
     test('what goes in is what comes out', () async {
       final restored = await openBackup(bytes: file, passphrase: passphrase);
-      expect(restored['payloadVersion'], 1);
-      expect((restored['profile'] as Map)['firstName'], 'Leena');
-      expect((restored['journal'] as List).first['title'], 'Water again');
-      expect((restored['ringHistory'] as Map)['days'], 240);
+      final payload = restored.payload;
+      expect(payload['payloadVersion'], 1);
+      expect((payload['profile'] as Map)['firstName'], 'Leena');
+      expect((payload['journal'] as List).first['title'], 'Water again');
+      expect((payload['ringHistory'] as Map)['days'], 240);
+      expect(restored.files, isEmpty);
     });
 
     test('nothing in the file gives the contents away', () {
@@ -192,7 +194,78 @@ void main() {
         random: Random(7),
       );
       final back = await openBackup(bytes: seeded, passphrase: 'pass');
-      expect(back['x'], 1);
+      expect(back.payload['x'], 1);
+    });
+  });
+
+  group('meal photos travel with the record', () {
+    // Photos are files, not rows, and unlike the model and the voice they
+    // do not download again — a restore without them gives someone their
+    // meals with the pictures missing.
+    final photoA = List<int>.filled(2048, 7);
+    final photoB = List<int>.filled(1024, 9);
+
+    Future<List<int>> withPhotos() => writeBackup(
+          payload: const {'payloadVersion': 1},
+          passphrase: passphrase,
+          appVersion: '1.1.6',
+          files: {
+            'meal_1.jpg': () async => photoA,
+            'meal_2.jpg': () async => photoB,
+          },
+        );
+
+    test('they come back byte for byte', () async {
+      final restored =
+          await openBackup(bytes: await withPhotos(), passphrase: passphrase);
+      expect(restored.files.keys, ['meal_1.jpg', 'meal_2.jpg']);
+      expect(restored.files['meal_1.jpg'], photoA);
+      expect(restored.files['meal_2.jpg'], photoB);
+    });
+
+    test('the header says how many, but never what they are called', () async {
+      final bytes = await withPhotos();
+      final header = readBackupHeader(bytes);
+      expect(header.attachments, 2);
+      // A meal photo's name is the user's. It lives in the encrypted
+      // manifest, not in the line anyone can read.
+      final headerLine = utf8.decode(bytes.sublist(0, bytes.indexOf(0x0a)));
+      expect(headerLine, isNot(contains('meal_1.jpg')));
+    });
+
+    test('each photo gets its own nonce', () async {
+      // Reusing a nonce with the same key is how AES-GCM is broken, so two
+      // identical photos must still encrypt differently.
+      final same = await writeBackup(
+        payload: const {'payloadVersion': 1},
+        passphrase: passphrase,
+        appVersion: '1.1.6',
+        files: {
+          'a.jpg': () async => photoA,
+          'b.jpg': () async => photoA,
+        },
+      );
+      final text = utf8.decode(same);
+      final lines = text.split('\n');
+      expect(lines.length, 4);
+      expect(lines[2], isNot(equals(lines[3])));
+    });
+
+    test('a missing photo is damage, not a wrong passphrase', () async {
+      // The body has already proved the key by the time photos are read.
+      final bytes = await withPhotos();
+      final cut = utf8.decode(bytes).split('\n')..removeLast();
+      await expectLater(
+        openBackup(bytes: utf8.encode(cut.join('\n')), passphrase: passphrase),
+        throwsA(isA<BackupException>()
+            .having((e) => e.failure, 'failure', BackupFailure.damaged)),
+      );
+    });
+
+    test('a backup with no photos still works', () async {
+      final restored = await openBackup(bytes: file, passphrase: passphrase);
+      expect(restored.files, isEmpty);
+      expect(readBackupHeader(file).attachments, 0);
     });
   });
 }

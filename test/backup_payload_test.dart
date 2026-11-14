@@ -1,4 +1,8 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:drift/native.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyana/src/data/db.dart';
 import 'package:vyana/src/services/backup_payload.dart';
@@ -180,6 +184,68 @@ void main() {
     test('the profile and pins are in', () {
       expect(kBackupSettingKeys, contains('flutter.vyana.user_profile'));
       expect(kBackupSettingKeys, contains('flutter.vyana.practice.pins'));
+    });
+  });
+
+  group('meal photos go with the meals', () {
+    late Directory temp;
+
+    setUp(() async {
+      temp = await Directory.systemTemp.createTemp('vyana_photos');
+    });
+    tearDown(() async {
+      if (temp.existsSync()) await temp.delete(recursive: true);
+    });
+
+    test('a photo is collected by name and restored by name', () async {
+      final original = File(p.join(temp.path, 'meal_1.jpg'))
+        ..writeAsBytesSync(List<int>.filled(512, 3));
+      await db.addMeal(
+        id: 'm1',
+        label: 'Dal and rice',
+        mealType: 'dinner',
+        photoPath: original.path,
+      );
+
+      final files =
+          await collectMealPhotos(db: db, mealPhotosPath: temp.path);
+      expect(files.keys, ['meal_1.jpg']);
+      expect(await files['meal_1.jpg']!(), hasLength(512));
+
+      // A different phone: the old absolute path does not exist there, and
+      // the photo lands in that phone's own folder under the same name —
+      // which is what resolveMealPhoto looks for.
+      final elsewhere =
+          await Directory.systemTemp.createTemp('vyana_photos_other');
+      final written = await restoreMealPhotos(
+        files: {'meal_1.jpg': Uint8List.fromList(List<int>.filled(512, 3))},
+        mealPhotosPath: elsewhere.path,
+      );
+      expect(written, 1);
+      expect(File(p.join(elsewhere.path, 'meal_1.jpg')).existsSync(), isTrue);
+      await elsewhere.delete(recursive: true);
+    });
+
+    test('a meal whose photo is gone does not break the backup', () async {
+      await db.addMeal(
+        id: 'm2',
+        label: 'Soup',
+        mealType: 'lunch',
+        photoPath: p.join(temp.path, 'never_existed.jpg'),
+      );
+      final files =
+          await collectMealPhotos(db: db, mealPhotosPath: temp.path);
+      expect(files, isEmpty);
+    });
+
+    test('the summary counts photos as well as records', () {
+      const report = BackupRestoreReport(
+        rowsByTable: {'meals': 2},
+        skippedTables: [],
+        skippedColumns: [],
+        photos: 2,
+      );
+      expect(report.summary, '2 records and 2 photos restored');
     });
   });
 }
