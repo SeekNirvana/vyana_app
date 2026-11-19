@@ -99,6 +99,9 @@ class RingController extends ChangeNotifier {
   bool _measureCaptured = false;
   MeasurementOutcome? _lastMeasurement;
 
+  /// Item 110: when the offline alert was last handed to the OS.
+  DateTime? _offlineAlertArmedAt;
+
   /// Item 133: the value the ring actually sent during this measurement,
   /// and whether its raw reply has been logged yet (once per measurement).
   CapturedReading? _measuredReading;
@@ -717,6 +720,20 @@ class RingController extends ChangeNotifier {
     unawaited(_maybePeriodicSync());
   }
 
+  /// Item 110: whether a "connected" reading should re-arm the offline
+  /// alert: when the ring has just come back, or when the last arming is
+  /// [every] old. Not on every poll that says what the last one said.
+  @visibleForTesting
+  static bool offlineAlertNeedsRearming({
+    required bool wasConnected,
+    required DateTime? lastArmedAt,
+    required DateTime now,
+    Duration every = const Duration(minutes: 5),
+  }) {
+    if (!wasConnected || lastArmedAt == null) return true;
+    return now.difference(lastArmedAt) >= every;
+  }
+
   /// Item 132: whether a battery poll brought anything new to store.
   @visibleForTesting
   static bool batteryPollChanged({
@@ -859,10 +876,20 @@ class RingController extends ChangeNotifier {
       // of reach is announced even if the app never runs again in between.
       // Item 64: only where the schedule is the only path. On Android the
       // service checks it live, and arming both is why it arrived twice.
-      if (!liveChecksRunHere) {
+      // Item 110: on iPhone the 2-second poll reports "connected" every
+      // time, and each one cancelled and re-scheduled this. Re-armed when
+      // the connection comes back, and otherwise at most every few
+      // minutes, which keeps the two-hour alert accurate to minutes.
+      final now = DateTime.now();
+      if (!liveChecksRunHere &&
+          offlineAlertNeedsRearming(
+            wasConnected: wasConnected,
+            lastArmedAt: _offlineAlertArmedAt,
+            now: now,
+          )) {
+        _offlineAlertArmedAt = now;
         unawaited(
-          VitalsNotificationService.instance
-              .scheduleRingOfflineAlert(DateTime.now()),
+          VitalsNotificationService.instance.scheduleRingOfflineAlert(now),
         );
       }
       _resetReconnectBackoff();
@@ -2748,6 +2775,8 @@ class RingController extends ChangeNotifier {
     // when it is needed. It runs whenever it is enabled and a ring is
     // paired, and says so in its notification.
     if (_foregroundServiceEnabled && _pairedRing != null) {
+      // A new service has no text yet, whatever was sent to the last one.
+      _lastForegroundNotification = null;
       unawaited(
         RingForegroundService.start(
           intervalMinutes: _periodicSyncIntervalMinutes,
@@ -2758,6 +2787,17 @@ class RingController extends ChangeNotifier {
     }
   }
 
+  /// Item 110: the last notification text sent to the service, so the
+  /// platform is only told when it changes, not on every poll.
+  ({String title, String body})? _lastForegroundNotification;
+
+  void _sendForegroundNotification(String title, String body) {
+    final next = (title: title, body: body);
+    if (next == _lastForegroundNotification) return;
+    _lastForegroundNotification = next;
+    unawaited(RingForegroundService.update(title: title, body: body));
+  }
+
   void _updateForegroundNotification() {
     if (!Platform.isAndroid ||
         !_foregroundServiceEnabled ||
@@ -2765,11 +2805,9 @@ class RingController extends ChangeNotifier {
       return;
     }
     if (!_isConnected) {
-      unawaited(
-        RingForegroundService.update(
-          title: _pairedRing?.displayName ?? 'Vyana',
-          body: 'Reconnecting to your ring…',
-        ),
+      _sendForegroundNotification(
+        _pairedRing?.displayName ?? 'Vyana',
+        'Reconnecting to your ring…',
       );
       return;
     }
@@ -2788,12 +2826,7 @@ class RingController extends ChangeNotifier {
     ];
     final body = parts.isEmpty ? 'Ring connected' : parts.join(' · ');
 
-    unawaited(
-      RingForegroundService.update(
-        title: _pairedRing?.displayName ?? 'Vyana',
-        body: body,
-      ),
-    );
+    _sendForegroundNotification(_pairedRing?.displayName ?? 'Vyana', body);
   }
 }
 

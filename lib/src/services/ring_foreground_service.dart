@@ -119,6 +119,10 @@ class RingForegroundService {
   static Future<List<DateTime>> heartbeatLog() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Item 110: the service isolate writes the log; this isolate's
+      // preferences are a cache of what it read at launch, so a long-running
+      // app showed an old log without this.
+      await prefs.reload();
       final raw = prefs.getStringList(_heartbeatLogKey) ?? const <String>[];
       return [
         for (final entry in raw)
