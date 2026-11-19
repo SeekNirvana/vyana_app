@@ -266,7 +266,7 @@ class GuideRuntimeService {
 
     // An on-device chat keeps the turns it was given, so repeating the
     // numbers is what pushes the question out of the window.
-    final sendData = novaDataNeedsSending(
+    var sendData = novaDataNeedsSending(
       block: data.block,
       key: data.key,
       lastSentKey: _sentDataKey,
@@ -274,18 +274,55 @@ class GuideRuntimeService {
     );
 
     try {
+      String compose({required bool withData}) => composeNovaPrompt(
+            message: message,
+            timeLine: data.timeLine,
+            dataBlock: withData ? data.block : '',
+            lookupBlock: lookupBlock,
+          );
+      var composed = compose(withData: sendData);
+      var promptTokens = await _countTokens(composed);
+
+      // Item 126: everything in one conversation accumulates in the
+      // window, and nothing made room, so a long conversation eventually
+      // left none for the reply (and flutter_gemma then drops the oldest
+      // turns on its own, DATA block included, without saying so). When
+      // the next turn and ~400 tokens of reply will not fit, start a fresh
+      // session: the instructions, the current DATA block, the last few
+      // turns. The conversation on screen stays whole; only what Nova
+      // holds in memory is trimmed.
+      if (_turns.isNotEmpty &&
+          novaWindowNeedsRoom(
+            used: _systemTokens + _turnTokens,
+            prompt: promptTokens,
+            window: _windowTokens,
+          )) {
+        final withData = compose(withData: data.block.trim().isNotEmpty);
+        final withDataTokens = await _countTokens(withData);
+        final keep = novaTurnsToKeep(
+          turnTokens: [for (final t in _turns) t.tokens],
+          fixedTokens:
+              _systemTokens + withDataTokens + kNovaReplyReserveTokens,
+          window: _windowTokens,
+        );
+        debugPrint(
+          '[GuideRuntime] window nearly full '
+          '(${_systemTokens + _turnTokens} + $promptTokens of '
+          '$_windowTokens); fresh session with the last $keep turn(s).',
+        );
+        await _rebuildSession(_turns.sublist(_turns.length - keep));
+        if (_activeChat == null) {
+          throw StateError('Failed to make room in the conversation');
+        }
+        sendData = data.block.trim().isNotEmpty;
+        composed = withData;
+        promptTokens = withDataTokens;
+      }
       final dataSent = sendData ? data.block : '';
-      final composed = composeNovaPrompt(
-        message: message,
-        timeLine: data.timeLine,
-        dataBlock: dataSent,
-        lookupBlock: lookupBlock,
-      );
 
       // Item 123, debug line 1: what this reply is being asked to fit
       // into. If replies are still cut short on a phone, this says whether
       // the window was the reason.
-      final promptTokens = await _countTokens(composed);
       debugPrint(
         '[GuideRuntime] sending: system=$_systemTokens '
         'data=${await _countTokens(dataSent)} '
@@ -429,10 +466,21 @@ class GuideRuntimeService {
           ],
         ],
       );
+      // Replayed without their DATA and LOOKUP blocks, so they cost less
+      // than they did the first time; count them as they now sit.
+      final recounted = [
+        for (final turn in kept)
+          NovaTurn(
+            message: turn.message,
+            reply: turn.reply,
+            tokens: await _countTokens(turn.message) +
+                await _countTokens(turn.reply),
+          ),
+      ];
       _turns
         ..clear()
-        ..addAll(kept);
-      _turnTokens = kept.fold(0, (sum, t) => sum + t.tokens);
+        ..addAll(recounted);
+      _turnTokens = recounted.fold(0, (sum, t) => sum + t.tokens);
     } on Object catch (error) {
       debugPrint('[GuideRuntime] could not rebuild the session ($error)');
       _turns.clear();

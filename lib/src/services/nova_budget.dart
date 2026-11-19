@@ -554,3 +554,43 @@ class NovaTurn {
 /// token, rounded up, which over-counts English slightly. Over is safe.
 int novaTokenEstimate(String text) =>
     text.trim().isEmpty ? 0 : (text.length / 4).ceil();
+
+// ── Making room in a long conversation (item 126) ────────────────────────
+
+/// Room kept for Nova's reply when deciding whether the next turn fits.
+const int kNovaReplyReserveTokens = 400;
+
+/// At most this many earlier turns are carried into a fresh session.
+const int kNovaKeepTurns = 3;
+
+/// Whether the next message, plus room for the reply, no longer fits in
+/// what the session already holds ([used]: instructions and turns).
+bool novaWindowNeedsRoom({
+  required int used,
+  required int prompt,
+  required int window,
+  int reserve = kNovaReplyReserveTokens,
+}) =>
+    window > 0 && used + prompt + reserve > window;
+
+/// How many of the most recent turns a fresh session can carry.
+///
+/// [fixedTokens] is what the new session must hold whatever happens: the
+/// instructions, the next message with its DATA block, and the reply's
+/// reserve. Turns are kept newest first, up to [maxTurns], while they fit.
+int novaTurnsToKeep({
+  required List<int> turnTokens,
+  required int fixedTokens,
+  required int window,
+  int maxTurns = kNovaKeepTurns,
+}) {
+  var keep = math.min(maxTurns, turnTokens.length);
+  while (keep > 0) {
+    final kept = turnTokens
+        .sublist(turnTokens.length - keep)
+        .fold<int>(0, (sum, t) => sum + t);
+    if (fixedTokens + kept <= window) break;
+    keep--;
+  }
+  return keep;
+}
