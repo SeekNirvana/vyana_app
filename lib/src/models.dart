@@ -1828,8 +1828,18 @@ List<SleepDaySummary> sleepDaySummaries(
         ],
         measuring: measuring,
       );
+      // Item 105: the gaps between records decide what is not recorded;
+      // the length is then the span minus awake minus not recorded, so the
+      // unlabelled minutes *inside* a record count as sleep too.
+      // split.unstagedSeconds is contained in this, not added to it.
+      final unlabelled = unlabelledSleepSeconds(
+        spanSeconds: windowEnd.difference(windowStart).inSeconds,
+        stagedSeconds: breakdown.stagedAsleepSeconds,
+        awakeSeconds: breakdown.awakeSeconds,
+        notRecordedSeconds: split.notRecordedSeconds,
+      );
       filled = filled.withGaps(
-        unstaged: split.unstagedSeconds,
+        unstaged: unlabelled,
         notRecorded: split.notRecordedSeconds,
       );
       notRecorded = split.notRecorded;
@@ -1944,16 +1954,24 @@ int sleepScoreForBreakdown(SleepStageBreakdown breakdown) {
   final efficiencyScore = ((efficiency - 0.72) / 0.25 * 20)
       .clamp(0, 20)
       .toDouble();
-  final deepScore = _ratioScore(
-    actual: breakdown.deepSeconds / asleep,
-    target: 0.18,
-    points: 15,
-  );
-  final remScore = _ratioScore(
-    actual: breakdown.remSeconds / asleep,
-    target: 0.22,
-    points: 15,
-  );
+  // Item 105: the stage shares are of *staged* sleep. Dividing by asleep,
+  // which includes unstaged minutes, made a night with a long unstaged
+  // stretch look short of deep and REM it was never measured for.
+  final staged = breakdown.stagedAsleepSeconds.toDouble();
+  final deepScore = staged <= 0
+      ? 0.0
+      : _ratioScore(
+          actual: breakdown.deepSeconds / staged,
+          target: 0.18,
+          points: 15,
+        );
+  final remScore = staged <= 0
+      ? 0.0
+      : _ratioScore(
+          actual: breakdown.remSeconds / staged,
+          target: 0.22,
+          points: 15,
+        );
   final awakePenalty = (breakdown.awakeSeconds / 60 / 8).clamp(0, 8).toDouble();
   final score =
       durationScore + efficiencyScore + deepScore + remScore + 5 - awakePenalty;

@@ -207,3 +207,52 @@ String notRecordedLabel(int seconds) {
       ? 'Not recorded · ${hours}h'
       : 'Not recorded · ${hours}h ${rest.toString().padLeft(2, '0')}m';
 }
+
+/// Item 105: the unlabelled sleep in a night, by the agreed rule.
+///
+/// Sleep length is fell asleep to woke up, minus awake, minus not recorded
+/// (decided 14 Nov). Item 92 counted the gaps *between* records, but each
+/// record was still counted as its stages, so a record whose stages did not
+/// cover its own span lost those minutes. Taking the span and subtracting
+/// is what counts them: whatever is neither staged, awake nor not recorded
+/// is sleep the ring did not stage. Never negative, because overlapping
+/// records can stage more than the span.
+int unlabelledSleepSeconds({
+  required int spanSeconds,
+  required int stagedSeconds,
+  required int awakeSeconds,
+  required int notRecordedSeconds,
+}) {
+  final rest = spanSeconds - stagedSeconds - awakeSeconds - notRecordedSeconds;
+  return rest < 0 ? 0 : rest;
+}
+
+/// Item 105: where in the night the unstaged sleep is, for the stage chart
+/// to draw in a neutral tone: everything between [windowStart] and
+/// [windowEnd] that no [labelled] span covers and is not [notRecorded].
+List<SleepSpan> unlabelledSleepSpans({
+  required DateTime windowStart,
+  required DateTime windowEnd,
+  required List<SleepSpan> labelled,
+  List<SleepGap> notRecorded = const [],
+}) {
+  if (!windowEnd.isAfter(windowStart)) return const [];
+  final covered = _mergeSpans(
+    [
+      ...labelled,
+      for (final gap in notRecorded) SleepSpan(from: gap.from, to: gap.to),
+    ],
+    windowStart,
+    windowEnd,
+  );
+  final out = <SleepSpan>[];
+  var cursor = windowStart;
+  for (final span in covered) {
+    if (span.from.isAfter(cursor)) {
+      out.add(SleepSpan(from: cursor, to: span.from));
+    }
+    if (span.to.isAfter(cursor)) cursor = span.to;
+  }
+  if (windowEnd.isAfter(cursor)) out.add(SleepSpan(from: cursor, to: windowEnd));
+  return out;
+}

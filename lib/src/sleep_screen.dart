@@ -490,6 +490,14 @@ class _SleepStageDurationGrid extends StatelessWidget {
       // silently, which is how a night from 00:07 to 09:00 with 0m awake
       // came to read as 8h 05m. Grey, because it is not a stage and not a
       // verdict — it is the ring saying it was not there.
+      // Item 105: sleep the ring did not stage, so the parts add up to the
+      // length above. Neutral, like its band in the chart.
+      if (breakdown.unstagedSeconds > 0)
+        (
+          'Unstaged sleep',
+          breakdown.unstagedSeconds,
+          context.vyana.textSec,
+        ),
       if (breakdown.notRecordedSeconds > 0)
         (
           'Not recorded',
@@ -1293,6 +1301,52 @@ class SleepWaveformPainter extends CustomPainter {
         Offset(x - 14, size.height - 18),
         labelStyle,
       );
+    }
+
+    // Item 105: sleep the ring did not stage, drawn in a neutral tone so
+    // the chart covers the whole night it reports. Only where the stages
+    // are timestamped: estimated stages are already spread across the
+    // records' time, so there is no gap to draw.
+    if (day.breakdown.unstagedSeconds > 0 &&
+        day.waveform.any((segment) => !segment.approximate)) {
+      final neutral = Paint()
+        ..color = (dark ? const Color(0xFF8C8A93) : const Color(0xFF9AA1A8))
+            .withValues(alpha: dark ? 0.22 : 0.28);
+      final unstagedTop = top + laneHeight * 2;
+      for (final span in unlabelledSleepSpans(
+        windowStart: day.windowStart,
+        windowEnd: day.windowEnd,
+        labelled: [
+          for (final segment in day.waveform)
+            SleepSpan(
+              from: DateTime.fromMillisecondsSinceEpoch(
+                segment.startTimeStamp * 1000,
+              ),
+              to: DateTime.fromMillisecondsSinceEpoch(
+                segment.endTimeStamp * 1000,
+              ),
+            ),
+        ],
+        notRecorded: day.notRecorded,
+      )) {
+        final startX = (left +
+                (span.from.millisecondsSinceEpoch / 1000 - windowStart) /
+                    windowSeconds *
+                    plotWidth)
+            .clamp(left, right)
+            .toDouble();
+        final endX = (left +
+                (span.to.millisecondsSinceEpoch / 1000 - windowStart) /
+                    windowSeconds *
+                    plotWidth)
+            .clamp(left, right)
+            .toDouble();
+        if (endX <= startX) continue;
+        canvas.drawRect(
+          Rect.fromLTRB(startX, unstagedTop, endX, bottomY),
+          neutral,
+        );
+      }
     }
 
     final areaPath = Path();
