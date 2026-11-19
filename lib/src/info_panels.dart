@@ -278,6 +278,20 @@ class _AppAboutScreenState extends State<AppAboutScreen> {
                         ),
                       ),
                     ),
+                    // Item 119: the sync log existed and had no way in —
+                    // openHistory was never called.
+                    const SizedBox(height: 10),
+                    Consumer(
+                      builder: (context, ref, _) => Cta(
+                        label: 'Sync log',
+                        icon: 'sync',
+                        solid: false,
+                        onTap: () => openHistory(
+                          context,
+                          ref.read(ringControllerProvider),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1366,6 +1380,8 @@ class HistorySyncLogger {
       basicInfo: basicInfo,
       features: features,
       history: history,
+      // Item 119: no MAC address standing in for a missing device ID.
+      includeAddress: false,
     );
     // Item 90: the ring's MAC address is not needed to explain a sync, and
     // a diagnostic file is the last place it should be sitting in plain
