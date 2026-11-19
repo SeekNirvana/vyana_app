@@ -81,6 +81,21 @@ String readinessSummary(int? score, {bool hrvOnly = false}) {
   return 'Your body is asking for rest. Be gentle today.';
 }
 
+/// Item 112: the completion notification's sentence. "You're feeling …"
+/// works for a readiness word and for nothing else: an HRV-only score came
+/// out as "You're feeling partial read — …", and no score as a verdict.
+String wellnessResultSentence(WellnessState state) {
+  final word = state.title;
+  final line = state.spokenLine.endsWith('.')
+      ? state.spokenLine.substring(0, state.spokenLine.length - 1)
+      : state.spokenLine;
+  if (word == readinessStateWord(null)) return '$word — $line.';
+  if (word == readinessStateWord(0, hrvOnly: true)) {
+    return 'Partial read: sleep not recorded.';
+  }
+  return "You're feeling ${word.toLowerCase()} — $line.";
+}
+
 /// A single plain-language signal, e.g. Heart rate → "Elevated".
 class WellnessSignal {
   const WellnessSignal({
@@ -198,10 +213,13 @@ class WellnessState {
           : hrv >= 35
               ? WellnessTone.steady
               : WellnessTone.watch;
+      // Item 112: 'Steady', the HRV chip's word. 'Balanced' is a readiness
+      // word, and reaching the widget and notification beside a readiness
+      // of Ready or Depleted it said two things at once.
       final reading = hrv >= 55
           ? 'Well recovered'
           : hrv >= 35
-              ? 'Balanced'
+              ? 'Steady'
               : 'Take it easy';
       signals.add(WellnessSignal(
         label: 'Recovery',
@@ -272,27 +290,14 @@ class WellnessState {
       );
     }
 
-    final watch = signals.where((s) => s.tone == WellnessTone.watch).length;
-    final good = signals.where((s) => s.tone == WellnessTone.good).length;
-    final overall = watch > 0 && watch >= good
-        ? WellnessTone.watch
-        : good > signals.length / 2
-            ? WellnessTone.good
-            : WellnessTone.steady;
-    final title = overall == WellnessTone.good
-        ? 'Steady & bright'
-        : overall == WellnessTone.watch
-            ? 'Running low'
-            : 'Holding steady';
-    final summary = overall == WellnessTone.good
-        ? 'Your readings look calm and strong right now.'
-        : overall == WellnessTone.watch
-            ? 'A few signals are asking for some care today.'
-            : 'You are in a balanced place right now.';
+    // Item 112: no readiness score is "No read yet", as the app says. The
+    // notification and the widget used to make up a verdict of their own
+    // from the live signals ("Steady & bright", "Running low") while the
+    // screen beside them said there was no read.
     return WellnessState(
-      title: title,
-      summary: summary,
-      tone: overall,
+      title: readinessStateWord(null),
+      summary: readinessSummary(null),
+      tone: WellnessTone.unknown,
       signals: signals,
       hasData: true,
     );

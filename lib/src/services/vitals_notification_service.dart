@@ -367,7 +367,7 @@ class VitalsNotificationService {
     if (!_ready) return;
     await cancelProgress();
     final base = state.hasData
-        ? "You're feeling ${state.title.toLowerCase()} — ${state.spokenLine}."
+        ? wellnessResultSentence(state)
         : 'Monitoring finished, but no clean readings came through. '
             'Make sure the ring is snug and try again.';
     final body = retakeNote == null ? base : '$base\n$retakeNote';
