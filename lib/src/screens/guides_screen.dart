@@ -53,7 +53,11 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
         );
   }
 
-  Future<void> _send(GuidePersona guide, {String? text}) async {
+  Future<void> _send(
+    GuidePersona guide, {
+    String? text,
+    bool spoken = false,
+  }) async {
     final prompt = (text ?? _input.text).trim();
     if (prompt.isEmpty || _sending) return;
 
@@ -77,6 +81,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     // The user bubble and the empty one the reply streams into. Written to
     // the vault as it goes, so closing the app mid-answer loses the answer
     // rather than the question.
+    ref.read(chatHistoryProvider).noteInput(spoken: spoken);
     final replyIndex = await ref.read(chatHistoryProvider).addUserTurn(
       personaId: guide.id,
       text: prompt,
@@ -120,6 +125,9 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     final manager = ref.read(guideModelManagerProvider);
     final voice = ref.read(guideVoiceServiceProvider);
     final history = ref.read(chatHistoryProvider);
+    // Item 128: typed gets text, spoken gets spoken, unless the speaker
+    // icon says otherwise. Read live, so tapping it mid-reply takes effect.
+    bool aloud() => history.repliesAloud;
 
     try {
       if (manager.streamingEnabled) {
@@ -134,7 +142,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
         )) {
           if (!mounted) return;
           history.updateReply(replyIndex, partial);
-          if (voice.voiceResponsesEnabled) {
+          if (aloud()) {
             final unspoken = partial.substring(spokenUpTo);
             final matches = sentenceEnd.allMatches(unspoken);
             if (matches.isNotEmpty) {
@@ -149,7 +157,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
           }
           _scrollToEnd();
         }
-        if (voice.voiceResponsesEnabled) {
+        if (aloud()) {
           final remaining = stripGuideMarkdown(
             history.messages[replyIndex].text.substring(spokenUpTo).trim(),
           );
@@ -164,7 +172,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
         );
         if (!mounted) return;
         history.updateReply(replyIndex, reply);
-        if (voice.voiceResponsesEnabled && reply.trim().isNotEmpty) {
+        if (aloud() && reply.trim().isNotEmpty) {
           unawaited(voice.speak(stripGuideMarkdown(reply)));
         }
       }
@@ -214,7 +222,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
       if (voice.isRecording) {
         final transcript = await voice.stopRecordingAndTranscribe();
         if (transcript.trim().isNotEmpty) {
-          await _send(guide, text: transcript.trim());
+          await _send(guide, text: transcript.trim(), spoken: true);
         }
       } else {
         if (!voice.whisperModelReady && !voice.isPreparingWhisperModel) {
@@ -302,11 +310,17 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
                   onTap: () => openGuidePersonaSettings(context, guide),
                 ),
               if (modelReady)
+                // Item 128: overrides typed-gets-text / spoken-gets-spoken
+                // for this conversation. Turning voice off also stops what
+                // is being said.
                 IconBtn(
                   icon: 'speaker',
-                  active: voice.voiceResponsesEnabled,
-                  onTap: () => voice
-                      .setVoiceResponsesEnabled(!voice.voiceResponsesEnabled),
+                  active: ref.watch(chatHistoryProvider).repliesAloud,
+                  onTap: () {
+                    final history = ref.read(chatHistoryProvider);
+                    history.toggleVoice();
+                    if (!history.repliesAloud) unawaited(voice.stopSpeaking());
+                  },
                 ),
               // Was a plus that opened the AI settings — a leftover from
               // the guide library, and the fourth way into a screen You
@@ -730,7 +744,7 @@ class _Composer extends StatelessWidget {
                   const SizedBox(width: 8),
                   Text(
                     recording
-                        ? 'Listening… tap the mic to send'
+                        ? 'Listening… tap ■ to send'
                         : 'Transcribing your voice…',
                     style: VyanaType.mono10.copyWith(color: t.textMuted),
                   ),

@@ -88,6 +88,14 @@ String chatTitleFrom(String firstMessage) {
   return '${stem.trimRight()}…';
 }
 
+/// Item 128: whether Nova's reply is spoken.
+///
+/// Decided 15 Nov: a typed message gets a text reply, a spoken one a spoken
+/// reply. The speaker icon overrides that for the rest of the conversation
+/// ([override]); null means follow how the message was sent.
+bool novaSpeaksReply({required bool spoken, bool? override}) =>
+    override ?? spoken;
+
 /// The live conversation, and the writing of it to the vault.
 ///
 /// Lives as long as the app process, which is also how long the model's own
@@ -113,6 +121,34 @@ class ChatHistoryController extends ChangeNotifier {
   bool _saveLoaded = false;
 
   bool get saveConversations => _saveConversations;
+
+  /// Item 128: how the last message was sent, and the speaker icon's
+  /// override, both for the live conversation only.
+  bool _lastSpoken = false;
+  bool? _voiceOverride;
+
+  bool get lastMessageSpoken => _lastSpoken;
+  bool? get voiceOverride => _voiceOverride;
+
+  /// What the speaker icon shows: whether the next reply would be spoken.
+  bool get repliesAloud =>
+      novaSpeaksReply(spoken: _lastSpoken, override: _voiceOverride);
+
+  /// The speaker icon: typing, it turns voice on; speaking, it turns it off.
+  void toggleVoice() {
+    _voiceOverride = !repliesAloud;
+    notifyListeners();
+  }
+
+  /// Records how the message about to be sent was given.
+  void noteInput({required bool spoken}) {
+    _lastSpoken = spoken;
+  }
+
+  void _resetVoice() {
+    _lastSpoken = false;
+    _voiceOverride = null;
+  }
 
   Future<void> _loadSavePref() async {
     if (_saveLoaded) return;
@@ -182,6 +218,7 @@ class ChatHistoryController extends ChangeNotifier {
     _sessionId = null;
     _ordinal = 0;
     _pendingReplyId = null;
+    _resetVoice();
     _messages
       ..clear()
       ..add(GuideMessage(fromUser: false, text: starter));
@@ -201,6 +238,7 @@ class ChatHistoryController extends ChangeNotifier {
     _sessionId = null;
     _ordinal = 0;
     _pendingReplyId = null;
+    _resetVoice();
     _messages
       ..clear()
       ..add(GuideMessage(fromUser: false, text: starter));
