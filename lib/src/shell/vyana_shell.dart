@@ -212,6 +212,15 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
       }
     });
 
+    // Item 129: a snack bar belongs to the screen that showed it. The
+    // messenger is app-wide, so without this "Skipped for today · Undo"
+    // came along to Metrics.
+    ref.listen<int>(tabIndexProvider, (previous, next) {
+      if (previous != next) {
+        ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+      }
+    });
+
     final t = context.vyana;
     final index = ref.watch(tabIndexProvider);
     final ring = ref.watch(ringControllerProvider);

@@ -871,6 +871,9 @@ void showVyanaSnackBar(
     ..showSnackBar(
       SnackBar(
         duration: duration,
+        // Item 129: a snack bar with an action would otherwise persist
+        // until dismissed, whatever [duration] says.
+        persist: false,
         backgroundColor: t.elevated,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),

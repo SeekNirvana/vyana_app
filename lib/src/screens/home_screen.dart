@@ -1296,19 +1296,25 @@ Future<void> _skipPlannedToday(
   await skips.skip(id);
   await reminders.reschedule();
 
-  messenger.showSnackBar(
-    SnackBar(
-      content: const Text('Skipped for today'),
-      duration: const Duration(seconds: 6),
-      action: SnackBarAction(
-        label: 'Undo',
-        onPressed: () async {
-          await skips.unskip(id);
-          await reminders.reschedule();
-        },
+  // Item 129: persist: false, or recent Flutter keeps a snack bar that has
+  // an action until it is dismissed, ignoring the six seconds — and on the
+  // app-level messenger it followed the person to every other screen.
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: const Text('Skipped for today'),
+        duration: const Duration(seconds: 6),
+        persist: false,
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            await skips.unskip(id);
+            await reminders.reschedule();
+          },
+        ),
       ),
-    ),
-  );
+    );
 }
 
 /// Item 46: one line under a planned practice on a low-readiness day. The
