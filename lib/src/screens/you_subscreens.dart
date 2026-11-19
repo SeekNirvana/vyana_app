@@ -1068,6 +1068,9 @@ Future<void> showTrainingFrequencySheet(BuildContext context, WidgetRef ref) {
   final t = context.vyana;
   final profile = ref.read(userProfileProvider).valueOrNull ?? const UserProfile();
   final current = TrainingFrequencyX.fromName(profile.trainingFrequency);
+  // Item 115: one save per sheet. A double tap saved twice and popped
+  // twice, and the second pop closed the screen underneath.
+  var saving = false;
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -1101,9 +1104,17 @@ Future<void> showTrainingFrequencySheet(BuildContext context, WidgetRef ref) {
                 child: Panel(
                   pad: 13,
                   onTap: () async {
-                    await ref.read(userProfileProvider.notifier).save(
-                          profile.copyWith(trainingFrequency: f.name),
-                        );
+                    if (saving) return;
+                    saving = true;
+                    try {
+                      await ref.read(userProfileProvider.notifier).save(
+                            profile.copyWith(trainingFrequency: f.name),
+                          );
+                    } catch (_) {
+                      // A failed save leaves the sheet usable for a retry.
+                      saving = false;
+                      rethrow;
+                    }
                     if (sheetContext.mounted) Navigator.of(sheetContext).pop();
                   },
                   child: Row(

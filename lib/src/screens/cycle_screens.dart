@@ -1180,15 +1180,23 @@ Future<void> showCycleModeSheet(BuildContext context, WidgetRef ref) {
                       : () async {
                           setSheetState(() => saving = true);
                           final navigator = Navigator.of(sheetContext);
-                          await ref
-                              .read(userProfileProvider.notifier)
-                              .save(
-                                profile.copyWith(
-                                  cycleMode: mode,
-                                  cycleSheetSeen: true,
-                                  clearDueDate: mode != CycleMode.pregnant,
-                                ),
-                              );
+                          // Item 115: reset in a finally, or a save that
+                          // throws leaves every row disabled for good.
+                          try {
+                            await ref
+                                .read(userProfileProvider.notifier)
+                                .save(
+                                  profile.copyWith(
+                                    cycleMode: mode,
+                                    cycleSheetSeen: true,
+                                    clearDueDate: mode != CycleMode.pregnant,
+                                  ),
+                                );
+                          } finally {
+                            if (sheetContext.mounted) {
+                              setSheetState(() => saving = false);
+                            }
+                          }
                           if (navigator.canPop()) navigator.pop();
                           // Pregnancy needs a due date before it can say
                           // anything.
