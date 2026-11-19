@@ -291,6 +291,22 @@ class BackupService {
     required String appVersion,
     DateTime? now,
   }) async {
+    // Item 108: launch and the service heartbeat can both ask at once.
+    if (_autoBackupRunning) return false;
+    _autoBackupRunning = true;
+    try {
+      return await _runAutoBackupIfDue(appVersion: appVersion, now: now);
+    } finally {
+      _autoBackupRunning = false;
+    }
+  }
+
+  bool _autoBackupRunning = false;
+
+  Future<bool> _runAutoBackupIfDue({
+    required String appVersion,
+    DateTime? now,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final folder = prefs.getString(kAutoBackupFolderKey);
     final lastRun = prefs.getString(kAutoBackupLastRunKey);
@@ -319,8 +335,12 @@ class BackupService {
         return false;
       }
 
-      final directory = Directory(folder!);
-      if (!directory.existsSync()) {
+      // Item 108: through the platform's own access to the folder (a
+      // persisted document-tree permission on Android, a security-scoped
+      // bookmark on iPhone), not a path that lost its access when the app
+      // closed.
+      final directory = BackupFolder(folder!);
+      if (!await directory.reachable()) {
         await prefs.setString(
           kAutoBackupLastErrorKey,
           'That folder is no longer reachable. Choose it again.',
@@ -347,19 +367,14 @@ class BackupService {
         createdAt: when,
       );
 
-      final existing = directory
-          .listSync()
-          .whereType<File>()
-          .map((f) => p.basename(f.path))
-          .toList();
+      final existing = await directory.list();
       final name =
           uniqueBackupName(backupFileName(when), existing.toSet());
-      await File(p.join(folder, name)).writeAsBytes(bytes, flush: true);
+      await directory.write(name, bytes);
 
       for (final stale in staleBackups([...existing, name])) {
         try {
-          final old = File(p.join(folder, stale));
-          if (old.existsSync()) await old.delete();
+          await directory.delete(stale);
         } on Object catch (error) {
           // Keeping too many is harmless; failing the run over it is not.
           debugPrint('[Backup] could not remove $stale: $error');

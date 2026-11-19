@@ -24,6 +24,7 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -130,13 +131,21 @@ class FileExchangeService {
 
   /// Asks the person to choose a folder, once, for the weekly backup.
   ///
-  /// Returns null if they chose none. What comes back is whatever the
-  /// platform's picker gives — on iOS a path in Files, which may be an
-  /// iCloud Drive folder; on Android a location from the system picker.
-  /// Whether it is still writable next week is not something either
-  /// platform promises, so the caller treats a failure to write as a
-  /// normal outcome and says so rather than assuming it worked.
+  /// Returns null if they chose none. Item 108: on Android and iPhone what
+  /// comes back is not a path but a handle the platform will honour next
+  /// week — a document tree with a persisted permission on Android
+  /// (`content://…`), a security-scoped bookmark on iPhone (`bookmark:…`).
+  /// A plain path from the old picker lost its access as soon as the app
+  /// closed. Elsewhere it is a path, as before.
   Future<String?> askForFolder() async {
+    if (BackupFolder.usesPlatformAccess) {
+      try {
+        return await BackupFolder._channel.invokeMethod<String>('pick');
+      } on Object catch (error) {
+        debugPrint('[FileExchange] could not open the folder picker: $error');
+        return null;
+      }
+    }
     try {
       return await getDirectoryPath(
         confirmButtonText: 'Back up here',
@@ -145,5 +154,86 @@ class FileExchangeService {
       debugPrint('[FileExchange] could not open the folder picker: $error');
       return null;
     }
+  }
+}
+
+/// Item 108: the weekly backup's folder, read and written the way each
+/// platform allows. [handle] is what [FileExchangeService.askForFolder]
+/// returned and what is stored in preferences.
+class BackupFolder {
+  const BackupFolder(this.handle);
+
+  final String handle;
+
+  static const MethodChannel _channel = MethodChannel('vyana/backup_folder');
+
+  /// Whether this platform reaches the folder through its own permission.
+  static bool get usesPlatformAccess =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  /// A handle the platform channel understands, as opposed to a plain path
+  /// saved by v1.1.6, which cannot be reached any more on a phone.
+  bool get _isPlatformHandle =>
+      handle.startsWith('content://') || handle.startsWith('bookmark:');
+
+  bool get _viaChannel => usesPlatformAccess && _isPlatformHandle;
+
+  /// Whether the folder can still be written to.
+  Future<bool> reachable() async {
+    if (_viaChannel) {
+      try {
+        return await _channel.invokeMethod<bool>(
+              'reachable',
+              {'folder': handle},
+            ) ??
+            false;
+      } on Object {
+        return false;
+      }
+    }
+    // A plain path on a phone is the v1.1.6 form, which the platform no
+    // longer honours: say so, and the person chooses it again.
+    if (usesPlatformAccess) return false;
+    return Directory(handle).existsSync();
+  }
+
+  /// The names of the files directly in the folder.
+  Future<List<String>> list() async {
+    if (_viaChannel) {
+      final names = await _channel.invokeListMethod<String>(
+        'list',
+        {'folder': handle},
+      );
+      return names ?? const [];
+    }
+    return Directory(handle)
+        .listSync()
+        .whereType<File>()
+        .map((f) => f.uri.pathSegments.last)
+        .toList();
+  }
+
+  Future<void> write(String name, Uint8List bytes) async {
+    if (_viaChannel) {
+      await _channel.invokeMethod<bool>(
+        'write',
+        {'folder': handle, 'name': name, 'bytes': bytes},
+      );
+      return;
+    }
+    await File('$handle${Platform.pathSeparator}$name')
+        .writeAsBytes(bytes, flush: true);
+  }
+
+  Future<void> delete(String name) async {
+    if (_viaChannel) {
+      await _channel.invokeMethod<bool>(
+        'delete',
+        {'folder': handle, 'name': name},
+      );
+      return;
+    }
+    final file = File('$handle${Platform.pathSeparator}$name');
+    if (file.existsSync()) await file.delete();
   }
 }

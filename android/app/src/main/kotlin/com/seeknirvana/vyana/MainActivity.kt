@@ -19,11 +19,16 @@ class MainActivity : FlutterActivity() {
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var pendingStorageResult: MethodChannel.Result? = null
     private var solanaMobileWalletHandler: SolanaMobileWalletHandler? = null
+    private var backupFolderHandler: BackupFolderHandler? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
         solanaMobileWalletHandler = SolanaMobileWalletHandler(this).also {
+            it.register(flutterEngine)
+        }
+        // Item 108: the weekly backup's folder, with a persisted permission.
+        backupFolderHandler = BackupFolderHandler(this).also {
             it.register(flutterEngine)
         }
 
@@ -118,6 +123,14 @@ class MainActivity : FlutterActivity() {
         } catch (_: SecurityException) {
             result.success(null)
         }
+    }
+
+    @Deprecated("Forwarded for the document-tree picker (item 108)")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (backupFolderHandler?.onActivityResult(requestCode, resultCode, data) == true) {
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onRequestPermissionsResult(
