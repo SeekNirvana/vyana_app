@@ -1142,7 +1142,11 @@ class _SuggestedPractice extends ConsumerWidget {
       plan: ref.watch(weeklyPlanProvider),
       // Item 94: what has been stood down for today, so both screens agree
       // about which planned practice is on offer.
-      skippedToday: ref.watch(plannedSkipsProvider.notifier).today,
+      // Item 103: the state, not the notifier. Watching the notifier never
+      // rebuilt on a skip, so "Not today" and Undo changed nothing on
+      // screen until something else did.
+      skippedToday:
+          ref.watch(plannedSkipsProvider).skippedOn(DateTime.now()),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

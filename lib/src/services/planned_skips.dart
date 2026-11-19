@@ -79,4 +79,9 @@ class PlannedSkips {
   /// midnight — a skip made at 23:50 must not be holding at 00:10.
   bool appliesOn(DateTime now) =>
       day.year == now.year && day.month == now.month && day.day == now.day;
+
+  /// The practices skipped for [now]'s day: these, or none once the day
+  /// has turned over.
+  Set<String> skippedOn(DateTime now) =>
+      appliesOn(now) ? activityIds : const <String>{};
 }

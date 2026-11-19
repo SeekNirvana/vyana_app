@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyana/src/services/planned_skips.dart';
 
@@ -114,6 +116,35 @@ void main() {
   group('Nova is told', () {
     test('a skipped practice reads as skipped, not as ignored', () {
       expect(plannedSkippedPhrase('Walk'), 'Walk (skipped today)');
+    });
+  });
+
+  group('item 103: the screens read the skips themselves', () {
+    final day = DateTime(2026, 11, 17);
+    test('today they are what was skipped', () {
+      final skips = PlannedSkips(day: day, activityIds: {'walk'});
+      expect(skips.skippedOn(DateTime(2026, 11, 17, 18)), {'walk'});
+    });
+
+    test('tomorrow they are nothing', () {
+      final skips = PlannedSkips(day: day, activityIds: {'walk'});
+      expect(skips.skippedOn(DateTime(2026, 11, 18, 0, 10)), isEmpty);
+    });
+
+    test('Home and Practice watch the state, not the notifier', () {
+      for (final path in [
+        'lib/src/screens/home_screen.dart',
+        'lib/src/screens/practice_screen.dart',
+      ]) {
+        final source = File(path).readAsStringSync();
+        expect(source, isNot(contains('plannedSkipsProvider.notifier).today')));
+        expect(source, contains('ref.watch(plannedSkipsProvider)'));
+      }
+    });
+
+    test('the reminder passes over a practice skipped today', () {
+      final source = File('lib/src/state/weekly_plan.dart').readAsStringSync();
+      expect(source, contains('...skippedToday'));
     });
   });
 }
