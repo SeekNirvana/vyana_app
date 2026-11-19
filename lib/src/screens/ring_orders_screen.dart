@@ -15,7 +15,10 @@ part of '../../main.dart';
 /// readable and not editable. Nothing here writes a new one.
 
 /// Where buying a ring happens.
-const String kRingOrderUrl = 'https://seeknirvana.com/order';
+///
+/// Item 101: tagged so the site can count orders that came from the app.
+/// `utm_source`, never `?ref=`, which the site reads as a referral code.
+const String kRingOrderUrl = 'https://seeknirvana.com/order?utm_source=vyana_app';
 
 /// Opens the shop in the browser rather than a checkout in the app.
 Future<void> openRingOrder(BuildContext context) async {

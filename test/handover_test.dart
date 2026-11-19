@@ -1979,8 +1979,10 @@ void main() {
         ).readAsStringSync();
 
     test('buying opens seeknirvana.com over https', () {
-      expect(kRingOrderUrl, 'https://seeknirvana.com/order');
+      expect(kRingOrderUrl, 'https://seeknirvana.com/order?utm_source=vyana_app');
       expect(Uri.parse(kRingOrderUrl).scheme, 'https');
+      // Item 101: never ?ref=, which the site uses for referral codes.
+      expect(Uri.parse(kRingOrderUrl).queryParameters.keys, ['utm_source']);
     });
 
     test('the payment and memo code is gone, not merely unreachable', () {
