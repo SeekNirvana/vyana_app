@@ -1490,6 +1490,28 @@ class _DiscoverRingPanel extends StatelessWidget {
               ),
             ),
           ),
+          // Item 111: when Pair now is greyed out, the reason and a Retry.
+          if (!controller.isReady)
+            Align(
+              alignment: Alignment.center,
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    ringServiceStatusLine(controller),
+                    style: VyanaType.caption.copyWith(color: t.textMuted),
+                  ),
+                  if (controller.sdkFailure != null)
+                    TextButton(
+                      onPressed: () => unawaited(controller.retrySdkInit()),
+                      child: Text(
+                        'Retry',
+                        style: VyanaType.label.copyWith(color: t.green),
+                      ),
+                    ),
+                ],
+              ),
+            ),
         ],
       ),
     );

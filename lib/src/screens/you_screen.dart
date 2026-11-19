@@ -17,7 +17,20 @@ Future<void> openScanner(BuildContext context, RingController c) {
         basicInfo: c.basicInfo,
         vitals: c.vitals,
         onConnect: c.connect,
-        onReconnectPaired: () => c.reconnectSavedRing(force: true),
+        // Item 111: the same give-up time as every other Reconnect, so the
+        // ring screen never waits on an attempt longer than the pill does.
+        onReconnectPaired: () => c
+            .reconnectSavedRing(force: true)
+            .timeout(kReconnectTimeout, onTimeout: () {
+          c.giveUpUserReconnect();
+          return c.isConnected;
+        }),
+        onSyncWithFeedback: (context) async {
+          final before = c.lastSyncedAt;
+          await syncRingWithFeedback(context, c);
+          final after = c.lastSyncedAt;
+          return after != null && after != before ? after : null;
+        },
         onUnpair: c.unpairCurrentRing,
         onConnectedDeviceDetected: c.handleScannerDetectedConnection,
         // Bug 37: the app's own last sync, not this screen's.
@@ -36,6 +49,11 @@ Future<void> openScanner(BuildContext context, RingController c) {
     ),
   );
 }
+
+/// Item 111: why Pair is greyed out, in one line.
+String ringServiceStatusLine(RingController c) => c.sdkFailure != null
+    ? "The ring service didn't start"
+    : 'Starting the ring service…';
 
 Future<void> openMeasurements(BuildContext context, RingController c) {
   return Navigator.of(context).push<void>(
@@ -409,8 +427,18 @@ class YouScreen extends ConsumerWidget {
                 icon: 'ring',
                 iconColor: t.heading,
                 label: 'Scan & pair',
+                // Item 111: greyed out with a reason, never without one.
+                subtitle: c.isReady ? null : ringServiceStatusLine(c),
                 onTap: c.isReady ? () => openScanner(context, c) : null,
               ),
+              if (!c.isReady && c.sdkFailure != null)
+                SettingsRow(
+                  icon: 'alert',
+                  iconColor: t.gold,
+                  label: 'Retry ring service',
+                  subtitle: c.sdkFailure,
+                  onTap: () => unawaited(c.retrySdkInit()),
+                ),
               SettingsRow(
                 icon: 'bell',
                 iconColor: t.heading,

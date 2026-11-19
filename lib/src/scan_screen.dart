@@ -15,6 +15,7 @@ class DeviceScanScreen extends StatefulWidget {
     this.lastSyncedAt,
     this.onRename,
     this.onFirstConnected,
+    this.onSyncWithFeedback,
     super.key,
   });
 
@@ -27,7 +28,8 @@ class DeviceScanScreen extends StatefulWidget {
   final Future<bool> Function(dynamic device) onConnect;
   final Future<bool> Function() onReconnectPaired;
   final Future<bool> Function() onUnpair;
-  final ValueChanged<dynamic> onConnectedDeviceDetected;
+  /// Completes once the ring is saved as paired (item 111).
+  final Future<void> Function(dynamic device) onConnectedDeviceDetected;
 
   /// Bug 37: the app's own last sync, so "Last synced 06:41" is true the
   /// moment this screen opens. [_lastSyncedAt] used to be local to the
@@ -41,6 +43,12 @@ class DeviceScanScreen extends StatefulWidget {
   /// was not connected and nothing had been renamed at all.
   final Future<RingNameUpdateResult> Function(String name)? onRename;
   final VoidCallback? onFirstConnected;
+
+  /// Item 111: Sync now through the app's own sync, which says when it
+  /// fails and offers Retry. Returns when the sync ended, with the time it
+  /// finished, or null when it did not. Without it the screen synced the
+  /// repository directly and a failure showed nothing at all.
+  final Future<DateTime?> Function(BuildContext context)? onSyncWithFeedback;
 
   @override
   State<DeviceScanScreen> createState() => _DeviceScanScreenState();
@@ -168,7 +176,10 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
             : 'Tap a ring to connect.';
       });
       if (connectedScanDevice != null) {
-        widget.onConnectedDeviceDetected(connectedScanDevice);
+        // Item 111: awaited, so setup is decided about a ring that has been
+        // saved rather than one still being written.
+        await widget.onConnectedDeviceDetected(connectedScanDevice);
+        if (!mounted) return;
         unawaited(_syncConnectedDeviceDetails());
         // Item 85 (a): a ring already connected in system Bluetooth arrives
         // here rather than through _connect, and only that path announced a
@@ -254,6 +265,20 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
           : 'Reconnect failed';
       _isReconnecting = false;
     });
+    // Item 111: a failed Reconnect said only "Reconnect failed" in small
+    // type. It now says what to do, as every other Reconnect does.
+    if (!connected) {
+      showVyanaSnackBar(
+        context,
+        message: "Couldn't reach your ring. Keep it close and try again.",
+        success: false,
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: 'Retry',
+          onPressed: () => unawaited(_reconnectPaired()),
+        ),
+      );
+    }
     if (connected) {
       unawaited(_syncConnectedDeviceDetails());
     }
@@ -312,6 +337,20 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
       _isSyncing = true;
       _syncUpToDate = false;
     });
+    final withFeedback = widget.onSyncWithFeedback;
+    if (withFeedback != null) {
+      try {
+        final at = await withFeedback(context);
+        if (!mounted) return;
+        setState(() {
+          if (at != null) _lastSyncedAt = at;
+          _syncUpToDate = at != null;
+        });
+      } finally {
+        if (mounted) setState(() => _isSyncing = false);
+      }
+      return;
+    }
     try {
       // A sync the user asked for always fetches sleep (bug 19).
       final result = await widget.repo.sync();

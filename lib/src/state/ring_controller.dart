@@ -1266,7 +1266,11 @@ class RingController extends ChangeNotifier {
     }
   }
 
-  void handleScannerDetectedConnection(dynamic device) {
+  /// Item 111: completes once the ring is saved as paired, so the scan
+  /// screen can ask [currentRingNeedsOnboarding] about a ring that exists.
+  /// It used to fire the save and return, and setup asked before the save
+  /// had finished — saw no ring, and skipped setup.
+  Future<void> handleScannerDetectedConnection(dynamic device) async {
     if (_disposed) return;
     final shouldSync = !_isConnected;
     _set(() {
@@ -1275,10 +1279,10 @@ class RingController extends ChangeNotifier {
       _status = 'Connected to ${deviceLabel(device)}';
       _lastConnectionConfirmedAt = DateTime.now();
     });
-    unawaited(savePairedRingFromDevice(device));
     if (shouldSync) {
       unawaited(_syncDeviceData());
     }
+    await savePairedRingFromDevice(device);
   }
 
   Future<void> disconnect() async {
