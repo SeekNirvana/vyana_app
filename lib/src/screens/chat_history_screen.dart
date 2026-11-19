@@ -276,7 +276,23 @@ class _NewConversationButton extends ConsumerWidget {
       // that looks live and does nothing is the worse of the two.
       disabled: !live.hasConversation,
       onTap: () async {
-        await ref.read(chatHistoryProvider).startFresh(
+        final history = ref.read(chatHistoryProvider);
+        // Item 127: ending a stored conversation asks whether to keep it.
+        // Dismissing the question keeps it: nothing is deleted that was
+        // not asked for.
+        if (history.liveSessionId != null) {
+          final keep = await showVyanaConfirmDialog<bool>(
+            context: context,
+            title: 'Keep this conversation?',
+            message: 'Kept, it stays in Conversations on this phone. '
+                'Deleted, it is removed from your vault.',
+            confirmLabel: 'Keep',
+            cancelLabel: 'Delete',
+          );
+          if (keep == false) await history.discardLive();
+          if (!context.mounted) return;
+        }
+        await history.startFresh(
               personaId: guide.id,
               starter: guideDefinitionFor(guide).starterMessage,
               runtime: ref.read(guideRuntimeServiceProvider),

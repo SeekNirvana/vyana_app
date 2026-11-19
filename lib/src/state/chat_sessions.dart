@@ -25,6 +25,9 @@ part of '../../main.dart';
 /// The longest a generated title runs before it is cut.
 const int kChatTitleMaxChars = 68;
 
+/// Item 127: whether conversations are written to the vault at all.
+const String kSaveConversationsKey = 'vyana.nova.save_conversations';
+
 /// A conversation in the history list, with enough to draw a row.
 @immutable
 class StoredChat {
@@ -104,6 +107,60 @@ class ChatHistoryController extends ChangeNotifier {
   /// the row the empty bubble came from.
   String? _pendingReplyId;
 
+  /// Item 127: "Save conversations", on by default. Off means nothing is
+  /// written to the vault; the conversation still works on screen.
+  bool _saveConversations = true;
+  bool _saveLoaded = false;
+
+  bool get saveConversations => _saveConversations;
+
+  Future<void> _loadSavePref() async {
+    if (_saveLoaded) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _saveConversations = prefs.getBool(kSaveConversationsKey) ?? true;
+    } on Object {
+      // Unreadable preferences keep the default, which is to save.
+    }
+    _saveLoaded = true;
+  }
+
+  /// Reads the setting, for the settings screen's first frame.
+  Future<bool> loadSaveConversations() async {
+    await _loadSavePref();
+    notifyListeners();
+    return _saveConversations;
+  }
+
+  /// Turns saving on or off. Off stops writing from the next message; what
+  /// is already stored stays until it is deleted.
+  Future<void> setSaveConversations(bool on) async {
+    _saveConversations = on;
+    _saveLoaded = true;
+    if (!on) {
+      // The live conversation is no longer being written, so the next one
+      // to be written starts a row of its own.
+      _sessionId = null;
+      _ordinal = 0;
+      _pendingReplyId = null;
+    }
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(kSaveConversationsKey, on);
+    } on Object catch (error) {
+      debugPrint('[ChatHistory] Could not store the setting: $error');
+    }
+  }
+
+  /// Item 127: Delete on ending a conversation. Removes the stored copy of
+  /// the live one; the screen is cleared by [startFresh] right after.
+  Future<void> discardLive() async {
+    final id = _sessionId;
+    if (id == null) return;
+    await delete(id);
+  }
+
   /// What the chat screen draws.
   List<GuideMessage> get messages => List.unmodifiable(_messages);
 
@@ -168,6 +225,9 @@ class ChatHistoryController extends ChangeNotifier {
     _messages.add(GuideMessage(fromUser: true, text: text));
     _messages.add(const GuideMessage(fromUser: false, text: ''));
     notifyListeners();
+
+    await _loadSavePref();
+    if (!_saveConversations) return replyIndex;
 
     try {
       var sessionId = _sessionId;
@@ -252,6 +312,7 @@ class ChatHistoryController extends ChangeNotifier {
   Future<void> finishReply(int index) async {
     if (index < 0 || index >= _messages.length) return;
     if (_messages[index].cutOff) return;
+    if (!_saveConversations) return;
     final body = _messages[index].text;
     final sessionId = _sessionId;
     if (sessionId == null || body.trim().isEmpty) return;

@@ -198,6 +198,11 @@ class _GuidePersonaSettingsScreenState
                           ),
                         ),
                         const SizedBox(height: 18),
+                        Text('CONVERSATIONS',
+                            style: VyanaType.eyebrow.copyWith(color: t.gold)),
+                        const SizedBox(height: 8),
+                        const _SaveConversationsRow(),
+                        const SizedBox(height: 18),
                         Text('SYSTEM PROMPT',
                             style: VyanaType.eyebrow.copyWith(color: t.gold)),
                         const SizedBox(height: 8),
@@ -385,6 +390,60 @@ class _ResponseLengthPicker extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Item 127: "Save conversations", applied at once rather than with the
+/// Save button below, because it is about the vault and not the persona.
+class _SaveConversationsRow extends ConsumerStatefulWidget {
+  const _SaveConversationsRow();
+
+  @override
+  ConsumerState<_SaveConversationsRow> createState() =>
+      _SaveConversationsRowState();
+}
+
+class _SaveConversationsRowState extends ConsumerState<_SaveConversationsRow> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(ref.read(chatHistoryProvider).loadSaveConversations());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.vyana;
+    final history = ref.watch(chatHistoryProvider);
+    final on = history.saveConversations;
+    return Panel(
+      pad: 14,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Save conversations',
+                    style: VyanaType.label.copyWith(color: t.text)),
+                const SizedBox(height: 2),
+                Text(
+                  on
+                      ? 'Kept in Conversations on this phone.'
+                      : 'Nothing you say to Nova is written down.',
+                  style: VyanaType.bodySm
+                      .copyWith(color: t.textSec, height: 1.45),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          VSwitch(
+            on: on,
+            onTap: () => history.setSaveConversations(!on),
+          ),
+        ],
+      ),
     );
   }
 }
