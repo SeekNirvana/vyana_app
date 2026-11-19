@@ -1363,8 +1363,9 @@ List<SessionRow> todaysFinishedSessions(
   // A session belongs to the day it was finished on.
   final rows = [
     for (final s in sessions)
+      // Item 114: the same day rule as every other screen.
       if (s.endedAt != null &&
-          DateTime(s.endedAt!.year, s.endedAt!.month, s.endedAt!.day) == day)
+          sessionDay(s.startedAt, endedAt: s.endedAt) == day)
         s,
   ]..sort((a, b) => a.startedAt.compareTo(b.startedAt));
   return rows;

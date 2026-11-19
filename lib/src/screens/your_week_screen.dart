@@ -100,12 +100,17 @@ class PracticeTotal {
     required this.name,
     required this.count,
     required this.minutes,
+    this.seconds = 0,
   });
 
   final String activityId;
   final String name;
   final int count;
   final int minutes;
+
+  /// Item 114: the running seconds behind [minutes], so a total of a few
+  /// short sessions reads "under 1m" rather than "0m".
+  final int seconds;
 }
 
 /// Everything "Your week / month" shows, from Sessions alone.
@@ -118,10 +123,14 @@ class PeriodSummary {
     required this.buckets,
     required this.byPractice,
     required this.mindfulMinutes,
+    this.seconds = 0,
   });
 
   final int sessions;
   final int minutes;
+
+  /// Item 114: the running seconds behind [minutes].
+  final int seconds;
   final int activeDays;
   final int dayCount;
 
@@ -152,28 +161,29 @@ class PeriodSummary {
     final activeDays = <int>{};
     final counts = <String, int>{};
     final minutesBy = <String, int>{};
+    final secondsBy = <String, int>{};
     var sessions = 0;
     var minutes = 0;
+    var seconds = 0;
     var mindful = 0;
 
     for (final s in rows) {
       final ended = s.endedAt;
       if (ended == null) continue;
-      // Item 80: the day it *started* on, which is how the history list has
-      // always grouped it. Grouping by the finish put a session begun at
-      // 23:50 on the next day here and the previous day there.
-      final day = sessionDay(s.startedAt);
+      // Item 114: the day it ended on, the one rule every screen uses.
+      final day = sessionDay(s.startedAt, endedAt: ended);
       if (day.isBefore(from) || !day.isBefore(to)) continue;
       final dayIndex = day.difference(from).inDays;
       if (dayIndex < 0 || dayIndex >= days) continue;
       // Item 80: the minutes the session was running, from its own record,
       // so a run with a stop at a crossing is not ten minutes longer here
       // than in its summary.
-      final mins = sessionMinutes(
+      final secs = sessionSeconds(
         summaryJson: s.summaryJson,
         startedAt: s.startedAt,
         endedAt: ended,
-      ).clamp(0, 600);
+      ).clamp(0, 600 * 60);
+      final mins = (secs / 60).round();
 
       final bucket = period.month ? (dayIndex ~/ 7) : dayIndex;
       if (bucket >= 0 && bucket < buckets.length) {
@@ -190,8 +200,14 @@ class PeriodSummary {
         (v) => v + mins,
         ifAbsent: () => mins,
       );
+      secondsBy.update(
+        s.vyanaActivityType,
+        (v) => v + secs,
+        ifAbsent: () => secs,
+      );
       sessions++;
       minutes += mins;
+      seconds += secs;
       if (s.category == 'mind' || s.category == 'wellness') mindful += mins;
     }
 
@@ -202,6 +218,7 @@ class PeriodSummary {
           name: activityById(id)?.name ?? 'Session',
           count: counts[id]!,
           minutes: minutesBy[id] ?? 0,
+          seconds: secondsBy[id] ?? 0,
         ),
     ]..sort((a, b) => b.minutes.compareTo(a.minutes));
 
@@ -213,12 +230,16 @@ class PeriodSummary {
       buckets: buckets,
       byPractice: byPractice,
       mindfulMinutes: mindful,
+      seconds: seconds,
     );
   }
 }
 
 /// `3h 20m` / `45m` — the shape people say out loud.
-String practiceTimeLabel(int minutes) {
+///
+/// Item 114: `under 1m` for a total of short sessions, given [seconds].
+String practiceTimeLabel(int minutes, {int seconds = 0}) {
+  if (minutes == 0 && seconds > 0) return 'under 1m';
   if (minutes < 60) return '${minutes}m';
   final h = minutes ~/ 60;
   final m = minutes % 60;
@@ -275,7 +296,7 @@ class ThisWeekCard extends ConsumerWidget {
                   ? 'No sessions in the last 7 days'
                   : '${summary.sessions} '
                         '${summary.sessions == 1 ? 'session' : 'sessions'} · '
-                        '${practiceTimeLabel(summary.minutes)}',
+                        '${practiceTimeLabel(summary.minutes, seconds: summary.seconds)}',
               style: VyanaType.label.copyWith(color: t.text, fontSize: 16),
             ),
             const SizedBox(height: 2),
@@ -388,7 +409,7 @@ class _YourWeekScreenState extends ConsumerState<YourWeekScreen> {
                   _PeriodStat(label: 'SESSIONS', value: '${summary.sessions}'),
                   _PeriodStat(
                     label: 'TIME',
-                    value: practiceTimeLabel(summary.minutes),
+                    value: practiceTimeLabel(summary.minutes, seconds: summary.seconds),
                   ),
                   _PeriodStat(
                     label: 'DAYS',
@@ -794,7 +815,7 @@ class _ByPracticeRow extends StatelessWidget {
               ),
             ),
             Text(
-              '${total.count} · ${practiceTimeLabel(total.minutes)}',
+              '${total.count} · ${practiceTimeLabel(total.minutes, seconds: total.seconds)}',
               style: VyanaType.mono12.copyWith(color: t.textSec),
             ),
             const SizedBox(width: 6),

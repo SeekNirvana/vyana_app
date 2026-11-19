@@ -693,7 +693,15 @@ class _SessionRowCard extends StatelessWidget {
     final activity = activityById(row.vyanaActivityType);
     final ac = activity == null ? t.green : t.vit(activity.accent);
     final ended = row.endedAt;
-    final duration = ended?.difference(row.startedAt);
+    // Item 114: the running time from the session's own record, which
+    // leaves out pauses, as every other screen does.
+    final length = ended == null
+        ? null
+        : sessionLengthText(sessionSeconds(
+            summaryJson: row.summaryJson,
+            startedAt: row.startedAt,
+            endedAt: ended,
+          ));
     return Panel(
       pad: 14,
       // Bug 10: these rows could not be tapped, so a finished session was
@@ -721,7 +729,7 @@ class _SessionRowCard extends StatelessWidget {
                     style: VyanaType.label.copyWith(color: t.text, fontSize: 15)),
                 Text(
                   '${_dateLabel(row.startedAt)}'
-                  '${duration == null ? ' · in progress' : ' · ${_fmtDuration(duration)}'}',
+                  '${length == null ? ' · in progress' : ' · $length'}',
                   style: VyanaType.caption.copyWith(color: t.textSec),
                 ),
               ],

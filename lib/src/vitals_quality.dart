@@ -527,10 +527,9 @@ String? peakBadgeFor({
 /// A session's length as the user would say it (bug 32). Under a minute is
 /// shown in seconds: rounding a 40-second try down to "0m" reads as though
 /// nothing was recorded, when in fact everything was.
-String sessionLengthLabel(Duration d) {
-  if (d.inSeconds < 60) return '${d.inSeconds}s';
-  return '${(d.inSeconds / 60).round()}m';
-}
+///
+/// Item 114: "under 1m" like every other screen, not "40s".
+String sessionLengthLabel(Duration d) => sessionLengthText(d.inSeconds);
 
 /// Width of the sustained-average bucket used for resting HR. Five minutes is
 /// the wearable convention: short enough to catch a genuine trough, long

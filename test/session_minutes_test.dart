@@ -128,12 +128,25 @@ void main() {
     });
   });
 
-  group('a session is on the day it started', () {
-    test('a session over midnight belongs to the day it began', () {
+  group('a session is on the day it ended (item 114)', () {
+    test('a session over midnight belongs to the day it finished', () {
       // Grouped by finish in one place and start in another, a session begun
-      // at 23:50 appeared on different days on different screens.
+      // at 23:50 appeared on different days on different screens. Item 114
+      // settles it on the end, which Done today already used.
       final late = DateTime(2026, 11, 10, 23, 50);
+      expect(
+        sessionDay(late, endedAt: DateTime(2026, 11, 11, 0, 10)),
+        DateTime(2026, 11, 11),
+      );
+      // With no end, the start is all there is.
       expect(sessionDay(late), DateTime(2026, 11, 10));
+    });
+
+    test('one length label everywhere', () {
+      expect(sessionLengthText(40), 'under 1m');
+      expect(sessionLengthText(0), '0m');
+      expect(sessionLengthText(40 * 60), '40m');
+      expect(sessionLengthText(65 * 60), '1h 05m');
     });
 
     test('the day strips the time of day', () {
