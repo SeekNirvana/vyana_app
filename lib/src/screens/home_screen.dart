@@ -883,7 +883,12 @@ class SuggestedPracticeBlock extends StatelessWidget {
   /// "Planned today" on a planned day (item 46).
   final String heading;
 
-  /// What the card opens with. Null keeps the morning's short dose.
+  /// What the card opens with, and the length it shows.
+  ///
+  /// Item 104: null means there is no length to show. It used to fall back
+  /// to the morning cap, so a practice done fewer than three times printed
+  /// "2 MIN" or "4 MIN" on Home and Practice, a length nobody had chosen.
+  /// The morning slot passes its short dose explicitly.
   final int? minutes;
 
   /// The mono line in the card: "YOUR USUAL · 32 MIN", "PLANNED · 2 OF 3".
@@ -917,7 +922,9 @@ class SuggestedPracticeBlock extends StatelessWidget {
     final t = context.vyana;
     final hue = intent.hue(t);
     final soft = t.isDark ? intent.soft(t) : hue;
-    final minutes = this.minutes ?? suggestedMinutesFor(intent, activity);
+    final minutes = this.minutes;
+    // Item 104: no meta and no minutes → no length at all.
+    final lengthLine = meta ?? (minutes == null ? null : '$minutes MIN');
     final card = HairlineCard(
       padding: const EdgeInsets.fromLTRB(12, 11, 11, 11),
       // Bug 45: the day slot opens the practice with no target set — "your
@@ -963,26 +970,29 @@ class SuggestedPracticeBlock extends StatelessWidget {
                     // YOUR USUAL 40 MIN" where it used to be "15 MIN" — so
                     // it needs room to give. Unconstrained it overflowed the
                     // row by 238px at 360dp.
-                    Flexible(
-                      child: MonoEyebrow(
-                        meta ?? '$minutes MIN',
-                        size: 11,
-                        spacing: 0.8,
-                        color: t.heading,
-                        shrinkToFit: true,
-                      ),
-                    ),
-                    if (compact) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        width: 3,
-                        height: 3,
-                        decoration: BoxDecoration(
-                          color: t.mutedInk,
-                          shape: BoxShape.circle,
+                    if (lengthLine != null)
+                      Flexible(
+                        child: MonoEyebrow(
+                          lengthLine,
+                          size: 11,
+                          spacing: 0.8,
+                          color: t.heading,
+                          shrinkToFit: true,
                         ),
                       ),
-                      const SizedBox(width: 6),
+                    if (compact) ...[
+                      if (lengthLine != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          width: 3,
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: t.mutedInk,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
                       Expanded(
                         child: Text(
                           reason,
