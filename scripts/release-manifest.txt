@@ -23,7 +23,7 @@ isNoContactRecord
 keep the ring snug
 Stress rhythm
 Activated
-Couldn't get a clean reading
+Couldn't get a reading
 
 scrubRecordFields
 

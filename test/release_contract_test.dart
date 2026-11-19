@@ -65,7 +65,7 @@ void main() {
     final ringController = readLib('src/state/ring_controller.dart');
     expect(ringController, contains('runAllVitals'));
     expect(ringController, contains('keep the ring snug'));
-    expect(ringController, contains("Couldn't get a clean reading"));
+    expect(ringController, contains("Couldn't get a reading"));
 
     final vitalsQuality = readLib('src/vitals_quality.dart');
     expect(vitalsQuality, contains('isNoContactRecord'));

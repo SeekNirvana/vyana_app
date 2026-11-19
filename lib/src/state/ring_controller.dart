@@ -98,6 +98,18 @@ class RingController extends ChangeNotifier {
   DeviceAppControlMeasureHealthDataType? _activeMeasureType;
   bool _measureCaptured = false;
   MeasurementOutcome? _lastMeasurement;
+
+  /// Item 133: the value the ring actually sent during this measurement,
+  /// and whether its raw reply has been logged yet (once per measurement).
+  CapturedReading? _measuredReading;
+  bool _measureReplyLogged = false;
+
+  /// Item 133: readings taken by hand, kept so they reach the vital's list.
+  /// The ring's background history does not include them.
+  final List<CapturedReading> _capturedReadings = [];
+  static const _capturedReadingsKey = 'vyana.ring.captured_readings_v1';
+  static const _capturedReadingsKeep = Duration(days: 14);
+  bool _capturedReadingsLoaded = false;
   static const _kMaxVitalRetries = 2;
 
   static const _healthMonitoringEnabledKey = 'health_monitoring_enabled_v1';
@@ -309,6 +321,56 @@ class RingController extends ChangeNotifier {
   /// so the detail screen can show success or failure instead of dropping
   /// back to its default subtitle (bug 15). Cleared when a new one starts.
   MeasurementOutcome? get lastMeasurement => _lastMeasurement;
+
+  /// Item 133: readings taken by hand for [kind], oldest first.
+  List<CapturedReading> capturedReadingsFor(VitalsMetricKind kind) {
+    if (!_capturedReadingsLoaded) unawaited(_loadCapturedReadings());
+    return [
+      for (final r in _capturedReadings)
+        if (r.kind == kind) r,
+    ];
+  }
+
+  Future<void> _loadCapturedReadings() async {
+    if (_capturedReadingsLoaded) return;
+    _capturedReadingsLoaded = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_capturedReadingsKey);
+      if (raw == null || raw.isEmpty) return;
+      final cutoff = DateTime.now().subtract(_capturedReadingsKeep);
+      final loaded = [
+        for (final item in jsonDecode(raw) as List)
+          if (CapturedReading.fromJson(item) case final r?)
+            if (r.at.isAfter(cutoff)) r,
+      ];
+      if (_disposed) return;
+      _set(() {
+        _capturedReadings
+          ..insertAll(0, loaded)
+          ..sort((a, b) => a.at.compareTo(b.at));
+      });
+    } on Object catch (error) {
+      debugPrint('[Measure] could not read stored readings: $error');
+    }
+  }
+
+  Future<void> _keepCapturedReading(CapturedReading reading) async {
+    await _loadCapturedReadings();
+    final cutoff = DateTime.now().subtract(_capturedReadingsKeep);
+    _capturedReadings
+      ..add(reading)
+      ..removeWhere((r) => r.at.isBefore(cutoff));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _capturedReadingsKey,
+        jsonEncode([for (final r in _capturedReadings) r.toJson()]),
+      );
+    } on Object catch (error) {
+      debugPrint('[Measure] could not keep the reading: $error');
+    }
+  }
 
   /// Forgets the last result — called when the user leaves the detail screen.
   void clearLastMeasurement() {
@@ -884,9 +946,19 @@ class RingController extends ChangeNotifier {
         _eventLog.removeLast();
       }
       _vitals = _vitals.mergeLiveEvent(map);
-      if (_activeMeasureType != null &&
-          _eventCarriesPlausibleValue(map, _activeMeasureType!)) {
-        _measureCaptured = true;
+      final measuring = _activeMeasureType;
+      if (measuring != null) {
+        // Item 133 (5): the ring's raw reply, once per measurement, to
+        // tell "the ring sent nothing" from "the app did not read it".
+        if (!_measureReplyLogged && map.isNotEmpty) {
+          _measureReplyLogged = true;
+          debugPrint('[Measure] raw reply for ${measuring.name}: $map');
+        }
+        final reading = capturedReadingFrom(map, measuring);
+        if (reading != null) {
+          _measureCaptured = true;
+          _measuredReading = reading;
+        }
       }
       if (measurementMessage != null) {
         _testStatus = measurementMessage;
@@ -930,8 +1002,7 @@ class RingController extends ChangeNotifier {
         _activeMeasureType != null &&
         !_measureCaptured) {
       _set(() => _testStatus =
-          "Couldn't get a clean reading — keep the ring snug on your "
-          'finger and try again.');
+          "Couldn't get a reading. Keep the ring snug and try again.");
       _publishMeasurementSnapshot();
     }
     if (sessionEventSink != null && map.isNotEmpty) {
@@ -1911,90 +1982,16 @@ class RingController extends ChangeNotifier {
     }
     _activeMeasureType = action.type;
     _measureCaptured = false;
+    _measuredReading = null;
+    _measureReplyLogged = false;
     _set(() => _lastMeasurement = null);
     await _beginMeasurement(action.label, () => _repo.measure(action.type, true));
   }
 
-  /// Whether [map] delivers an in-range value for [type] — mirrors the keys
-  /// `RingVitals.mergeLiveEvent` reads, so it is the true "we got a reading"
-  /// signal (loose contact yields zeros, which fail these gates).
-  bool _eventCarriesPlausibleValue(
-    Map<dynamic, dynamic> map,
-    DeviceAppControlMeasureHealthDataType type,
-  ) {
-    switch (type) {
-      case DeviceAppControlMeasureHealthDataType.heartRate:
-        return plausibleHeartRate(
-              readInt(map['deviceRealHeartRate'], const ['heartRate', 'value']) ??
-                  readInt(map['deviceRealSport'], const ['heartRate']),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.bloodOxygen:
-        return plausibleSpo2(
-              readInt(map['deviceRealBloodOxygen'], const [
-                'bloodOxygen',
-                'value',
-              ]),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.hrv:
-        return plausibleHrv(
-              readInt(map['deviceRealECGAlgorithmHRV'], const ['hrv', 'value']),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.bodyTemperature:
-        return validTemperature(
-              readDouble(map['deviceRealTemperature'], const [
-                'temperature',
-                'value',
-              ]),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.bloodPressure:
-        return plausibleBloodPressure(
-              pressureText(map['deviceRealBloodPressure']),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.bloodGlucose:
-        return plausibleGlucose(
-              readDouble(map['deviceRealBloodGlucose'], const [
-                'bloodGlucose',
-                'value',
-              ]),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.pressure:
-        return readDouble(map['deviceRealPressure'], const [
-              'pressure',
-              'value',
-            ]) !=
-            null;
-      default:
-        return false;
-    }
-  }
-
-  /// Current plausible value already held for [type] (null when we have none).
-  double? _plausibleVitalForType(DeviceAppControlMeasureHealthDataType type) {
-    switch (type) {
-      case DeviceAppControlMeasureHealthDataType.heartRate:
-        return _vitals.heartRate?.toDouble();
-      case DeviceAppControlMeasureHealthDataType.bloodOxygen:
-        return _vitals.bloodOxygen?.toDouble();
-      case DeviceAppControlMeasureHealthDataType.hrv:
-        return _vitals.hrv?.toDouble();
-      case DeviceAppControlMeasureHealthDataType.bodyTemperature:
-        return _vitals.temperature;
-      case DeviceAppControlMeasureHealthDataType.bloodPressure:
-        return _vitals.bloodPressure != null ? 1 : null;
-      case DeviceAppControlMeasureHealthDataType.bloodGlucose:
-        return _vitals.bloodGlucose;
-      case DeviceAppControlMeasureHealthDataType.pressure:
-        return _vitals.pressure;
-      default:
-        return 1; // metrics we don't range-check — never block on them
-    }
-  }
+  // Item 133: what a measurement event carries is read by
+  // capturedReadingFrom() in vitals_quality.dart, which keeps the value the
+  // ring sent rather than only whether it sent one. The old "do we already
+  // hold a value" check, which let an hours-old reading pass as new, is gone.
 
   /// Hands-off "Monitor all vitals": reconnect if needed, then run every
   /// supported realtime measurement one after the other (ECG is intentionally
@@ -2103,7 +2100,10 @@ class RingController extends ChangeNotifier {
         );
         await _runMeasurementAndWait(action);
         // Captured a fresh reading, or we already hold a good value for it.
-        if (_measureCaptured || _plausibleVitalForType(action.type) != null) {
+        // Item 133: only a value the ring sent during this attempt. An
+        // older value already held used to pass, so a ring that sent
+        // nothing was reported as read.
+        if (_measureCaptured) {
           captured = true;
           break;
         }
@@ -2498,17 +2498,24 @@ class RingController extends ChangeNotifier {
   /// Captures whether the finished measurement produced a value, and which,
   /// so the UI can distinguish a clean reading from a failed one — the two
   /// used to look identical (bug 15).
+  ///
+  /// Item 133: a reading is new only if the ring sent a value during this
+  /// measurement, and the value shown is that one, written as the top of
+  /// the screen writes it. It is then kept, so it appears in the list.
   void _recordMeasurementOutcome() {
     final type = _activeMeasureType;
     if (type == null) return;
-    final captured =
-        _measureCaptured || _plausibleVitalForType(type) != null;
+    final reading = _measureCaptured ? _measuredReading : null;
     _lastMeasurement = MeasurementOutcome(
       type: type,
-      captured: captured,
-      at: DateTime.now(),
-      value: captured ? _plausibleVitalForType(type)?.toString() : null,
+      captured: reading != null,
+      at: reading?.at ?? DateTime.now(),
+      value: reading?.text,
     );
+    if (reading != null && reading.kind != VitalsMetricKind.stress) {
+      unawaited(_keepCapturedReading(reading));
+    }
+    _measuredReading = null;
   }
 
   void _completeMeasurement(String message, {required bool sync}) {

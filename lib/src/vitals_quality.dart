@@ -1070,3 +1070,163 @@ List<SleepDaySummary> averageableNights(
         n,
   ];
 }
+
+// ── A reading taken by hand (item 133) ───────────────────────────────────
+
+/// One reading the ring sent during a measurement the person started.
+///
+/// Item 133: "New reading" used to count as a success whenever the app
+/// already held *any* value for the vital, and printed that value, or for
+/// blood pressure a placeholder `1` as "1.0 mmHg". This is only ever built
+/// from the event the ring sent during this measurement.
+@immutable
+class CapturedReading {
+  const CapturedReading({
+    required this.kind,
+    required this.value,
+    required this.text,
+    required this.at,
+  });
+
+  final VitalsMetricKind kind;
+
+  /// The number the list and the chart plot (systolic for blood pressure).
+  final double value;
+
+  /// As the top of the screen writes it: `118/78`, `72`, `36.4`.
+  final String text;
+  final DateTime at;
+
+  Map<String, Object> toJson() => {
+        'kind': kind.name,
+        'value': value,
+        'text': text,
+        'at': at.millisecondsSinceEpoch,
+      };
+
+  static CapturedReading? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final kind = VitalsMetricKind.values
+        .where((k) => k.name == raw['kind'])
+        .firstOrNull;
+    final value = raw['value'];
+    final text = raw['text'];
+    final at = raw['at'];
+    if (kind == null || value is! num || text is! String || at is! int) {
+      return null;
+    }
+    return CapturedReading(
+      kind: kind,
+      value: value.toDouble(),
+      text: text,
+      at: DateTime.fromMillisecondsSinceEpoch(at),
+    );
+  }
+}
+
+/// The reading in a measurement event from the ring, if it carries one
+/// that passes the same plausibility gates the screens use. Null when the
+/// ring sent nothing for [type] (a loose ring sends zeros).
+CapturedReading? capturedReadingFrom(
+  Map<dynamic, dynamic> map,
+  DeviceAppControlMeasureHealthDataType type, {
+  DateTime? at,
+}) {
+  final when = at ?? DateTime.now();
+  CapturedReading whole(VitalsMetricKind kind, int v) => CapturedReading(
+        kind: kind,
+        value: v.toDouble(),
+        text: '$v',
+        at: when,
+      );
+  switch (type) {
+    case DeviceAppControlMeasureHealthDataType.heartRate:
+      final v = plausibleHeartRate(
+        readInt(map['deviceRealHeartRate'], const ['heartRate', 'value']) ??
+            readInt(map['deviceRealSport'], const ['heartRate']),
+      );
+      return v == null ? null : whole(VitalsMetricKind.heartRate, v);
+    case DeviceAppControlMeasureHealthDataType.bloodOxygen:
+      final v = plausibleSpo2(
+        readInt(map['deviceRealBloodOxygen'], const ['bloodOxygen', 'value']),
+      );
+      return v == null ? null : whole(VitalsMetricKind.spo2, v);
+    case DeviceAppControlMeasureHealthDataType.hrv:
+      final v = plausibleHrv(
+        readInt(map['deviceRealECGAlgorithmHRV'], const ['hrv', 'value']),
+      );
+      return v == null ? null : whole(VitalsMetricKind.hrv, v);
+    case DeviceAppControlMeasureHealthDataType.bodyTemperature:
+      final v = validTemperature(
+        readDouble(map['deviceRealTemperature'], const ['temperature', 'value']),
+      );
+      return v == null
+          ? null
+          : CapturedReading(
+              kind: VitalsMetricKind.temperature,
+              value: v,
+              text: v.toStringAsFixed(1),
+              at: when,
+            );
+    case DeviceAppControlMeasureHealthDataType.bloodPressure:
+      final text =
+          plausibleBloodPressure(pressureText(map['deviceRealBloodPressure']));
+      final systolic = int.tryParse(text?.split('/').first ?? '');
+      return text == null || systolic == null
+          ? null
+          : CapturedReading(
+              kind: VitalsMetricKind.bloodPressure,
+              value: systolic.toDouble(),
+              text: text,
+              at: when,
+            );
+    case DeviceAppControlMeasureHealthDataType.bloodGlucose:
+      final v = plausibleGlucose(
+        readDouble(map['deviceRealBloodGlucose'], const ['bloodGlucose', 'value']),
+      );
+      return v == null
+          ? null
+          : CapturedReading(
+              kind: VitalsMetricKind.glucose,
+              value: v,
+              text: v.toStringAsFixed(1),
+              at: when,
+            );
+    case DeviceAppControlMeasureHealthDataType.pressure:
+      final v =
+          readDouble(map['deviceRealPressure'], const ['pressure', 'value']);
+      return v == null
+          ? null
+          : CapturedReading(
+              kind: VitalsMetricKind.stress,
+              value: v,
+              text: '${v.round()}',
+              at: when,
+            );
+    default:
+      return null;
+  }
+}
+
+/// The ring's stored points with the readings taken by hand added, for the
+/// list on a vital's screen. A hand reading the ring also stored (within
+/// two minutes) is not shown twice. Newest last, like the ring's points.
+List<VitalHistoryPoint> withCapturedReadings(
+  List<VitalHistoryPoint> points,
+  Iterable<CapturedReading> readings, {
+  required String unit,
+}) {
+  final extra = <VitalHistoryPoint>[
+    for (final r in readings)
+      if (!points.any(
+        (p) => p.time.difference(r.at).inSeconds.abs() <= 120,
+      ))
+        VitalHistoryPoint(
+          time: r.at,
+          value: r.value,
+          label: unit.isEmpty ? r.text : '${r.text} $unit',
+        ),
+  ];
+  if (extra.isEmpty) return points;
+  return [...points, ...extra]..sort((a, b) => a.time.compareTo(b.time));
+}
