@@ -433,16 +433,6 @@ bool get liveChecksRunHere => !kIsWeb && Platform.isAndroid;
 /// app is never mistaken for a suspended one.
 const Duration kAlertSnapshotStaleAfter = Duration(minutes: 30);
 
-/// How long a "charging" status is still believed once the ring is out of
-/// reach.
-///
-/// Item 84 (bug 43): a ring on its charger drops out of Bluetooth range and
-/// is still off the finger on purpose, so charging has to survive losing
-/// the connection — but not forever. A ring is full inside two hours, and a
-/// status still reading "charging" after that is stale. Believing it muted
-/// the low-battery and out-of-reach alerts for as long as the ring stayed
-/// away, which is the opposite of what bug 43 was for.
-const Duration kChargingBelievedFor = Duration(hours: 2);
 
 Future<void> evaluateRingAlerts({
   required RingAlertSnapshot snapshot,

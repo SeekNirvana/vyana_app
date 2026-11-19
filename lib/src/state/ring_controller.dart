@@ -459,21 +459,17 @@ class RingController extends ChangeNotifier {
   /// Whether the ring is on its charger *right now* — what the pill shows.
   bool get isCharging => _isConnected && wasChargingWhenLastSeen;
 
-  /// Whether the newest status we have says charging, connected or not. A
-  /// ring on its charger often drops out of range; it is still off the
-  /// finger on purpose, so the low-battery and out-of-reach alerts have
-  /// nothing to warn about (bug 43).
+  /// Whether the ring is charging, as far as the app can know.
+  ///
+  /// Item 118: only while it is connected. Bug 43 kept believing
+  /// "charging" for two hours after the ring went out of reach, since a
+  /// ring on its charger often drops out of range; but for those two hours
+  /// the low-battery and out-of-reach alerts were muted, for a ring that
+  /// might as easily have been taken off the charger and left somewhere.
+  /// Out of reach, the app does not know, and does not pretend to.
   bool get wasChargingWhenLastSeen {
     if (normalizedBatteryStatus(batteryStatus) != 'charging') return false;
-    if (_isConnected) return true;
-    // Item 84 (bug 43, second half): believed for a while, not forever. A
-    // ring is full inside two hours, so a status that still says "charging"
-    // long after the ring went out of reach is a stale reading — and
-    // believing it muted every battery and out-of-reach alert indefinitely,
-    // which is the opposite of what bug 43 was for.
-    final seen = _lastConnectionConfirmedAt;
-    if (seen == null) return false;
-    return DateTime.now().difference(seen) <= kChargingBelievedFor;
+    return _isConnected;
   }
 
   /// Battery percent from the newest source that reported one.

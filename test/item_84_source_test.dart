@@ -26,15 +26,18 @@ void main() {
   final controller = codeOnly(read('lib/src/state/ring_controller.dart'));
   final prefs = codeOnly(read('lib/src/state/notification_prefs.dart'));
 
-  group('charging is believed for a while, not forever (bug 43)', () {
-    test('the window exists and the getter uses it', () {
-      // A ring on its charger drops out of range and is still off the
-      // finger on purpose, so charging has to survive losing the
-      // connection — but a status still reading "charging" hours later
-      // muted every alert indefinitely.
-      expect(prefs, contains('kChargingBelievedFor'));
-      expect(controller, contains('kChargingBelievedFor'));
-      expect(controller, contains('_lastConnectionConfirmedAt'));
+  group('charging is believed only while connected (item 118)', () {
+    test('out of reach, the ring is not taken to be charging', () {
+      // Bug 43 believed it for two hours after the ring went out of reach,
+      // muting the low-battery and out-of-reach alerts for that long.
+      expect(prefs, isNot(contains('kChargingBelievedFor')));
+      final getter = controller.substring(
+        controller.indexOf('bool get wasChargingWhenLastSeen'),
+      );
+      expect(
+        getter.substring(0, getter.indexOf('\n  }')),
+        contains('return _isConnected;'),
+      );
     });
 
     test('a standing offline alert is withdrawn, not just left', () {
