@@ -56,7 +56,7 @@ void main() {
     // Back up: payload, photos, encrypted, written to a file.
     final payload = await buildBackupPayload(
       db: db,
-      settings: const {'flutter.vyana.user_profile': '{"firstName":"Leena"}'},
+      settings: const {'vyana.user_profile': '{"firstName":"Leena"}'},
     );
     final collected =
         await collectMealPhotos(db: db, mealPhotosPath: photos.path);
@@ -106,7 +106,7 @@ void main() {
     expect(back.readAsBytesSync(), Uint8List.fromList(List.filled(4096, 11)));
 
     expect(
-      (contents.payload['settings'] as Map)['flutter.vyana.user_profile'],
+      (contents.payload['settings'] as Map)['vyana.user_profile'],
       contains('Leena'),
     );
     expect(report.withPhotos(restoredPhotos).summary,

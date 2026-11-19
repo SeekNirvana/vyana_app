@@ -352,39 +352,49 @@ class BackupService {
     }
   }
 
-  Future<Map<String, Object?>> _settingsToBackUp() async {
-    final prefs = await SharedPreferences.getInstance();
-    final out = <String, Object?>{};
-    for (final key in kBackupSettingKeys) {
-      final value = prefs.get(key);
-      if (value != null) out[key] = value;
-    }
-    return out;
-  }
+  Future<Map<String, Object?>> _settingsToBackUp() async =>
+      collectBackupSettings(await SharedPreferences.getInstance());
 
-  Future<void> _restoreSettings(Object? raw) async {
-    if (raw is! Map) return;
-    final prefs = await SharedPreferences.getInstance();
-    for (final entry in Map<String, Object?>.from(raw).entries) {
-      // Only the keys this build backs up. A backup from a future version
-      // may name settings that mean something else here, and a key that
-      // describes the phone was never in the file to begin with.
-      if (!kBackupSettingKeys.contains(entry.key)) continue;
-      final value = entry.value;
-      if (value is String) {
-        await prefs.setString(entry.key, value);
-      } else if (value is bool) {
-        await prefs.setBool(entry.key, value);
-      } else if (value is int) {
-        await prefs.setInt(entry.key, value);
-      } else if (value is double) {
-        await prefs.setDouble(entry.key, value);
-      } else if (value is List) {
-        await prefs.setStringList(
-          entry.key,
-          value.whereType<String>().toList(),
-        );
-      }
+  Future<void> _restoreSettings(Object? raw) async =>
+      applyBackupSettings(await SharedPreferences.getInstance(), raw);
+}
+
+/// The settings that go into a backup, read the way the app wrote them.
+@visibleForTesting
+Map<String, Object?> collectBackupSettings(SharedPreferences prefs) {
+  final out = <String, Object?>{};
+  for (final key in kBackupSettingKeys) {
+    final value = prefs.get(key);
+    if (value != null) out[key] = value;
+  }
+  return out;
+}
+
+/// Writes a backup's settings back under the keys the app reads.
+@visibleForTesting
+Future<void> applyBackupSettings(SharedPreferences prefs, Object? raw) async {
+  if (raw is! Map) return;
+  for (final entry in Map<String, Object?>.from(raw).entries) {
+    // A file written with the plugin's on-disk prefix still means the
+    // same setting.
+    final key = entry.key.startsWith('flutter.')
+        ? entry.key.substring('flutter.'.length)
+        : entry.key;
+    // Only the keys this build backs up. A backup from a future version
+    // may name settings that mean something else here, and a key that
+    // describes the phone was never in the file to begin with.
+    if (!kBackupSettingKeys.contains(key)) continue;
+    final value = entry.value;
+    if (value is String) {
+      await prefs.setString(key, value);
+    } else if (value is bool) {
+      await prefs.setBool(key, value);
+    } else if (value is int) {
+      await prefs.setInt(key, value);
+    } else if (value is double) {
+      await prefs.setDouble(key, value);
+    } else if (value is List) {
+      await prefs.setStringList(key, value.whereType<String>().toList());
     }
   }
 }
