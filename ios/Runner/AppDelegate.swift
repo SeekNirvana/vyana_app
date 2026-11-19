@@ -5,12 +5,57 @@ import YCProductSDK
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var ringDeviceChannel: FlutterMethodChannel?
+  private var backupExclusionChannel: FlutterMethodChannel?
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // Item 102: Vyana's data never goes into an iCloud device backup. Done
+    // at every launch, because the flag lives on the file and is lost when
+    // a file or folder is recreated. Dart asks again once storage is set
+    // up, which covers folders created after this point.
+    Self.excludeUserDataFromBackup()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  /// Sets isExcludedFromBackup on everything that holds the user's data:
+  /// Application Support (the vault, the database, meal photos, models),
+  /// Documents, and the preferences file. Returns how many were marked.
+  @discardableResult
+  static func excludeUserDataFromBackup(extraPaths: [String] = []) -> Int {
+    let fm = FileManager.default
+    var urls: [URL] = []
+    for dir in [FileManager.SearchPathDirectory.applicationSupportDirectory, .documentDirectory] {
+      if let url = fm.urls(for: dir, in: .userDomainMask).first {
+        urls.append(url)
+      }
+    }
+    if let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first {
+      let prefs = library.appendingPathComponent("Preferences", isDirectory: true)
+      urls.append(prefs)
+      if let id = Bundle.main.bundleIdentifier {
+        urls.append(prefs.appendingPathComponent("\(id).plist"))
+      }
+    }
+    for path in extraPaths {
+      urls.append(URL(fileURLWithPath: path))
+    }
+
+    var marked = 0
+    for original in urls {
+      guard fm.fileExists(atPath: original.path) else { continue }
+      var url = original
+      var values = URLResourceValues()
+      values.isExcludedFromBackup = true
+      do {
+        try url.setResourceValues(values)
+        marked += 1
+      } catch {
+        NSLog("[Vyana] could not exclude \(url.path) from backup: \(error)")
+      }
+    }
+    return marked
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
@@ -37,6 +82,23 @@ import YCProductSDK
         }
       }
       ringDeviceChannel = channel
+    }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VyanaBackupExclusion") {
+      let channel = FlutterMethodChannel(
+        name: "vyana/backup_exclusion",
+        binaryMessenger: registrar.messenger()
+      )
+      channel.setMethodCallHandler { call, result in
+        switch call.method {
+        case "excludeFromBackup":
+          let arguments = call.arguments as? [String: Any]
+          let paths = arguments?["paths"] as? [String] ?? []
+          result(Self.excludeUserDataFromBackup(extraPaths: paths))
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+      backupExclusionChannel = channel
     }
   }
 

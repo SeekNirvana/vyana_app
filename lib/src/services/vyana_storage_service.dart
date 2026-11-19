@@ -167,10 +167,34 @@ class VyanaStorageService {
       _ready = true;
       _failureReason = null;
       debugPrint('[VyanaStorage] Ready — data $private, downloads $shared');
+      await _excludeFromDeviceBackup([private, shared]);
     } catch (error, stack) {
       debugPrint('[VyanaStorage] Init failed: $error\n$stack');
       _failureReason =
           'Failed to prepare app storage. Restart Vyana after checking free space.';
+    }
+  }
+
+  /// Item 102: on iPhone, keeps the vault out of iCloud device backups.
+  ///
+  /// Android does this in the manifest (allowBackup="false" and the data
+  /// extraction rules). iPhone has no manifest switch: the flag is set per
+  /// file or folder, and is lost when one is recreated, so it is set at
+  /// every launch — by the app delegate before Flutter starts, and again
+  /// here once the folders are known to exist. A failure is logged, never
+  /// fatal: the app works either way.
+  static const _backupExclusionChannel =
+      MethodChannel('vyana/backup_exclusion');
+
+  Future<void> _excludeFromDeviceBackup(List<String> paths) async {
+    if (kIsWeb || !Platform.isIOS) return;
+    try {
+      await _backupExclusionChannel.invokeMethod<int>(
+        'excludeFromBackup',
+        {'paths': paths.toSet().toList()},
+      );
+    } on Object catch (error) {
+      debugPrint('[VyanaStorage] could not exclude from backup: $error');
     }
   }
 
