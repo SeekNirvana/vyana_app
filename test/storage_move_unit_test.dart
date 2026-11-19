@@ -144,7 +144,7 @@ void main() {
       sqlite3.open(path)
         ..execute('CREATE TABLE t (x INTEGER)')
         ..execute('INSERT INTO t VALUES (1)')
-        ..dispose();
+        ..close();
       expect(storageDatabaseOpens(path), isTrue);
     });
 

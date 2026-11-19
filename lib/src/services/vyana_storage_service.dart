@@ -558,7 +558,7 @@ bool storageDatabaseOpens(String path) {
     debugPrint('[VyanaStorage] vault did not open at $path: $error');
     return false;
   } finally {
-    db?.dispose();
+    db?.close();
   }
 }
 
