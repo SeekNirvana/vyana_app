@@ -36,6 +36,10 @@ class GuideRuntimeService {
   static const _guideTopK = 40;
   static const _guideTopP = 0.9;
   static const _maxIdenticalStreamTokens = 4;
+
+  /// Below this many tokens of room left after a reply, the reply is taken
+  /// to have run into the end of the window rather than finished.
+  static const _windowFullMargin = 16;
   // Bump when inference/session defaults change to drop stale in-memory models.
   static const _runtimeConfigEpoch = 2;
 
@@ -52,6 +56,19 @@ class GuideRuntimeService {
 
   InferenceModel? _currentModel;
   InferenceChat? _activeChat;
+
+  /// The loaded session's window and instructions, for counting what is
+  /// sent against what fits (items 123 and 126).
+  int _windowTokens = 0;
+  String _systemPrompt = '';
+  int _systemTokens = 0;
+
+  /// What the live session holds, turn by turn, and roughly how many tokens
+  /// that is. Kept here because the session itself does not say, and it is
+  /// what lets a cut-off reply be taken back out (123) and a long
+  /// conversation be trimmed (126).
+  final List<NovaTurn> _turns = [];
+  int _turnTokens = 0;
 
   GuideKind? _activeGuide;
   bool _isGenerating = false;
@@ -112,14 +129,14 @@ class GuideRuntimeService {
   Future<String> generateResponse({
     required GuideKind guide,
     required String prompt,
-    String dataBlock = '',
+    NovaData data = NovaData.none,
     String lookupBlock = '',
   }) async {
     var finalResponse = '';
     await for (final partial in streamResponse(
       guide: guide,
       prompt: prompt,
-      dataBlock: dataBlock,
+      data: data,
       lookupBlock: lookupBlock,
     )) {
       finalResponse = partial;
@@ -127,22 +144,24 @@ class GuideRuntimeService {
     return finalResponse;
   }
 
-  /// The DATA block the live session has already been given, if any.
+  /// The key of the DATA block the live session has already been given.
   ///
   /// Item 70: cleared in [offload], so it is remembered for exactly as long
   /// as the session that received it. A block "already sent" to a session
   /// that no longer exists would leave Nova with no numbers at all.
-  String? _sentDataBlock;
+  /// Item 106: the key, not the text, so a new minute or a new battery
+  /// percentage does not send the numbers again.
+  String? _sentDataKey;
 
   /// Stream a response for [prompt] as text accumulates.
   ///
-  /// [dataBlock] and [lookupBlock] are passed separately rather than joined
+  /// [data] and [lookupBlock] are passed separately rather than joined
   /// into [prompt] by the caller, because whether the DATA block needs
   /// sending depends on the session — which only this service knows about.
   Stream<String> streamResponse({
     required GuideKind guide,
     required String prompt,
-    String dataBlock = '',
+    NovaData data = NovaData.none,
     String lookupBlock = '',
   }) async* {
     final onCloud = _backend.backend == AiBackend.cloud && _backend.cloudReady;
@@ -168,7 +187,8 @@ class GuideRuntimeService {
       yield* _backend.streamFromEndpoint(
         composeNovaPrompt(
           message: prompt,
-          dataBlock: dataBlock,
+          timeLine: data.timeLine,
+          dataBlock: data.block,
           lookupBlock: lookupBlock,
         ),
         systemPrompt: cloudConfig.systemPrompt,
@@ -188,7 +208,7 @@ class GuideRuntimeService {
         await initialize(guide);
         yield* _streamOnce(
           prompt,
-          dataBlock: dataBlock,
+          data: data,
           lookupBlock: lookupBlock,
         );
         _backendAttemptIndex = 0;
@@ -228,7 +248,7 @@ class GuideRuntimeService {
   /// would have arrived without it.
   Stream<String> _streamOnce(
     String message, {
-    required String dataBlock,
+    required NovaData data,
     required String lookupBlock,
   }) async* {
     if (_activeChat == null) {
@@ -246,34 +266,87 @@ class GuideRuntimeService {
 
     // An on-device chat keeps the turns it was given, so repeating the
     // numbers is what pushes the question out of the window.
-    final sendData = novaDataNeedsSending(
-      block: dataBlock,
-      lastSent: _sentDataBlock,
+    var sendData = novaDataNeedsSending(
+      block: data.block,
+      key: data.key,
+      lastSentKey: _sentDataKey,
       sessionRemembers: true,
     );
 
     try {
+      String compose({required bool withData}) => composeNovaPrompt(
+            message: message,
+            timeLine: data.timeLine,
+            dataBlock: withData ? data.block : '',
+            lookupBlock: lookupBlock,
+          );
+      var composed = compose(withData: sendData);
+      var promptTokens = await _countTokens(composed);
+
+      // Item 126: everything in one conversation accumulates in the
+      // window, and nothing made room, so a long conversation eventually
+      // left none for the reply (and flutter_gemma then drops the oldest
+      // turns on its own, DATA block included, without saying so). When
+      // the next turn and ~400 tokens of reply will not fit, start a fresh
+      // session: the instructions, the current DATA block, the last few
+      // turns. The conversation on screen stays whole; only what Nova
+      // holds in memory is trimmed.
+      if (_turns.isNotEmpty &&
+          novaWindowNeedsRoom(
+            used: _systemTokens + _turnTokens,
+            prompt: promptTokens,
+            window: _windowTokens,
+          )) {
+        final withData = compose(withData: data.block.trim().isNotEmpty);
+        final withDataTokens = await _countTokens(withData);
+        final keep = novaTurnsToKeep(
+          turnTokens: [for (final t in _turns) t.tokens],
+          fixedTokens:
+              _systemTokens + withDataTokens + kNovaReplyReserveTokens,
+          window: _windowTokens,
+        );
+        debugPrint(
+          '[GuideRuntime] window nearly full '
+          '(${_systemTokens + _turnTokens} + $promptTokens of '
+          '$_windowTokens); fresh session with the last $keep turn(s).',
+        );
+        await _rebuildSession(_turns.sublist(_turns.length - keep));
+        if (_activeChat == null) {
+          throw StateError('Failed to make room in the conversation');
+        }
+        sendData = data.block.trim().isNotEmpty;
+        composed = withData;
+        promptTokens = withDataTokens;
+      }
+      final dataSent = sendData ? data.block : '';
+
+      // Item 123, debug line 1: what this reply is being asked to fit
+      // into. If replies are still cut short on a phone, this says whether
+      // the window was the reason.
+      debugPrint(
+        '[GuideRuntime] sending: system=$_systemTokens '
+        'data=${await _countTokens(dataSent)} '
+        'lookup=${await _countTokens(lookupBlock)} '
+        'message=${await _countTokens(message)} '
+        'prompt=$promptTokens history=$_turnTokens window=$_windowTokens',
+      );
+
       try {
         await _activeChat!.addQueryChunk(
-          Message.text(
-            text: composeNovaPrompt(
-              message: message,
-              dataBlock: sendData ? dataBlock : '',
-              lookupBlock: lookupBlock,
-            ),
-            isUser: true,
-          ),
+          Message.text(text: composed, isUser: true),
         );
         // Recorded only now the session has it. Recording it when the
         // block was composed would mean a turn that failed to be added
         // left Nova with no numbers for the rest of the session, and no
         // sign of why.
-        if (sendData) _sentDataBlock = dataBlock;
+        if (sendData) _sentDataKey = data.key;
       } catch (e) {
         throw StateError('Failed to add message to chat: $e');
       }
 
       var responseText = '';
+      var end = NovaReplyEnd.finished;
+      Object? failure;
 
       if (defaultTargetPlatform == TargetPlatform.iOS) {
         final response = await _activeChat!.generateChatResponse();
@@ -284,44 +357,139 @@ class GuideRuntimeService {
         yield responseText;
       } else {
         final buffer = StringBuffer();
-        var lastToken = '';
-        var identicalTokenStreak = 0;
+        // Item 123: empty and whitespace pieces no longer count as a
+        // repeat; between words they tripped the guard after a few words.
+        final guard = NovaRepeatGuard(limit: _maxIdenticalStreamTokens);
 
-        await for (final response in _activeChat!.generateChatResponseAsync()) {
-          if (response is! TextResponse) {
-            continue;
+        try {
+          await for (final response
+              in _activeChat!.generateChatResponseAsync()) {
+            if (response is! TextResponse) {
+              continue;
+            }
+
+            final token = response.token;
+            if (guard.shouldStop(token)) {
+              debugPrint(
+                '[GuideRuntime] Degenerate token loop detected ("$token"); '
+                'stopping generation.',
+              );
+              end = NovaReplyEnd.guard;
+              await _activeChat!.stopGeneration();
+              break;
+            }
+
+            buffer.write(token);
+            yield _trimRepeatingTail(buffer.toString());
           }
-
-          final token = response.token;
-          if (token == lastToken) {
-            identicalTokenStreak++;
-          } else {
-            lastToken = token;
-            identicalTokenStreak = 1;
-          }
-
-          if (identicalTokenStreak >= _maxIdenticalStreamTokens) {
-            debugPrint(
-              '[GuideRuntime] Degenerate token loop detected ("$token"); '
-              'stopping generation.',
-            );
-            await _activeChat!.stopGeneration();
-            break;
-          }
-
-          buffer.write(token);
-          yield _trimRepeatingTail(buffer.toString());
+        } catch (error) {
+          // A failure with nothing written is still a failure, and a
+          // backend failure goes back to the retry loop. Anything else
+          // after some text is a cut-off reply, not an answer.
+          if (buffer.isEmpty || _isInferenceBackendError(error)) rethrow;
+          end = NovaReplyEnd.error;
+          failure = error;
         }
         responseText = _trimRepeatingTail(buffer.toString()).trimRight();
+      }
+
+      final replyTokens = await _countTokens(responseText);
+      if (end == NovaReplyEnd.finished &&
+          _windowTokens > 0 &&
+          _systemTokens + _turnTokens + promptTokens + replyTokens >=
+              _windowTokens - _windowFullMargin) {
+        end = NovaReplyEnd.windowFull;
+      }
+
+      // Item 123, debug line 2: why the stream ended.
+      debugPrint(
+        '[GuideRuntime] reply ended: ${end.name} '
+        '(${responseText.length} chars, ~$replyTokens tokens'
+        '${failure == null ? '' : ', $failure'})',
+      );
+
+      if (end.isCutOff) {
+        // The session now holds a question with half an answer, or none.
+        // Put it back to the turns before this one, so Try again is asked
+        // fresh rather than on top of a broken turn.
+        await _rebuildSession(_turns);
+        throw NovaReplyCutOff(responseText, end, failure);
       }
 
       if (responseText.isEmpty) {
         throw StateError('No response generated from model');
       }
+      _turns.add(
+        NovaTurn(
+          message: message,
+          reply: responseText,
+          tokens: promptTokens + replyTokens,
+        ),
+      );
+      _turnTokens += promptTokens + replyTokens;
       _lastError = null;
     } finally {
       _isGenerating = false;
     }
+  }
+
+  /// Token count of [text] by the loaded model's own tokenizer, or an
+  /// estimate (four characters a token) when it cannot be asked.
+  Future<int> _countTokens(String text) async {
+    if (text.trim().isEmpty) return 0;
+    final chat = _activeChat;
+    if (chat != null) {
+      try {
+        return await chat.session.sizeInTokens(text);
+      } on Object {
+        // Fall through to the estimate.
+      }
+    }
+    return novaTokenEstimate(text);
+  }
+
+  /// Replaces what the session holds with [keep]: the instructions, then
+  /// those turns only. The DATA block goes again with the next message.
+  ///
+  /// The saved conversation on screen is not touched; this is only what
+  /// Nova holds in memory.
+  Future<void> _rebuildSession(List<NovaTurn> keep) async {
+    final chat = _activeChat;
+    if (chat == null) return;
+    final kept = List<NovaTurn>.of(keep);
+    try {
+      await chat.clearHistory(
+        replayHistory: [
+          for (final turn in kept) ...[
+            Message.text(text: turn.message, isUser: true),
+            Message(text: turn.reply, isUser: false),
+          ],
+        ],
+      );
+      // Replayed without their DATA and LOOKUP blocks, so they cost less
+      // than they did the first time; count them as they now sit.
+      final recounted = [
+        for (final turn in kept)
+          NovaTurn(
+            message: turn.message,
+            reply: turn.reply,
+            tokens: await _countTokens(turn.message) +
+                await _countTokens(turn.reply),
+          ),
+      ];
+      _turns
+        ..clear()
+        ..addAll(recounted);
+      _turnTokens = recounted.fold(0, (sum, t) => sum + t.tokens);
+    } on Object catch (error) {
+      debugPrint('[GuideRuntime] could not rebuild the session ($error)');
+      _turns.clear();
+      _turnTokens = 0;
+      // Called from inside a reply; offload would otherwise wait for it.
+      _isGenerating = false;
+      await offload(resetBackendAttempts: false);
+    }
+    _sentDataKey = null;
   }
 
   /// Drop the conversation so far without unloading the model.
@@ -341,11 +509,13 @@ class GuideRuntimeService {
     if (_isGenerating) return;
     try {
       await chat.clearHistory();
+      _turns.clear();
+      _turnTokens = 0;
       // Item 70: the session has just forgotten the DATA block along with
       // everything else, so it has to be sent again. Without this, asking
       // for a new conversation left Nova with no numbers and nothing to
       // say about them.
-      _sentDataBlock = null;
+      _sentDataKey = null;
     } on Object catch (error) {
       // A model that will not forget is worse than one that cannot be asked
       // to, so drop it and let the next message rebuild from nothing.
@@ -372,10 +542,12 @@ class GuideRuntimeService {
     _activeGuide = null;
     // Item 70: the DATA block is remembered for exactly as long as the
     // session that received it.
-    _sentDataBlock = null;
+    _sentDataKey = null;
     _loadedConfigEpoch = null;
     _loadedBackendAttempt = null;
     _loadedPrefsUpdatedAt = null;
+    _turns.clear();
+    _turnTokens = 0;
     _isGenerating = false;
     await _currentModel?.close();
     _currentModel = null;
@@ -413,6 +585,8 @@ class GuideRuntimeService {
       maxTokens: effective.contextTokens,
       preferredBackend: backend,
     );
+    _windowTokens = effective.contextTokens;
+    _systemPrompt = effective.systemPrompt;
 
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       await Future.delayed(const Duration(milliseconds: 100));
@@ -431,6 +605,10 @@ class GuideRuntimeService {
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       await Future.delayed(const Duration(milliseconds: 100));
     }
+
+    _turns.clear();
+    _turnTokens = 0;
+    _systemTokens = await _countTokens(_systemPrompt);
 
     _activeGuide = definition.kind;
     _loadedConfigEpoch = _runtimeConfigEpoch;

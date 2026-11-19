@@ -366,6 +366,14 @@ const String kRingAlertHealthFiredAtKey = 'vyana.ring.alert.healthFiredAt';
 const String kRingAlertLowBatteryFiredAtKey =
     'vyana.ring.alert.lowBatteryFiredAt';
 
+/// Item 116: set while the offline alert has been sent for the current
+/// episode, and cleared when the ring is back. Read by Nova.
+const String kRingAlertOfflineFiredKey = 'vyana.ring.alert.offlineFired';
+
+/// Item 116: set while the not-synced alert has been sent for the current
+/// episode. Read by Nova.
+const String kRingAlertStaleFiredKey = 'vyana.ring.alert.staleFired';
+
 const List<String> kRingAlertStateKeys = [
   'vyana.ring.alert.offlineSince',
   'vyana.ring.alert.offlineFired',
@@ -378,11 +386,11 @@ const List<String> kRingAlertStateKeys = [
 
 class _AlertKeys {
   static const offlineSince = 'vyana.ring.alert.offlineSince';
-  static const offlineFired = 'vyana.ring.alert.offlineFired';
+  static const offlineFired = kRingAlertOfflineFiredKey;
   static const lowBatteryFiredAt = kRingAlertLowBatteryFiredAtKey;
   static const overnightBatteryFiredOn =
       'vyana.ring.alert.overnightBatteryFiredOn';
-  static const staleFired = 'vyana.ring.alert.staleFired';
+  static const staleFired = kRingAlertStaleFiredKey;
   static const healthFiredAt = kRingAlertHealthFiredAtKey;
 }
 
@@ -425,16 +433,6 @@ bool get liveChecksRunHere => !kIsWeb && Platform.isAndroid;
 /// app is never mistaken for a suspended one.
 const Duration kAlertSnapshotStaleAfter = Duration(minutes: 30);
 
-/// How long a "charging" status is still believed once the ring is out of
-/// reach.
-///
-/// Item 84 (bug 43): a ring on its charger drops out of Bluetooth range and
-/// is still off the finger on purpose, so charging has to survive losing
-/// the connection — but not forever. A ring is full inside two hours, and a
-/// status still reading "charging" after that is stale. Believing it muted
-/// the low-battery and out-of-reach alerts for as long as the ring stayed
-/// away, which is the opposite of what bug 43 was for.
-const Duration kChargingBelievedFor = Duration(hours: 2);
 
 Future<void> evaluateRingAlerts({
   required RingAlertSnapshot snapshot,

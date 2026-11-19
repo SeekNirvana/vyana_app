@@ -176,6 +176,21 @@ class SessionController extends ChangeNotifier {
     _notify();
   }
 
+  /// Item 130: elapsed time read from the clock now, not as of the last
+  /// one-second tick, for a pacer that must not drift.
+  Duration get liveElapsed => _active ? _wallClockElapsed() : _elapsed;
+
+  /// Item 130: prepares spoken cues ahead of time, when cues are on. A
+  /// pacer awaits this before it starts its clock.
+  Future<void> prepareCues(Iterable<String> phrases) async {
+    if (!_ref.read(voiceCuesEnabledProvider)) return;
+    try {
+      await _ref.read(voiceCueServiceProvider).prepare(phrases);
+    } on Object catch (error) {
+      debugPrint('[Session] could not prepare cues: $error');
+    }
+  }
+
   /// Wall-clock elapsed: survives the app being suspended mid-session.
   Duration _wallClockElapsed() {
     final started = _startedAt;
@@ -404,6 +419,14 @@ class SessionController extends ChangeNotifier {
     // session. Sample capture works regardless (it reads live vitals).
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     _notify();
+
+    // Item 130: the bell's words are prepared early in the session, so
+    // "Time's up." is heard with the bell and not a second or two after.
+    if (_plannedMinutes != null) {
+      Timer(const Duration(seconds: 3), () {
+        if (_active && !_disposed) unawaited(prepareCues(["Time's up."]));
+      });
+    }
 
     if (ring.isConnected) {
       unawaited(ring.repo.startSport(sportType));
@@ -635,11 +658,17 @@ class SessionController extends ChangeNotifier {
     _notify();
   }
 
-  void emitCue(String text) {
+  /// Shows [text] as the cue banner and speaks it.
+  ///
+  /// Item 130: [within] is how long the spoken cue may wait for the one
+  /// before it; a pacer passes its phase length.
+  void emitCue(String text, {Duration? within}) {
     _cueClearTimer?.cancel();
     _activeCue = text;
     if (_ref.read(voiceCuesEnabledProvider)) {
-      unawaited(_ref.read(voiceCueServiceProvider).speak(text));
+      unawaited(
+        _ref.read(voiceCueServiceProvider).speak(text, within: within),
+      );
     }
     _notify();
     _cueClearTimer = Timer(const Duration(milliseconds: 5400), () {

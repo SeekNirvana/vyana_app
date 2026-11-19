@@ -15,7 +15,7 @@ part of '../../main.dart';
 /// can be held to: [ChatHistoryController.startFresh] clears both together.
 ///
 /// What is deliberately *not* offered is picking a stored conversation back
-/// up. The whole context window is 1,024 tokens on Android and 512 on iOS —
+/// up. The whole context window is 2,048 tokens (1,024 on a low-memory phone) —
 /// the system prompt and the DATA block of the user's own numbers come out of
 /// that same budget — so replaying a conversation of any length into the model
 /// would push out the thing being asked. A reopened conversation is therefore
@@ -24,6 +24,9 @@ part of '../../main.dart';
 
 /// The longest a generated title runs before it is cut.
 const int kChatTitleMaxChars = 68;
+
+/// Item 127: whether conversations are written to the vault at all.
+const String kSaveConversationsKey = 'vyana.nova.save_conversations';
 
 /// A conversation in the history list, with enough to draw a row.
 @immutable
@@ -85,6 +88,14 @@ String chatTitleFrom(String firstMessage) {
   return '${stem.trimRight()}…';
 }
 
+/// Item 128: whether Nova's reply is spoken.
+///
+/// Decided 15 Nov: a typed message gets a text reply, a spoken one a spoken
+/// reply. The speaker icon overrides that for the rest of the conversation
+/// ([override]); null means follow how the message was sent.
+bool novaSpeaksReply({required bool spoken, bool? override}) =>
+    override ?? spoken;
+
 /// The live conversation, and the writing of it to the vault.
 ///
 /// Lives as long as the app process, which is also how long the model's own
@@ -103,6 +114,88 @@ class ChatHistoryController extends ChangeNotifier {
   /// Row id of the reply currently arriving, so the finished text lands on
   /// the row the empty bubble came from.
   String? _pendingReplyId;
+
+  /// Item 127: "Save conversations", on by default. Off means nothing is
+  /// written to the vault; the conversation still works on screen.
+  bool _saveConversations = true;
+  bool _saveLoaded = false;
+
+  bool get saveConversations => _saveConversations;
+
+  /// Item 128: how the last message was sent, and the speaker icon's
+  /// override, both for the live conversation only.
+  bool _lastSpoken = false;
+  bool? _voiceOverride;
+
+  bool get lastMessageSpoken => _lastSpoken;
+  bool? get voiceOverride => _voiceOverride;
+
+  /// What the speaker icon shows: whether the next reply would be spoken.
+  bool get repliesAloud =>
+      novaSpeaksReply(spoken: _lastSpoken, override: _voiceOverride);
+
+  /// The speaker icon: typing, it turns voice on; speaking, it turns it off.
+  void toggleVoice() {
+    _voiceOverride = !repliesAloud;
+    notifyListeners();
+  }
+
+  /// Records how the message about to be sent was given.
+  void noteInput({required bool spoken}) {
+    _lastSpoken = spoken;
+  }
+
+  void _resetVoice() {
+    _lastSpoken = false;
+    _voiceOverride = null;
+  }
+
+  Future<void> _loadSavePref() async {
+    if (_saveLoaded) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _saveConversations = prefs.getBool(kSaveConversationsKey) ?? true;
+    } on Object {
+      // Unreadable preferences keep the default, which is to save.
+    }
+    _saveLoaded = true;
+  }
+
+  /// Reads the setting, for the settings screen's first frame.
+  Future<bool> loadSaveConversations() async {
+    await _loadSavePref();
+    notifyListeners();
+    return _saveConversations;
+  }
+
+  /// Turns saving on or off. Off stops writing from the next message; what
+  /// is already stored stays until it is deleted.
+  Future<void> setSaveConversations(bool on) async {
+    _saveConversations = on;
+    _saveLoaded = true;
+    if (!on) {
+      // The live conversation is no longer being written, so the next one
+      // to be written starts a row of its own.
+      _sessionId = null;
+      _ordinal = 0;
+      _pendingReplyId = null;
+    }
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(kSaveConversationsKey, on);
+    } on Object catch (error) {
+      debugPrint('[ChatHistory] Could not store the setting: $error');
+    }
+  }
+
+  /// Item 127: Delete on ending a conversation. Removes the stored copy of
+  /// the live one; the screen is cleared by [startFresh] right after.
+  Future<void> discardLive() async {
+    final id = _sessionId;
+    if (id == null) return;
+    await delete(id);
+  }
 
   /// What the chat screen draws.
   List<GuideMessage> get messages => List.unmodifiable(_messages);
@@ -125,6 +218,7 @@ class ChatHistoryController extends ChangeNotifier {
     _sessionId = null;
     _ordinal = 0;
     _pendingReplyId = null;
+    _resetVoice();
     _messages
       ..clear()
       ..add(GuideMessage(fromUser: false, text: starter));
@@ -144,6 +238,7 @@ class ChatHistoryController extends ChangeNotifier {
     _sessionId = null;
     _ordinal = 0;
     _pendingReplyId = null;
+    _resetVoice();
     _messages
       ..clear()
       ..add(GuideMessage(fromUser: false, text: starter));
@@ -168,6 +263,9 @@ class ChatHistoryController extends ChangeNotifier {
     _messages.add(GuideMessage(fromUser: true, text: text));
     _messages.add(const GuideMessage(fromUser: false, text: ''));
     notifyListeners();
+
+    await _loadSavePref();
+    if (!_saveConversations) return replyIndex;
 
     try {
       var sessionId = _sessionId;
@@ -221,13 +319,38 @@ class ChatHistoryController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Item 123: the reply at [index] stopped before Nova finished it. What
+  /// arrived stays on screen, marked, and is not written as an answer.
+  void markCutOff(int index, String partial) {
+    if (index < 0 || index >= _messages.length) return;
+    _messages[index] =
+        GuideMessage(fromUser: false, text: partial, cutOff: true);
+    notifyListeners();
+  }
+
+  /// Empties a cut-off reply so Try again can stream into the same bubble.
+  /// Returns the question it was answering, or null when there is none.
+  String? resetReply(int index) {
+    if (index < 1 || index >= _messages.length) return null;
+    final question = _messages[index - 1];
+    if (!question.fromUser) return null;
+    _messages[index] = const GuideMessage(fromUser: false, text: '');
+    _pendingReplyId = null;
+    notifyListeners();
+    return question.text;
+  }
+
   /// Writes the finished reply, whatever it says.
   ///
   /// Including the apology the screen shows when generation failed: the
   /// transcript is a record of what happened, and a conversation that read as
   /// an unanswered question would be a different and less useful record.
+  /// Item 123: except a cut-off reply, which is half an answer and would be
+  /// read back later as a whole one.
   Future<void> finishReply(int index) async {
     if (index < 0 || index >= _messages.length) return;
+    if (_messages[index].cutOff) return;
+    if (!_saveConversations) return;
     final body = _messages[index].text;
     final sessionId = _sessionId;
     if (sessionId == null || body.trim().isEmpty) return;

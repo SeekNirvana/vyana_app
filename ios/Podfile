@@ -49,5 +49,16 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    # whisper_ggml_plus pins IPHONEOS_DEPLOYMENT_TARGET = 12.0 in its
+    # pod_target_xcconfig, and current Xcode refuses anything below 15.0
+    # ("Target Integrity"), so the iOS build stopped before compiling a
+    # line. Every pod is built for the app's own target instead; a target
+    # setting here wins over the pod's xcconfig.
+    target.build_configurations.each do |config|
+      current = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+      if current.nil? || Gem::Version.new(current) < Gem::Version.new('16.0')
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+      end
+    end
   end
 end

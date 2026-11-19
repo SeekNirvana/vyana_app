@@ -549,10 +549,27 @@ HomeSuggestion homeSuggestionFor({
     );
   }
 
+  // Item 131 (decided 16 Nov): when the suggested practice is finished,
+  // the card moves on rather than keeping it as the suggestion until the
+  // slot changes. The finished one stays under "Done today".
+  final doneToday = {
+    for (final s in todaysFinished) s.vyanaActivityType,
+  };
+
   switch (moment) {
     case HomeMoment.morning:
       // Unchanged: the short practice, four minutes or less.
       final id = suggestedPracticeFor(intent, state, readiness, moment);
+      if (doneToday.contains(id)) {
+        // Morning practice done: the midday suggestion, early.
+        return _daySlotSuggestion(
+          intent: intent,
+          readiness: readiness,
+          pins: pins,
+          history: history,
+          todaysFinished: todaysFinished,
+        );
+      }
       final activity = activityById(id) ?? activityById('breathwork')!;
       return HomeSuggestion(
         activityId: id,
@@ -562,7 +579,26 @@ HomeSuggestion homeSuggestionFor({
       );
 
     case HomeMoment.night:
-      final id = windDownFor(now);
+      // Item 131: the next wind-down practice not done tonight — Yoga
+      // Nidra after Body Scan — and nothing new once all are done.
+      final tonight = _doneTonight(now, history, todaysFinished);
+      final first = windDownFor(now);
+      final rotation = [
+        first,
+        for (final id in kWindDownRotation)
+          if (id != first) id,
+      ];
+      final id = rotation.where((id) => !tonight.contains(id)).firstOrNull;
+      if (id == null) {
+        // All done tonight. The card stays on the last one, now ticked,
+        // rather than offering something new at bedtime.
+        return HomeSuggestion(
+          activityId: first,
+          heading: 'Wind down',
+          reason: 'Helps your body and mind settle before sleep',
+          minutes: activityById(first)?.dur ?? 15,
+        );
+      }
       return HomeSuggestion(
         activityId: id,
         heading: 'Wind down',
@@ -571,62 +607,97 @@ HomeSuggestion homeSuggestionFor({
       );
 
     case HomeMoment.day:
-      final doneToday = {
-        for (final s in todaysFinished) s.vyanaActivityType,
-      };
-      bool usable(String id) {
-        final a = activityById(id);
-        return a != null &&
-            !doneToday.contains(id) &&
-            _fitsIntent(a, intent, readiness);
-      }
+      return _daySlotSuggestion(
+        intent: intent,
+        readiness: readiness,
+        pins: pins,
+        history: history,
+        todaysFinished: todaysFinished,
+      );
+  }
+}
 
-      HomeSuggestion day(String id, {required bool offerPin}) =>
-          HomeSuggestion(
-            activityId: id,
-            heading: 'Suggested activity',
-            reason: suggestedReasonFor(intent, readiness),
-            minutes: openWithMinutesFor(id, history),
-            meta: lengthLabelFor(id, history),
-            offerPin: offerPin,
-            // The day slot opens the practice with no target set.
-            setsTarget: false,
-          );
+/// Item 131: what was finished this evening, which after midnight is still
+/// "tonight" — anything ended since 18:00 of the evening that began it.
+Set<String> _doneTonight(
+  DateTime now,
+  List<SessionRow> history,
+  List<SessionRow> todaysFinished,
+) {
+  final eveningDay = now.hour < 5 ? now.subtract(const Duration(days: 1)) : now;
+  final since = DateTime(eveningDay.year, eveningDay.month, eveningDay.day, 18);
+  return {
+    for (final s in [...history, ...todaysFinished])
+      if (s.endedAt case final ended? when !ended.isBefore(since))
+        s.vyanaActivityType,
+  };
+}
 
-      // 1 · a pin that fits.
-      for (final id in pins) {
-        if (usable(id)) return day(id, offerPin: false);
-      }
-      // 2 · something done before, most recent first, even if not pinned.
-      final seen = <String>{};
-      for (final s in history) {
-        final id = s.vyanaActivityType;
-        if (!seen.add(id)) continue;
-        if (usable(id)) return day(id, offerPin: true);
-      }
-      // 3 · a mindfulness practice from the catalogue, at its own length.
-      //
-      // Item 84 (bug 45): the catalogue one, and not called "your usual".
-      // It was labelled "YOUR USUAL · 15 MIN" for a practice the person had
-      // never done once — a number presented as their own history when it
-      // came out of a list. And the fallback ignored what was done today,
-      // so finishing a body scan could be answered by suggesting a body
-      // scan.
-      final id = _mindfulnessFallback(intent, readiness, todaysFinished);
-      // Item 93 supersedes the 45 point in item 84: the same rule as
-      // everywhere else. These are the gentle mindfulness practices, which
-      // are timed, so the fallback does show its length — as a fact about
-      // the practice rather than a claim about the person.
-      return HomeSuggestion(
+/// The day slot's rule (bug 45): a pin that fits, then something done
+/// before, then a catalogue mindfulness practice — never one done today.
+/// Item 131: also what the morning moves on to once its practice is done.
+HomeSuggestion _daySlotSuggestion({
+  required DayIntent intent,
+  required int? readiness,
+  required List<String> pins,
+  required List<SessionRow> history,
+  required List<SessionRow> todaysFinished,
+}) {
+  final doneToday = {
+    for (final s in todaysFinished) s.vyanaActivityType,
+  };
+  bool usable(String id) {
+    final a = activityById(id);
+    return a != null &&
+        !doneToday.contains(id) &&
+        _fitsIntent(a, intent, readiness);
+  }
+
+  HomeSuggestion day(String id, {required bool offerPin}) =>
+      HomeSuggestion(
         activityId: id,
         heading: 'Suggested activity',
         reason: suggestedReasonFor(intent, readiness),
         minutes: openWithMinutesFor(id, history),
         meta: lengthLabelFor(id, history),
-        offerPin: true,
+        offerPin: offerPin,
+        // The day slot opens the practice with no target set.
         setsTarget: false,
       );
+
+  // 1 · a pin that fits.
+  for (final id in pins) {
+    if (usable(id)) return day(id, offerPin: false);
   }
+  // 2 · something done before, most recent first, even if not pinned.
+  final seen = <String>{};
+  for (final s in history) {
+    final id = s.vyanaActivityType;
+    if (!seen.add(id)) continue;
+    if (usable(id)) return day(id, offerPin: true);
+  }
+  // 3 · a mindfulness practice from the catalogue, at its own length.
+  //
+  // Item 84 (bug 45): the catalogue one, and not called "your usual".
+  // It was labelled "YOUR USUAL · 15 MIN" for a practice the person had
+  // never done once — a number presented as their own history when it
+  // came out of a list. And the fallback ignored what was done today,
+  // so finishing a body scan could be answered by suggesting a body
+  // scan.
+  final id = _mindfulnessFallback(intent, readiness, todaysFinished);
+  // Item 93 supersedes the 45 point in item 84: the same rule as
+  // everywhere else. These are the gentle mindfulness practices, which
+  // are timed, so the fallback does show its length — as a fact about
+  // the practice rather than a claim about the person.
+  return HomeSuggestion(
+    activityId: id,
+    heading: 'Suggested activity',
+    reason: suggestedReasonFor(intent, readiness),
+    minutes: openWithMinutesFor(id, history),
+    meta: lengthLabelFor(id, history),
+    offerPin: true,
+    setsTarget: false,
+  );
 }
 
 /// The one-line reason under the suggested-practice heading.

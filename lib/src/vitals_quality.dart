@@ -527,10 +527,9 @@ String? peakBadgeFor({
 /// A session's length as the user would say it (bug 32). Under a minute is
 /// shown in seconds: rounding a 40-second try down to "0m" reads as though
 /// nothing was recorded, when in fact everything was.
-String sessionLengthLabel(Duration d) {
-  if (d.inSeconds < 60) return '${d.inSeconds}s';
-  return '${(d.inSeconds / 60).round()}m';
-}
+///
+/// Item 114: "under 1m" like every other screen, not "40s".
+String sessionLengthLabel(Duration d) => sessionLengthText(d.inSeconds);
 
 /// Width of the sustained-average bucket used for resting HR. Five minutes is
 /// the wearable convention: short enough to catch a genuine trough, long
@@ -937,17 +936,51 @@ DateTimeRange overnightWindowFor(DateTime now) {
 
 /// Whether the ring measured anything at all between [from] and [to] — the
 /// test for "was it even on the finger".
+///
+/// Item 122: a reading within [kRingSampleTolerance] either side counts. The
+/// gap check walks the night in five-minute steps, and a ring sampling
+/// heart rate every ten or thirty minutes left most steps with no reading
+/// in them, so worn time showed as "Not recorded". The cost is that a
+/// charger gap under about half an hour reads as sleep, which is the
+/// smaller error.
+///
+/// The record timestamps are collected and sorted once per history, then
+/// searched, rather than every record scanned for every step.
 bool ringMeasuredBetween(RingHistory history, DateTime from, DateTime to) {
-  final start = from.millisecondsSinceEpoch ~/ 1000;
-  final end = to.millisecondsSinceEpoch ~/ 1000;
-  for (final records in [history.combined, history.heartRate, history.steps]) {
-    for (final record in records) {
-      final ts = timestampOf(record);
-      if (ts != null && ts >= start && ts <= end) return true;
+  final start =
+      from.subtract(kRingSampleTolerance).millisecondsSinceEpoch ~/ 1000;
+  final end = to.add(kRingSampleTolerance).millisecondsSinceEpoch ~/ 1000;
+  final stamps = _measuredStamps(history);
+  // First stamp at or after start.
+  var lo = 0;
+  var hi = stamps.length;
+  while (lo < hi) {
+    final mid = (lo + hi) >> 1;
+    if (stamps[mid] < start) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
     }
   }
-  return false;
+  return lo < stamps.length && stamps[lo] <= end;
 }
+
+/// Item 122: how far from a stretch a reading may be and still show the
+/// ring was being worn through it.
+const Duration kRingSampleTolerance = Duration(minutes: 15);
+
+final Expando<List<int>> _measuredStampsCache = Expando('measuredStamps');
+
+List<int> _measuredStamps(RingHistory history) =>
+    _measuredStampsCache[history] ??= [
+      for (final records in [
+        history.combined,
+        history.heartRate,
+        history.steps,
+      ])
+        for (final record in records)
+          if (timestampOf(record) case final ts?) ts,
+    ]..sort();
 
 /// Battery at or under this counts as flat for the purpose of explaining a
 /// lost night: the ring stops recording before it reports 0.
@@ -1069,4 +1102,164 @@ List<SleepDaySummary> averageableNights(
               DateTime(today.year, today.month, today.day))
         n,
   ];
+}
+
+// ── A reading taken by hand (item 133) ───────────────────────────────────
+
+/// One reading the ring sent during a measurement the person started.
+///
+/// Item 133: "New reading" used to count as a success whenever the app
+/// already held *any* value for the vital, and printed that value, or for
+/// blood pressure a placeholder `1` as "1.0 mmHg". This is only ever built
+/// from the event the ring sent during this measurement.
+@immutable
+class CapturedReading {
+  const CapturedReading({
+    required this.kind,
+    required this.value,
+    required this.text,
+    required this.at,
+  });
+
+  final VitalsMetricKind kind;
+
+  /// The number the list and the chart plot (systolic for blood pressure).
+  final double value;
+
+  /// As the top of the screen writes it: `118/78`, `72`, `36.4`.
+  final String text;
+  final DateTime at;
+
+  Map<String, Object> toJson() => {
+        'kind': kind.name,
+        'value': value,
+        'text': text,
+        'at': at.millisecondsSinceEpoch,
+      };
+
+  static CapturedReading? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final kind = VitalsMetricKind.values
+        .where((k) => k.name == raw['kind'])
+        .firstOrNull;
+    final value = raw['value'];
+    final text = raw['text'];
+    final at = raw['at'];
+    if (kind == null || value is! num || text is! String || at is! int) {
+      return null;
+    }
+    return CapturedReading(
+      kind: kind,
+      value: value.toDouble(),
+      text: text,
+      at: DateTime.fromMillisecondsSinceEpoch(at),
+    );
+  }
+}
+
+/// The reading in a measurement event from the ring, if it carries one
+/// that passes the same plausibility gates the screens use. Null when the
+/// ring sent nothing for [type] (a loose ring sends zeros).
+CapturedReading? capturedReadingFrom(
+  Map<dynamic, dynamic> map,
+  DeviceAppControlMeasureHealthDataType type, {
+  DateTime? at,
+}) {
+  final when = at ?? DateTime.now();
+  CapturedReading whole(VitalsMetricKind kind, int v) => CapturedReading(
+        kind: kind,
+        value: v.toDouble(),
+        text: '$v',
+        at: when,
+      );
+  switch (type) {
+    case DeviceAppControlMeasureHealthDataType.heartRate:
+      final v = plausibleHeartRate(
+        readInt(map['deviceRealHeartRate'], const ['heartRate', 'value']) ??
+            readInt(map['deviceRealSport'], const ['heartRate']),
+      );
+      return v == null ? null : whole(VitalsMetricKind.heartRate, v);
+    case DeviceAppControlMeasureHealthDataType.bloodOxygen:
+      final v = plausibleSpo2(
+        readInt(map['deviceRealBloodOxygen'], const ['bloodOxygen', 'value']),
+      );
+      return v == null ? null : whole(VitalsMetricKind.spo2, v);
+    case DeviceAppControlMeasureHealthDataType.hrv:
+      final v = plausibleHrv(
+        readInt(map['deviceRealECGAlgorithmHRV'], const ['hrv', 'value']),
+      );
+      return v == null ? null : whole(VitalsMetricKind.hrv, v);
+    case DeviceAppControlMeasureHealthDataType.bodyTemperature:
+      final v = validTemperature(
+        readDouble(map['deviceRealTemperature'], const ['temperature', 'value']),
+      );
+      return v == null
+          ? null
+          : CapturedReading(
+              kind: VitalsMetricKind.temperature,
+              value: v,
+              text: v.toStringAsFixed(1),
+              at: when,
+            );
+    case DeviceAppControlMeasureHealthDataType.bloodPressure:
+      final text =
+          plausibleBloodPressure(pressureText(map['deviceRealBloodPressure']));
+      final systolic = int.tryParse(text?.split('/').first ?? '');
+      return text == null || systolic == null
+          ? null
+          : CapturedReading(
+              kind: VitalsMetricKind.bloodPressure,
+              value: systolic.toDouble(),
+              text: text,
+              at: when,
+            );
+    case DeviceAppControlMeasureHealthDataType.bloodGlucose:
+      final v = plausibleGlucose(
+        readDouble(map['deviceRealBloodGlucose'], const ['bloodGlucose', 'value']),
+      );
+      return v == null
+          ? null
+          : CapturedReading(
+              kind: VitalsMetricKind.glucose,
+              value: v,
+              text: v.toStringAsFixed(1),
+              at: when,
+            );
+    case DeviceAppControlMeasureHealthDataType.pressure:
+      final v =
+          readDouble(map['deviceRealPressure'], const ['pressure', 'value']);
+      return v == null
+          ? null
+          : CapturedReading(
+              kind: VitalsMetricKind.stress,
+              value: v,
+              text: '${v.round()}',
+              at: when,
+            );
+    default:
+      return null;
+  }
+}
+
+/// The ring's stored points with the readings taken by hand added, for the
+/// list on a vital's screen. A hand reading the ring also stored (within
+/// two minutes) is not shown twice. Newest last, like the ring's points.
+List<VitalHistoryPoint> withCapturedReadings(
+  List<VitalHistoryPoint> points,
+  Iterable<CapturedReading> readings, {
+  required String unit,
+}) {
+  final extra = <VitalHistoryPoint>[
+    for (final r in readings)
+      if (!points.any(
+        (p) => p.time.difference(r.at).inSeconds.abs() <= 120,
+      ))
+        VitalHistoryPoint(
+          time: r.at,
+          value: r.value,
+          label: unit.isEmpty ? r.text : '${r.text} $unit',
+        ),
+  ];
+  if (extra.isEmpty) return points;
+  return [...points, ...extra]..sort((a, b) => a.time.compareTo(b.time));
 }

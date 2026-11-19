@@ -235,7 +235,11 @@ String baselineSummaryLine(PersonalBaselinesState baselines) {
 /// Item 95: a vital is only shown here once Metrics has asked about it,
 /// which means it sat outside the typical band — so this is the line that
 /// says by how much, and against what.
-String? _baselineNumbersLine(WidgetRef ref, BaselineVital vital) {
+/// The person's own mean for [vital] and the typical band it is judged by.
+({double? yours, VitalReferenceRange band}) _baselineYours(
+  WidgetRef ref,
+  BaselineVital vital,
+) {
   final history = ref.read(ringControllerProvider).history;
   final profile = ref.read(userProfileProvider).valueOrNull;
   final band = vital.typicalRangeFor(
@@ -263,6 +267,11 @@ String? _baselineNumbersLine(WidgetRef ref, BaselineVital vital) {
     case BaselineVital.stress:
       yours = _meanOf(vitalHistoryPoints(history, VitalsMetricKind.stress));
   }
+  return (yours: yours, band: band);
+}
+
+String? _baselineNumbersLine(WidgetRef ref, BaselineVital vital) {
+  final (:yours, :band) = _baselineYours(ref, vital);
   if (yours == null) return null;
 
   final unit = vital.unit;
@@ -277,6 +286,35 @@ String? _baselineNumbersLine(WidgetRef ref, BaselineVital vital) {
       ? band.high.round().toString()
       : band.high.toStringAsFixed(1);
   return 'Yours about $mine$suffix, typical $low–$high$suffix';
+}
+
+String _unaskedLine(WidgetRef ref, BaselineVital vital) {
+  final (:yours, :band) = _baselineYours(ref, vital);
+  return unaskedBaselineLine(
+    label: vital.label,
+    yours: yours,
+    low: band.low,
+    high: band.high,
+    numbers: yours == null ? null : _baselineNumbersLine(ref, vital),
+  );
+}
+
+/// Item 113: what an unasked vital says on Your normal. "Within the
+/// typical range" only when it is; out of range but not yet asked about,
+/// the numbers alone, because the question is still to come and this
+/// screen should not pre-empt it with a verdict that is wrong.
+String unaskedBaselineLine({
+  required String label,
+  required double? yours,
+  required double low,
+  required double high,
+  required String? numbers,
+}) {
+  if (yours == null) return '$label · not enough readings yet.';
+  if (yours >= low && yours <= high) {
+    return '$label · within the typical range, nothing to decide.';
+  }
+  return '$label · ${numbers ?? ''}'.trim();
 }
 
 double? _meanOf(List<VitalHistoryPoint> points) {
@@ -356,8 +394,7 @@ Future<void> showBaselineAnswersSheet(BuildContext context, WidgetRef ref) {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text(
-                        '${vital.label} · within the typical range, nothing '
-                        'to decide.',
+                        _unaskedLine(ref, vital),
                         style: VyanaType.caption
                             .copyWith(color: t.textSec, height: 1.4),
                       ),

@@ -228,6 +228,19 @@ class WeeklyPlanReminderController extends StateNotifier<bool> {
       await notify.cancelPlanReminder();
       return;
     }
+    // Item 122: at a cold start this runs before the plan has loaded from
+    // the vault, and an unloaded plan reads as empty — which cancelled the
+    // reminder on every launch. Wait for the first read instead.
+    if (!_ref.read(weeklyPlanRowsProvider).hasValue) {
+      try {
+        await _ref.read(weeklyPlanRowsProvider.future);
+      } on Object catch (error) {
+        // Not knowing the plan is no reason to cancel its reminder.
+        debugPrint('[Plan] could not read the plan to reschedule: $error');
+        return;
+      }
+      if (!mounted) return;
+    }
     final plan = _ref.read(weeklyPlanProvider);
     if (plan.isEmpty) {
       await notify.cancelPlanReminder();
@@ -242,6 +255,9 @@ class WeeklyPlanReminderController extends StateNotifier<bool> {
     ];
     final now = DateTime.now();
     final todaysFinished = todaysFinishedSessions(sessions, now: now);
+    // Item 103: a practice stood down for today gets no reminder today.
+    final skippedToday =
+        _ref.read(plannedSkipsProvider).skippedOn(now);
 
     // The next planned day with something still to do, today included.
     for (var ahead = 0; ahead < 7; ahead++) {
@@ -249,7 +265,10 @@ class WeeklyPlanReminderController extends StateNotifier<bool> {
       final planned = plan.forDay(day);
       if (planned.isEmpty) continue;
       final done = ahead == 0
-          ? {for (final s in todaysFinished) s.vyanaActivityType}
+          ? {
+              for (final s in todaysFinished) s.vyanaActivityType,
+              ...skippedToday,
+            }
           : <String>{};
       final next = planned.activityIds.firstWhere(
         (id) => !done.contains(id),

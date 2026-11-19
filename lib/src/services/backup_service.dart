@@ -30,26 +30,48 @@ final backupServiceProvider = Provider<BackupService>((ref) {
   return BackupService(ref.watch(databaseProvider));
 });
 
-/// What the Your data row should say under its label.
+/// What the Your data row says about backing up, under its fixed line.
 ///
-/// Item 53: the row normally describes the screen. When a backup is overdue
-/// it says so instead — in the row's ordinary grey, with no badge, no
-/// colour and no notification. A backup is a good idea, not an emergency,
-/// and an app that shouts about its own housekeeping teaches people to
-/// stop reading it.
+/// Item 108: "Last backup 2 Nov" or "Never backed up", always, so the row
+/// says where things stand rather than only when a backup is overdue. A
+/// weekly run that did not finish says so instead, until the next one
+/// does. Invalidated after every backup and restore so it is never a
+/// screen behind.
 final backupRowSubtitleProvider = FutureProvider<String>((ref) async {
-  const normal = 'Back up, restore, and exports';
   final service = ref.watch(backupServiceProvider);
-  final lastBackup = await service.lastBackupAt();
-  final startedAt = await ref.watch(databaseProvider).historyStartedAt();
-  if (startedAt == null) return normal;
-
-  final overdue = backupIsOverdue(
-    lastBackup: lastBackup,
-    historyAge: DateTime.now().difference(startedAt),
-  );
-  return overdue ? lastBackupLine(lastBackup) : normal;
+  final auto = await service.autoBackupStatus();
+  if (auto.enabled && auto.lastError != null) return auto.lastError!;
+  return lastBackupDateLine(await service.lastBackupAt());
 });
+
+/// Item 108: the You row's fixed line.
+const String kYourDataRowLine =
+    'Your history lives only on this phone. Deleting Vyana deletes it.';
+
+/// "Last backup 2 Nov" / "Never backed up". The date rather than an age:
+/// a date is something to check against your own memory.
+String lastBackupDateLine(DateTime? lastBackup) {
+  if (lastBackup == null) return 'Never backed up';
+  return 'Last backup ${lastBackup.day} ${_monthShort[lastBackup.month - 1]}';
+}
+
+const List<String> _monthShort = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/// Item 108: whether the one-time card after the first sync has been
+/// answered (Back up now, or Not now). Once is once.
+const String kFirstSyncBackupCardKey = 'vyana.backup.first_sync_card_done';
+
+/// Whether to show that card: the ring has synced, nothing has ever been
+/// backed up, and the card has not been answered.
+bool firstSyncBackupCardDue({
+  required bool hasSynced,
+  required DateTime? lastBackup,
+  required bool answered,
+}) =>
+    hasSynced && lastBackup == null && !answered;
 
 /// When the last backup was handed off, as an ISO date.
 const String kLastBackupKey = 'vyana.backup.last_at';
@@ -82,9 +104,14 @@ class BackupService {
   /// When the last backup was handed off, or null if never.
   Future<DateTime?> lastBackupAt() async {
     final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getString(kLastBackupKey);
-    if (stored == null) return null;
-    return DateTime.tryParse(stored);
+    final manual = DateTime.tryParse(prefs.getString(kLastBackupKey) ?? '');
+    // Item 108: a weekly run that finished is a backup too, so the row's
+    // "Last backup" date counts it.
+    final weekly =
+        DateTime.tryParse(prefs.getString(kAutoBackupLastRunKey) ?? '');
+    if (manual == null) return weekly;
+    if (weekly == null) return manual;
+    return weekly.isAfter(manual) ? weekly : manual;
   }
 
   /// Builds a backup, locks it with [passphrase], and offers it to the
@@ -264,6 +291,22 @@ class BackupService {
     required String appVersion,
     DateTime? now,
   }) async {
+    // Item 108: launch and the service heartbeat can both ask at once.
+    if (_autoBackupRunning) return false;
+    _autoBackupRunning = true;
+    try {
+      return await _runAutoBackupIfDue(appVersion: appVersion, now: now);
+    } finally {
+      _autoBackupRunning = false;
+    }
+  }
+
+  bool _autoBackupRunning = false;
+
+  Future<bool> _runAutoBackupIfDue({
+    required String appVersion,
+    DateTime? now,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final folder = prefs.getString(kAutoBackupFolderKey);
     final lastRun = prefs.getString(kAutoBackupLastRunKey);
@@ -292,8 +335,12 @@ class BackupService {
         return false;
       }
 
-      final directory = Directory(folder!);
-      if (!directory.existsSync()) {
+      // Item 108: through the platform's own access to the folder (a
+      // persisted document-tree permission on Android, a security-scoped
+      // bookmark on iPhone), not a path that lost its access when the app
+      // closed.
+      final directory = BackupFolder(folder!);
+      if (!await directory.reachable()) {
         await prefs.setString(
           kAutoBackupLastErrorKey,
           'That folder is no longer reachable. Choose it again.',
@@ -320,19 +367,14 @@ class BackupService {
         createdAt: when,
       );
 
-      final existing = directory
-          .listSync()
-          .whereType<File>()
-          .map((f) => p.basename(f.path))
-          .toList();
+      final existing = await directory.list();
       final name =
           uniqueBackupName(backupFileName(when), existing.toSet());
-      await File(p.join(folder, name)).writeAsBytes(bytes, flush: true);
+      await directory.write(name, bytes);
 
       for (final stale in staleBackups([...existing, name])) {
         try {
-          final old = File(p.join(folder, stale));
-          if (old.existsSync()) await old.delete();
+          await directory.delete(stale);
         } on Object catch (error) {
           // Keeping too many is harmless; failing the run over it is not.
           debugPrint('[Backup] could not remove $stale: $error');
@@ -352,39 +394,49 @@ class BackupService {
     }
   }
 
-  Future<Map<String, Object?>> _settingsToBackUp() async {
-    final prefs = await SharedPreferences.getInstance();
-    final out = <String, Object?>{};
-    for (final key in kBackupSettingKeys) {
-      final value = prefs.get(key);
-      if (value != null) out[key] = value;
-    }
-    return out;
-  }
+  Future<Map<String, Object?>> _settingsToBackUp() async =>
+      collectBackupSettings(await SharedPreferences.getInstance());
 
-  Future<void> _restoreSettings(Object? raw) async {
-    if (raw is! Map) return;
-    final prefs = await SharedPreferences.getInstance();
-    for (final entry in Map<String, Object?>.from(raw).entries) {
-      // Only the keys this build backs up. A backup from a future version
-      // may name settings that mean something else here, and a key that
-      // describes the phone was never in the file to begin with.
-      if (!kBackupSettingKeys.contains(entry.key)) continue;
-      final value = entry.value;
-      if (value is String) {
-        await prefs.setString(entry.key, value);
-      } else if (value is bool) {
-        await prefs.setBool(entry.key, value);
-      } else if (value is int) {
-        await prefs.setInt(entry.key, value);
-      } else if (value is double) {
-        await prefs.setDouble(entry.key, value);
-      } else if (value is List) {
-        await prefs.setStringList(
-          entry.key,
-          value.whereType<String>().toList(),
-        );
-      }
+  Future<void> _restoreSettings(Object? raw) async =>
+      applyBackupSettings(await SharedPreferences.getInstance(), raw);
+}
+
+/// The settings that go into a backup, read the way the app wrote them.
+@visibleForTesting
+Map<String, Object?> collectBackupSettings(SharedPreferences prefs) {
+  final out = <String, Object?>{};
+  for (final key in kBackupSettingKeys) {
+    final value = prefs.get(key);
+    if (value != null) out[key] = value;
+  }
+  return out;
+}
+
+/// Writes a backup's settings back under the keys the app reads.
+@visibleForTesting
+Future<void> applyBackupSettings(SharedPreferences prefs, Object? raw) async {
+  if (raw is! Map) return;
+  for (final entry in Map<String, Object?>.from(raw).entries) {
+    // A file written with the plugin's on-disk prefix still means the
+    // same setting.
+    final key = entry.key.startsWith('flutter.')
+        ? entry.key.substring('flutter.'.length)
+        : entry.key;
+    // Only the keys this build backs up. A backup from a future version
+    // may name settings that mean something else here, and a key that
+    // describes the phone was never in the file to begin with.
+    if (!kBackupSettingKeys.contains(key)) continue;
+    final value = entry.value;
+    if (value is String) {
+      await prefs.setString(key, value);
+    } else if (value is bool) {
+      await prefs.setBool(key, value);
+    } else if (value is int) {
+      await prefs.setInt(key, value);
+    } else if (value is double) {
+      await prefs.setDouble(key, value);
+    } else if (value is List) {
+      await prefs.setStringList(key, value.whereType<String>().toList());
     }
   }
 }

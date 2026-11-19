@@ -284,9 +284,14 @@ Future<BackupRestoreReport> restoreBackupPayload({
 /// hold things that belong to *this phone* — a paired ring's MAC address, a
 /// pending storage migration, which models are downloaded. Restoring those
 /// onto a different handset would describe a phone that does not exist.
+///
+/// Item 97: these are the keys the app itself passes to SharedPreferences.
+/// The plugin adds its own `flutter.` prefix on disk; asking for
+/// `flutter.vyana.user_profile` through the API looks for
+/// `flutter.flutter.vyana.user_profile` and always finds nothing.
 const List<String> kBackupSettingKeys = [
-  'flutter.vyana.user_profile',
-  'flutter.vyana.practice.pins',
+  'vyana.user_profile',
+  'vyana.practice.pins',
   'vyana_voice_cues_enabled',
   'guide_voice_responses_enabled_v1',
   'guide_selected_voice_json_v1',
@@ -294,7 +299,7 @@ const List<String> kBackupSettingKeys = [
 
 /// Settings deliberately left on the phone they belong to.
 const List<String> kBackupExcludedSettingKeys = [
-  'flutter.vyana.paired_prana_ring',
+  'vyana.paired_prana_ring',
   'vyana.storage.old_root_pending_delete',
 ];
 

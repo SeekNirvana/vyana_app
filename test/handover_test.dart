@@ -636,9 +636,11 @@ void main() {
       List<String> concerns = const [],
       List<String> patterns = const [],
       DateTime? lastSync,
+      DateTime? at,
+      int battery = 12,
     }) =>
         NovaFacts(
-          now: now,
+          now: at ?? now,
           lastNight: lastNight,
           nightReason: reason,
           yesterday: NovaDay(
@@ -659,7 +661,7 @@ void main() {
           intentConfirmed: false,
           hasRing: true,
           lastSyncedAt: lastSync ?? DateTime(2026, 11, 9, 23, 10),
-          batteryPercent: 12,
+          batteryPercent: battery,
           suggestion: 'Body Scan',
           suggestionMinutes: 15,
           plannedActivity: 'Yoga Flow',
@@ -667,6 +669,43 @@ void main() {
           patterns: patterns,
           concerns: concerns,
         );
+
+    test('item 106: a new minute, sync or battery level does not resend',
+        () {
+      final base = novaDataKey(facts());
+      expect(
+        novaDataKey(facts(at: now.add(const Duration(minutes: 7)))),
+        base,
+      );
+      expect(
+        novaDataKey(
+          facts(lastSync: DateTime(2026, 11, 10, 15, 1), battery: 40),
+        ),
+        base,
+      );
+      expect(formatNovaData(facts()), isNot(contains('now:')));
+      expect(novaTimeLine(now), contains('15:20'));
+    });
+
+    test('item 106: a new alert or a new night does', () {
+      final base = novaDataKey(facts());
+      expect(
+        novaDataKey(facts(concerns: ['low battery alert sent today'])),
+        isNot(base),
+      );
+      expect(
+        novaDataKey(
+          facts(
+            lastNight: NovaDay(
+              day: DateTime(2026, 11, 10),
+              sleepSeconds: 7 * 3600,
+              sleepScore: 80,
+            ),
+          ),
+        ),
+        isNot(base),
+      );
+    });
 
     test('a missing night says why, and when the ring last synced', () {
       final block = formatNovaData(
@@ -729,7 +768,9 @@ void main() {
       expect(at('how was last week?')?.label, 'last week');
       expect(at('show me this month')?.label, 'this month');
       expect(at('what happened on 3 Nov?')?.from, DateTime(2026, 11, 3));
-      expect(at('is my HRV trending down?')?.label, 'last 7 days');
+      // Item 116: "trending" alone is too vague to add a week of numbers.
+      expect(at('is my HRV trending down?'), isNull);
+      expect(at('my average HRV')?.label, 'last 7 days');
       // No date, no metric over time — nothing to look up.
       expect(at('I feel tired'), isNull);
       expect(at('what should I do now?'), isNull);
@@ -769,9 +810,10 @@ void main() {
       );
     });
 
-    test('the token cap is unchanged — item 51 says to measure first', () {
-      expect(GuidePersonaPrefsService.androidBalancedMaxTokens, 1024);
-      expect(GuidePersonaPrefsService.iosBalancedMaxTokens, 512);
+    test('the window is 2,048, or 1,024 on a low-memory phone (item 124)',
+        () {
+      expect(GuidePersonaPrefsService.contextTokensFor(lowRam: false), 2048);
+      expect(GuidePersonaPrefsService.contextTokensFor(lowRam: true), 1024);
     });
   });
 
@@ -1939,8 +1981,10 @@ void main() {
         ).readAsStringSync();
 
     test('buying opens seeknirvana.com over https', () {
-      expect(kRingOrderUrl, 'https://seeknirvana.com/order');
+      expect(kRingOrderUrl, 'https://seeknirvana.com/order?utm_source=vyana_app');
       expect(Uri.parse(kRingOrderUrl).scheme, 'https');
+      // Item 101: never ?ref=, which the site uses for referral codes.
+      expect(Uri.parse(kRingOrderUrl).queryParameters.keys, ['utm_source']);
     });
 
     test('the payment and memo code is gone, not merely unreachable', () {

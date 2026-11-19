@@ -50,6 +50,19 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
     // live session, and since item 61 buying a ring is a browser handoff
     // to the website that touches no wallet at all.
     _listenForWidgetLaunch();
+    // Item 108: on Android the weekly backup also runs from the background
+    // service's heartbeat, which reaches this isolate every sync interval
+    // while the service keeps the process alive, so a week passes without
+    // the app having to be opened. It is a check on preferences until one
+    // is due. iPhone has no such service and runs it on launch.
+    if (Platform.isAndroid) {
+      FlutterForegroundTask.addTaskDataCallback(_onServiceTick);
+    }
+  }
+
+  void _onServiceTick(Object data) {
+    if (data != kRingForegroundSyncTick || !mounted) return;
+    unawaited(_runWeeklyBackupIfDue());
   }
 
   /// The action home-screen widget launches Vyana with a deep link; when we see
@@ -77,12 +90,10 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
 
   /// Item 53: the weekly backup, when it is on and one is due.
   ///
-  /// On launch rather than in the background. A true scheduled job would
-  /// need WorkManager on Android and a background refresh task on iOS,
-  /// neither of which runs reliably enough to be the only chance a backup
-  /// gets — and both of which would mean the app writing the user's data
-  /// to a folder while they are not looking. "Every week, the next time
-  /// you open Vyana" is a weaker promise, and it is one that can be kept.
+  /// On launch, and (item 108) on Android also on the background service's
+  /// heartbeat. Not a separate scheduled job: WorkManager and iOS
+  /// background refresh both run too unreliably to be the only chance a
+  /// backup gets.
   Future<void> _runWeeklyBackupIfDue() async {
     try {
       final info = await PackageInfo.fromPlatform();
@@ -157,6 +168,9 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
   @override
   void dispose() {
     _widgetClickSub?.cancel();
+    if (Platform.isAndroid) {
+      FlutterForegroundTask.removeTaskDataCallback(_onServiceTick);
+    }
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -209,6 +223,15 @@ class _VyanaShellState extends ConsumerState<VyanaShell>
           for (final n in usable.take(kBaselineWindowDays))
             ?hrvForDay(hrvPoints: hrvPoints, night: n)?.toDouble(),
         ]);
+      }
+    });
+
+    // Item 129: a snack bar belongs to the screen that showed it. The
+    // messenger is app-wide, so without this "Skipped for today · Undo"
+    // came along to Metrics.
+    ref.listen<int>(tabIndexProvider, (previous, next) {
+      if (previous != next) {
+        ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
       }
     });
 

@@ -127,4 +127,34 @@ void main() {
       );
     });
   });
+
+  group('item 112: the same words on all three', () {
+    test('no score is "No read yet", not a verdict from live signals', () {
+      final state = WellnessState.from(heartRate: 60, hrv: 70);
+      expect(state.title, 'No read yet');
+      expect(state.title, isNot(anyOf('Steady & bright', 'Running low')));
+      expect(wellnessResultSentence(state), startsWith('No read yet — '));
+    });
+
+    test('an HRV-only score is its own sentence', () {
+      final state = WellnessState.from(
+        readinessScore: 45,
+        hrv: 40,
+        readinessIsHrvOnly: true,
+      );
+      expect(wellnessResultSentence(state), 'Partial read: sleep not recorded.');
+      expect(wellnessResultSentence(state), isNot(contains('feeling partial')));
+    });
+
+    test('Recovery says Steady, never the readiness word Balanced', () {
+      final state = WellnessState.from(readinessScore: 80, hrv: 45);
+      final recovery = state.signals.firstWhere((s) => s.label == 'Recovery');
+      expect(recovery.reading, 'Steady');
+    });
+
+    test('one full stop at the end, whatever the line ends with', () {
+      final state = WellnessState.from(readinessScore: 80);
+      expect(wellnessResultSentence(state), isNot(contains('..')));
+    });
+  });
 }

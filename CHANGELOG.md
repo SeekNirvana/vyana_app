@@ -1,5 +1,146 @@
 # Changelog
 
+## v1.1.7 — 2026-11-19 · Nova finishes her sentences, and nothing is lost on the way
+
+**TL;DR**
+
+- **Nova:** a bigger window (2,048 tokens on phones with 6 GB or more),
+  her numbers sent once a conversation instead of every message, and long
+  conversations trimmed behind the scenes. A reply that stops early now says
+  "Cut off" with Try again instead of being saved as an answer. Typed
+  questions get typed answers, spoken ones get spoken answers.
+- **Conversations:** keep or delete one when you end it, and a "Save
+  conversations" switch to stop saving altogether.
+- **Your data:** backups now carry your profile and pins; a restore shows up
+  at once; the weekly backup keeps its folder permission and, on Android,
+  runs without opening the app. The storage move from v1.1.6 can no longer
+  lose new data if it is interrupted. iPhone data stays out of iCloud backup.
+- **Readings:** "New reading" shows the value the ring actually sent, or says
+  it got none. The charging pill leaves Charging when the ring leaves the
+  charger. Sleep counts the unlabelled minutes inside a record.
+- **Practice:** the breathing voice starts with the phase on screen; voice
+  cues ask once to download Nova's voice instead of going quiet; "Not today"
+  works at once and stops its reminder; a finished suggestion moves on.
+- **Still open:** PRANA rings are not yet found on Android, and most of this
+  release has not been run on a phone. See Known.
+
+This release is the 15–19 November handover: the follow-ups to v1.1.6, ten
+problems found by using it, and four changes to how Nova talks. The common
+thread was work that looked finished and was not — a backup that never held
+the profile it promised, a storage move with one path that lost data, a
+reply guard that cut Nova off mid-sentence, a "New reading" that showed an
+old one.
+
+### Fixed
+
+- **Backups never held the profile or pins.** The settings were looked up
+  with SharedPreferences' own `flutter.` prefix added twice, so nothing was
+  found, and a first-launch restore skipped profile setup for a profile that
+  was not in the file. Now tested through SharedPreferences itself.
+- **Nova stopped after six to eight words.** The repeat guard counted the
+  empty pieces between words as a loop; it now ignores them. Each reply logs
+  how many tokens it was sent and why it ended, and one that ends without the
+  model finishing is shown as "Cut off" with Try again, never stored.
+- **Nova re-sent her numbers on nearly every message**, because the block
+  carried the clock and the battery. It now goes with the first message and
+  again only when the night, the readiness word, an alert or the sync state
+  changes; the time is its own short line.
+- **An interrupted storage move could lose new data.** The move is now one
+  unit: any folder failing rolls back every folder copied, a killed attempt
+  is redone from scratch, a stale copy left by v1.1.6 is replaced from the
+  newer one, and the database must open at the new location first.
+- **iPhone data went into iCloud backup** while Privacy said it did not.
+  The vault, preferences and photos are excluded at every launch.
+- **"Not today" changed nothing until something else redrew the screen**,
+  and the skipped practice's reminder still fired.
+- **The day suggestion invented a length** ("2 MIN") for practices done
+  fewer than three times.
+- **Sleep lost minutes inside a record** whose stages did not cover it. The
+  length is now fell asleep to woke up, minus awake and not recorded, the
+  chart draws unstaged sleep in a neutral tone, and deep and REM shares are
+  of staged sleep only.
+- **The breathing voice lagged the countdown.** Cue audio is prepared before
+  the pacer starts, the pacer is timed from the clock rather than by counting
+  ticks, and a new cue never cuts off the one playing.
+- **"New reading" could show an old value, or "1.0 mmHg".** A reading counts
+  only if the ring sent one during the measurement; it is written as the top
+  of the screen writes it, reaches the list, and a failed one says so.
+- **"Your normal" leftovers.** Metrics now offers the same three answers as
+  You, and a vital not yet asked about is no longer called "within the
+  typical range" when it is not.
+- **"Skipped for today · Undo" never went away** and followed you to other
+  screens.
+- **A finished morning or evening suggestion stayed the suggestion.** The
+  morning moves on to the midday one; the evening to the next wind-down.
+- **The pill said Charging after the ring left the charger.**
+- **Voice cues were silent without Nova's voice installed**, with no word
+  why. The first practice with cues asks once to download it; until then
+  cues show as text.
+- **Unpairing a ring cancelled the weekly plan reminder.**
+- **The offline alert was re-armed every two seconds on iPhone**, the
+  service notification re-sent on every poll, and Diagnostics showed an old
+  heartbeat log.
+- **A ring already connected in Android's Bluetooth settings skipped setup**,
+  and a greyed-out Pair gave no reason. The ring screen's Sync and Reconnect
+  now say when they fail.
+- **Readiness words still differed** in the notification and widget with no
+  score, an HRV-only score, and the Recovery line.
+- **Session length and day differed between screens.** One running time,
+  "under 1m" everywhere, and a session belongs to the day it ended.
+- **Two save buttons could save twice or lock.**
+- **Nova read "this sun" as Sunday**, added a week of numbers for "lately",
+  and did not hear the offline and not-synced alerts.
+- **Out of reach, the ring was taken to be charging for two hours**, muting
+  the battery and out-of-reach alerts.
+- **The sync log could hold the ring's MAC address** and had no way in. It
+  is now under About → Diagnostics.
+- **Six suspected risks were checked.** Reopening Wallet left Connect with a
+  dead screen; the plan reminder was cancelled at a cold start; sleep nights
+  were recomputed on every read; worn time could read "Not recorded" with a
+  ring sampling every 10–30 minutes; the iPad share sheet had no anchor. All
+  fixed. A double SDK callback after Retry was ruled out.
+
+### Added
+
+- **Keep or Delete when ending a conversation**, and a **Save
+  conversations** switch in Nova's settings. Off, nothing is written.
+- **Typed messages get typed replies; spoken get spoken.** The speaker icon
+  overrides it for the conversation.
+- **The You row says where your history lives**, with Back up now and the
+  date of the last backup, and a one-time card after the first sync.
+- **Long conversations make room** instead of running out: a fresh session
+  behind the scenes with the instructions, current numbers and last turns.
+
+### Changed
+
+- **Nova's window is 2,048 tokens**, or 1,024 on a phone under 6 GB, the same
+  on Android and iPhone.
+- **The weekly backup's folder is kept with the platform's own permission**
+  (a document-tree grant on Android, a security-scoped bookmark on iPhone),
+  and on Android it also runs on the background service's heartbeat. A
+  folder chosen in v1.1.6 has to be chosen again.
+- **The iPhone app is "Vyana" with its own bundle ID**
+  (`com.seeknirvana.vyana`) and app group.
+- **The exact-alarm permission is removed** from the Android build.
+- **Privacy:** uninstalling says a saved passphrase may stay in the iPhone
+  Keychain, and backups are described in one line.
+- **The ring order link carries `utm_source=vyana_app`.**
+
+### Known
+
+- **Most of this release has not been run on a phone.** It was checked by
+  695 tests, by building the Android and iPhone apps, and by reading the
+  built APK. The fixes that need a phone, a night or a ring stay unverified
+  until one confirms them — above all the storage move, which the handover
+  asked to be tested on a phone with real v1.1.5 history before release.
+- **PRANA rings are still not found on Android.** Confirmed on a Huawei Mate
+  9 on 19 Nov: the ring SDK's scan runs and returns no device. The scanner
+  patch is not in this release. An iPhone finds them.
+- **The iPhone build needs the Apple developer account** to register the new
+  bundle ID and app group before it can be signed.
+- **The lock screen shows Android's generic "contents hidden"** for Vyana's
+  notifications. Neither notification plugin can set a public version yet.
+
 ## v1.1.6 — 2026-11-15 · What the app knows, and what it only claimed
 
 This release started as a model-selection fix and became an audit. Three
@@ -430,11 +571,9 @@ data, nine that made it confusing, and four changes. One commit per item.
   installed in the same step as Nova herself. Every file is fetched only
   from our own HTTPS host, pinned by SHA-256 and verified after download
   and again before first load. Never a cloud voice: every reply would
-  otherwise leave the phone. When the voice is missing or fails its check
-  Nova falls back to the best *offline* system voice — iOS Premium then
-  Enhanced, Android's own quality ranking — rather than the first one in
-  the list. *The Kokoro release still has to be mirrored and its checksums
-  pinned; see `docs/building.md`. Until then the fallback is what ships.*
+  otherwise leave the phone. *Corrected in v1.1.7 (#98): no system-voice
+  fallback shipped. When the voice is missing, cues show as text and Nova
+  does not speak; v1.1.7 asks once to download the voice instead.*
 - **The suggestion changes through the day (#45).** One card, in one
   place, chosen by the moment: the morning keeps its four-minute practice,
   the afternoon suggests something you actually do ("YOUR USUAL · 32 MIN",

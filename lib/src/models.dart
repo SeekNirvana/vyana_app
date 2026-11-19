@@ -973,6 +973,12 @@ class FeatureItem {
   final bool supported;
 }
 
+/// Item 122: [RingHistory.sleepNights], kept per history instance. Keyed
+/// on the slept-on answers too, since those change the nights.
+final Expando<
+        ({Map<DateTime, DateTime> extensions, List<SleepDaySummary> nights})>
+    _sleepNightsCache = Expando('sleepNights');
+
 class RingHistory {
   const RingHistory({
     required this.steps,
@@ -991,10 +997,23 @@ class RingHistory {
   /// them the heart rate needed to tell a gap the ring slept through from a
   /// gap where it was on its charger — so one of them disagreeing was a
   /// matter of time. One entry point, one answer.
-  List<SleepDaySummary> get sleepNights => sleepDaySummaries(
-        sleep,
-        measuring: (from, to) => ringMeasuredBetween(this, from, to),
-      );
+  ///
+  /// Item 122: computed once per history (and per set of slept-on answers)
+  /// rather than on every read. It scanned every record each time, and
+  /// Home and Sleep read it many times a frame with months of data.
+  List<SleepDaySummary> get sleepNights {
+    final cached = _sleepNightsCache[this];
+    if (cached != null && identical(cached.extensions, sleepNightExtensions)) {
+      return cached.nights;
+    }
+    final nights = sleepDaySummaries(
+      sleep,
+      measuring: (from, to) => ringMeasuredBetween(this, from, to),
+    );
+    _sleepNightsCache[this] =
+        (extensions: sleepNightExtensions, nights: nights);
+    return nights;
+  }
 
   final List<dynamic> steps;
   final List<dynamic> sleep;
@@ -1828,8 +1847,18 @@ List<SleepDaySummary> sleepDaySummaries(
         ],
         measuring: measuring,
       );
+      // Item 105: the gaps between records decide what is not recorded;
+      // the length is then the span minus awake minus not recorded, so the
+      // unlabelled minutes *inside* a record count as sleep too.
+      // split.unstagedSeconds is contained in this, not added to it.
+      final unlabelled = unlabelledSleepSeconds(
+        spanSeconds: windowEnd.difference(windowStart).inSeconds,
+        stagedSeconds: breakdown.stagedAsleepSeconds,
+        awakeSeconds: breakdown.awakeSeconds,
+        notRecordedSeconds: split.notRecordedSeconds,
+      );
       filled = filled.withGaps(
-        unstaged: split.unstagedSeconds,
+        unstaged: unlabelled,
         notRecorded: split.notRecordedSeconds,
       );
       notRecorded = split.notRecorded;
@@ -1944,16 +1973,24 @@ int sleepScoreForBreakdown(SleepStageBreakdown breakdown) {
   final efficiencyScore = ((efficiency - 0.72) / 0.25 * 20)
       .clamp(0, 20)
       .toDouble();
-  final deepScore = _ratioScore(
-    actual: breakdown.deepSeconds / asleep,
-    target: 0.18,
-    points: 15,
-  );
-  final remScore = _ratioScore(
-    actual: breakdown.remSeconds / asleep,
-    target: 0.22,
-    points: 15,
-  );
+  // Item 105: the stage shares are of *staged* sleep. Dividing by asleep,
+  // which includes unstaged minutes, made a night with a long unstaged
+  // stretch look short of deep and REM it was never measured for.
+  final staged = breakdown.stagedAsleepSeconds.toDouble();
+  final deepScore = staged <= 0
+      ? 0.0
+      : _ratioScore(
+          actual: breakdown.deepSeconds / staged,
+          target: 0.18,
+          points: 15,
+        );
+  final remScore = staged <= 0
+      ? 0.0
+      : _ratioScore(
+          actual: breakdown.remSeconds / staged,
+          target: 0.22,
+          points: 15,
+        );
   final awakePenalty = (breakdown.awakeSeconds / 60 / 8).clamp(0, 8).toDouble();
   final score =
       durationScore + efficiencyScore + deepScore + remScore + 5 - awakePenalty;

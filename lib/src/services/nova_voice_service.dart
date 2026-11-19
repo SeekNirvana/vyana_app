@@ -107,15 +107,80 @@ class NovaVoiceService {
   /// Which of the pack's 11 English voices Nova uses.
   static const int kDefaultSpeakerId = 0;
 
+  /// Cue audio prepared in advance, by [cueKey] (item 130).
+  final Map<String, ({String path, Duration length})> _prepared = {};
+
+  /// Completed when the current playback ends, or is stopped. Waiting on
+  /// onPlayerComplete alone hung forever after a stop(), which never fires
+  /// it.
+  Completer<void>? _playing;
+
+  /// The key a prepared phrase is kept under: the words as spoken, the
+  /// rate, and the voice pack, so a new voice never plays an old file.
+  static String cueKey(String text, double rate) =>
+      '$kNovaVoiceVersion|$kDefaultSpeakerId|${rate.toStringAsFixed(2)}|'
+      '${speakableText(text)}';
+
+  /// Whether [text] at [rate] is ready to play without generating.
+  bool isPrepared(String text, {double rate = 1.0}) =>
+      _prepared.containsKey(cueKey(text, rate));
+
+  /// Item 130: generates [text] once and keeps it as a file, so playing it
+  /// later starts at once instead of 1–2 s after it was asked for.
+  ///
+  /// Kept on disk by a hash of [cueKey], so the next session (and the next
+  /// launch) finds it without generating again. Generation runs on this
+  /// isolate and blocks it while it runs, which is why callers do this
+  /// before a pacer starts rather than when a phase changes.
+  Future<void> prepare(String text, {double rate = 1.0}) async {
+    final key = cueKey(text, rate);
+    if (_prepared.containsKey(key)) return;
+    final tts = _tts;
+    if (tts == null) return;
+    final normalized = speakableText(text);
+    if (normalized.isEmpty) return;
+
+    final dir = Directory(p.join(await novaVoiceDirectory(), 'cues'));
+    await dir.create(recursive: true);
+    final file = File(p.join(dir.path, '${_stableHash(key)}.wav'));
+    if (await file.exists() && await file.length() > 44) {
+      _prepared[key] = (path: file.path, length: _wavLength(file));
+      return;
+    }
+    try {
+      final audio = tts.generate(
+        text: normalized,
+        sid: kDefaultSpeakerId,
+        speed: rate,
+      );
+      if (audio.samples.isEmpty) return;
+      sherpa.writeWave(
+        filename: file.path,
+        samples: audio.samples,
+        sampleRate: audio.sampleRate,
+      );
+      _prepared[key] = (
+        path: file.path,
+        length: Duration(
+          microseconds:
+              (audio.samples.length / audio.sampleRate * 1e6).round(),
+        ),
+      );
+    } on Object catch (error) {
+      debugPrint('[NovaVoice] could not prepare "$normalized": $error');
+    }
+  }
+
   /// Speaks [text] and completes when playback finishes.
   ///
   /// Throws if the voice is not loaded — callers check [isReady] first.
   ///
-  /// Generation runs on this isolate: the native handle belongs to the one
-  /// that created it, and sending the pointer elsewhere would be sharing a
-  /// native object across threads for the sake of a few hundred milliseconds.
-  /// [maxNumSentences] is 1, so a long reply is generated a sentence at a
-  /// time rather than in one blocking run.
+  /// Item 130: a phrase prepared with [prepare] plays straight away.
+  /// Anything else is generated now, on this isolate: the native handle
+  /// belongs to the one that created it, and sending the pointer elsewhere
+  /// would be sharing a native object across threads. [maxNumSentences] is
+  /// 1, so a long reply is generated a sentence at a time rather than in
+  /// one blocking run.
   Future<void> speak(String text, {double rate = 1.0}) async {
     final tts = _tts;
     if (tts == null) throw StateError('Nova voice is not loaded');
@@ -125,6 +190,13 @@ class NovaVoiceService {
     // minutes." — see spoken_text.dart.
     final normalized = speakableText(text);
     if (normalized.isEmpty) return;
+
+    final ready = _prepared[cueKey(text, rate)];
+    if (ready != null && File(ready.path).existsSync()) {
+      await stop();
+      await _play(ready.path, ready.length);
+      return;
+    }
 
     await stop();
     final sherpa.GeneratedAudio audio;
@@ -147,15 +219,72 @@ class NovaVoiceService {
       samples: audio.samples,
       sampleRate: audio.sampleRate,
     );
-    await _player.play(DeviceFileSource(wav.path));
-    await _player.onPlayerComplete.first;
+    await _play(
+      wav.path,
+      Duration(
+        microseconds: (audio.samples.length / audio.sampleRate * 1e6).round(),
+      ),
+    );
+  }
+
+  Future<void> _play(String path, Duration length) async {
+    final done = Completer<void>();
+    _playing = done;
+    final sub = _player.onPlayerComplete.listen((_) {
+      if (!done.isCompleted) done.complete();
+    });
+    try {
+      await _player.play(DeviceFileSource(path));
+      // A ceiling, in case the player never reports the end.
+      await done.future.timeout(
+        length + const Duration(seconds: 2),
+        onTimeout: () {},
+      );
+    } finally {
+      await sub.cancel();
+      if (identical(_playing, done)) _playing = null;
+    }
   }
 
   Future<void> stop() async {
+    final playing = _playing;
+    if (playing != null && !playing.isCompleted) playing.complete();
     try {
       await _player.stop();
     } on Object {
       // Nothing playing is not an error.
+    }
+  }
+
+  /// FNV-1a, so a cue's file name is the same on every launch (String
+  /// hashCode is not guaranteed to be).
+  static String _stableHash(String text) {
+    var hash = 0x811c9dc5;
+    for (final unit in text.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  /// Length of a 16-bit mono WAV from its size; a ceiling for [_play].
+  static Duration _wavLength(File file) {
+    try {
+      final bytes = file.lengthSync() - 44;
+      final header = file.openSync()..setPositionSync(24);
+      final rateBytes = header.readSync(4);
+      header.closeSync();
+      final sampleRate = rateBytes[0] |
+          (rateBytes[1] << 8) |
+          (rateBytes[2] << 16) |
+          (rateBytes[3] << 24);
+      if (sampleRate <= 0) return const Duration(seconds: 5);
+      // sherpa writes 16-bit mono.
+      return Duration(
+        microseconds: (bytes / 2 / sampleRate * 1e6).round(),
+      );
+    } on Object {
+      return const Duration(seconds: 5);
     }
   }
 

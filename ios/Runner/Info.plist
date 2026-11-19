@@ -16,7 +16,7 @@
 		<key>CFBundleInfoDictionaryVersion</key>
 		<string>6.0</string>
 		<key>CFBundleName</key>
-		<string>Test Vyana</string>
+		<string>Vyana</string>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
@@ -31,7 +31,7 @@
 				<key>CFBundleTypeRole</key>
 				<string>Editor</string>
 				<key>CFBundleURLName</key>
-				<string>com.erebrus.keys</string>
+				<string>com.seeknirvana.vyana</string>
 				<key>CFBundleURLSchemes</key>
 				<array>
 					<string>vyana</string>

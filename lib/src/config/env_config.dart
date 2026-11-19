@@ -24,7 +24,8 @@ class EnvConfig {
     return const String.fromEnvironment('REOWN_PROJECT_ID');
   }
 
-  /// Solana JSON-RPC endpoint for USDC ring checkout (mainnet).
+  /// Solana JSON-RPC endpoint (mainnet). Ring checkout moved to the
+  /// website in item 61, so nothing in the app pays through it.
   static String get solanaRpcUrl {
     final fromFile = dotenv.env['SOLANA_RPC_URL']?.trim();
     if (fromFile != null && fromFile.isNotEmpty) return fromFile;

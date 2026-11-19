@@ -25,6 +25,10 @@ const Color kNotificationAccent = Color(0xFFE3A448);
 /// Local notifications for the hands-off "Monitor all vitals" flow: the user
 /// taps once, sets the phone aside, and gets pinged with their state of being
 /// when the run finishes. Single channel, no scheduling — fire-and-forget.
+/// Item 109: the notifications that are about the ring, and so go when the
+/// ring does. The weekly plan reminder (4307) is not one of them.
+const List<int> kRingAlertNotificationIds = [4301, 4302, 4303, 4306];
+
 class VitalsNotificationService {
   VitalsNotificationService._();
 
@@ -43,6 +47,10 @@ class VitalsNotificationService {
   static const _ringOfflineId = 4303;
   static const _overnightBatteryId = 4306;
   static const _planReminderId = 4307;
+
+  /// The plan reminder's id, so a test can hold it apart from ring alerts.
+  @visibleForTesting
+  static const planReminderId = _planReminderId;
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -238,7 +246,9 @@ class VitalsNotificationService {
   Future<void> cancelRingAlerts() async {
     await cancelStaleRingAlert();
     await cancelRingOfflineAlert();
-    for (final id in const [4301, 4302, 4303, 4306, 4307]) {
+    // Item 109: not 4307. That is the weekly plan reminder
+    // ([_planReminderId]), not a ring alert, and unpairing used to drop it.
+    for (final id in kRingAlertNotificationIds) {
       try {
         await _plugin.cancel(id);
       } on Object catch (_) {
@@ -357,7 +367,7 @@ class VitalsNotificationService {
     if (!_ready) return;
     await cancelProgress();
     final base = state.hasData
-        ? "You're feeling ${state.title.toLowerCase()} — ${state.spokenLine}."
+        ? wellnessResultSentence(state)
         : 'Monitoring finished, but no clean readings came through. '
             'Make sure the ring is snug and try again.';
     final body = retakeNote == null ? base : '$base\n$retakeNote';

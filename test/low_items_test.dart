@@ -54,7 +54,17 @@ void main() {
 
     test('this app declares neither', () {
       final code = manifestCode(manifest);
-      expect(code, isNot(contains('SCHEDULE_EXACT_ALARM')));
+      // Item 120: the one mention left is the removal of the SDK's own.
+      expect(
+        code,
+        contains(RegExp(
+          r'android:name="android.permission.SCHEDULE_EXACT_ALARM"\s*tools:node="remove"',
+        )),
+      );
+      expect(
+        RegExp('SCHEDULE_EXACT_ALARM').allMatches(code).length,
+        1,
+      );
       expect(code, isNot(contains('FOREGROUND_SERVICE_DATA_SYNC')));
     });
 

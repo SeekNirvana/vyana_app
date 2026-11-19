@@ -17,7 +17,20 @@ Future<void> openScanner(BuildContext context, RingController c) {
         basicInfo: c.basicInfo,
         vitals: c.vitals,
         onConnect: c.connect,
-        onReconnectPaired: () => c.reconnectSavedRing(force: true),
+        // Item 111: the same give-up time as every other Reconnect, so the
+        // ring screen never waits on an attempt longer than the pill does.
+        onReconnectPaired: () => c
+            .reconnectSavedRing(force: true)
+            .timeout(kReconnectTimeout, onTimeout: () {
+          c.giveUpUserReconnect();
+          return c.isConnected;
+        }),
+        onSyncWithFeedback: (context) async {
+          final before = c.lastSyncedAt;
+          await syncRingWithFeedback(context, c);
+          final after = c.lastSyncedAt;
+          return after != null && after != before ? after : null;
+        },
         onUnpair: c.unpairCurrentRing,
         onConnectedDeviceDetected: c.handleScannerDetectedConnection,
         // Bug 37: the app's own last sync, not this screen's.
@@ -36,6 +49,11 @@ Future<void> openScanner(BuildContext context, RingController c) {
     ),
   );
 }
+
+/// Item 111: why Pair is greyed out, in one line.
+String ringServiceStatusLine(RingController c) => c.sdkFailure != null
+    ? "The ring service didn't start"
+    : 'Starting the ring service…';
 
 Future<void> openMeasurements(BuildContext context, RingController c) {
   return Navigator.of(context).push<void>(
@@ -409,8 +427,18 @@ class YouScreen extends ConsumerWidget {
                 icon: 'ring',
                 iconColor: t.heading,
                 label: 'Scan & pair',
+                // Item 111: greyed out with a reason, never without one.
+                subtitle: c.isReady ? null : ringServiceStatusLine(c),
                 onTap: c.isReady ? () => openScanner(context, c) : null,
               ),
+              if (!c.isReady && c.sdkFailure != null)
+                SettingsRow(
+                  icon: 'alert',
+                  iconColor: t.gold,
+                  label: 'Retry ring service',
+                  subtitle: c.sdkFailure,
+                  onTap: () => unawaited(c.retrySdkInit()),
+                ),
               SettingsRow(
                 icon: 'bell',
                 iconColor: t.heading,
@@ -502,10 +530,19 @@ class YouScreen extends ConsumerWidget {
               icon: 'waveform',
               iconColor: t.heading,
               label: 'Voice cues',
+              // Item 98: without the voice the row offers it, rather than
+              // saying cues are silent and leaving it there.
               subtitle: voiceSvc.novaVoiceReady
                   ? 'Nova speaks during sessions · tap to preview'
-                  : "Silent until Nova's voice is installed",
+                  : voiceSvc.isDownloadingNovaVoice
+                      ? "Downloading Nova's voice · "
+                          '${(voiceSvc.novaVoiceDownloadProgress * 100).round()}%'
+                      : voiceSvc.novaVoiceAvailableToInstall
+                          ? "Install Nova's voice to hear cues · tap to "
+                              'download (${voiceSvc.novaVoiceDownloadSize})'
+                          : 'Cues show as text on screen',
               chevron: false,
+              enabled: true,
               trailing: VSwitch(
                 on: ref.watch(voiceCuesEnabledProvider),
                 color: t.green,
@@ -513,7 +550,12 @@ class YouScreen extends ConsumerWidget {
                     .read(voiceCuesEnabledProvider.notifier)
                     .set(!ref.read(voiceCuesEnabledProvider)),
               ),
-              onTap: () => _previewVoiceCue(context, ref),
+              onTap: voiceSvc.novaVoiceReady
+                  ? () => _previewVoiceCue(context, ref)
+                  : voiceSvc.novaVoiceAvailableToInstall &&
+                          !voiceSvc.isDownloadingNovaVoice
+                      ? () => unawaited(voiceSvc.downloadNovaVoiceModel())
+                      : null,
             ),
           ],
         ),
@@ -621,15 +663,34 @@ class YouScreen extends ConsumerWidget {
             // Item 53: the one row that says where history lives, above
             // the exports — a backup is the thing that comes back, and an
             // export is not, so it goes first.
+            // Item 108: the row says the one sentence, where things stand,
+            // and offers the answer — in the row's own grey, never a badge.
             SettingsRow(
               icon: 'shield',
               iconColor: t.heading,
               label: 'Your data',
-              // Item 53: says how long it has been, but only once that is
-              // fair to mention — and in the row's own grey, never a badge.
-              subtitle: ref.watch(backupRowSubtitleProvider).valueOrNull ??
-                  'Back up, restore, and exports',
+              subtitle: kYourDataRowLine,
               onTap: () => openYourData(context),
+              below: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      ref.watch(backupRowSubtitleProvider).valueOrNull ?? '',
+                      style: VyanaType.caption.copyWith(color: t.textMuted),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      final attempt = await runBackupFlow(context, ref);
+                      if (context.mounted) showBackupOutcome(context, attempt);
+                    },
+                    child: Text(
+                      'Back up now',
+                      style: VyanaType.label.copyWith(color: t.green),
+                    ),
+                  ),
+                ],
+              ),
             ),
             SettingsRow(
               icon: 'download',

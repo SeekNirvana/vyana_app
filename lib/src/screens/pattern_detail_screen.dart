@@ -452,7 +452,15 @@ class _MetricsEvidence extends ConsumerWidget {
             final hrv = vals == null || vals.isEmpty
                 ? null
                 : vals.reduce((a, b) => a + b) / vals.length;
-            final minutes = s.endedAt?.difference(s.startedAt).inMinutes;
+            // Item 114: the running time, not the clock, so pauses are
+            // not counted here when they are not counted anywhere else.
+            final length = s.endedAt == null
+                ? null
+                : sessionLengthText(sessionSeconds(
+                    summaryJson: s.summaryJson,
+                    startedAt: s.startedAt,
+                    endedAt: s.endedAt,
+                  ));
             return HairlineCard(
               padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
               child: Row(
@@ -476,7 +484,7 @@ class _MetricsEvidence extends ConsumerWidget {
                       children: [
                         Text(
                           '${activity?.name ?? pattern.subject} · ${_dayLabel(s.startedAt)}'
-                          '${minutes == null ? '' : ' · ${minutes}m'}',
+                          '${length == null ? '' : ' · $length'}',
                           style: VyanaType.caption.copyWith(
                             color: t.text,
                             fontWeight: FontWeight.w700,

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 /// App-scoped storage for all durable Vyana data.
 ///
@@ -57,6 +58,20 @@ class VyanaStorageService {
   /// if the new location is somehow wrong, the data is still in both places
   /// and the next launch is the one that notices.
   static const _pendingCleanupKey = 'vyana.storage.old_root_pending_delete';
+
+  /// Item 99: the folders an attempt at the move is copying, written before
+  /// the first byte and removed when the attempt ends either way. Found on
+  /// a launch, it means the last attempt was killed part-way, and the
+  /// folders it names are wiped at the new location and copied again.
+  static const _moveAttemptKey = 'vyana.storage.move_attempt';
+
+  /// Item 99: the root the app last read the vault from. A copy at the new
+  /// location is only ever replaced when the app was not reading it, so
+  /// the live vault can never be wiped by the move.
+  static const _readingFromKey = 'vyana.storage.reading_from';
+
+  /// The vault's database file, as drift names it in [VyanaDatabase].
+  static const vaultDatabaseFile = 'vyana_vault.sqlite';
 
   static const MethodChannel _channel = MethodChannel('vyana/storage');
 
@@ -164,13 +179,49 @@ class VyanaStorageService {
         debugPrint('[VyanaStorage] migration deferred; reading from $shared');
       }
 
+      // Item 99: which root the app is reading, for the next launch's move.
+      await _rememberReadingFrom(_dataRootPath!);
+
       _ready = true;
       _failureReason = null;
       debugPrint('[VyanaStorage] Ready — data $private, downloads $shared');
+      await _excludeFromDeviceBackup([private, shared]);
     } catch (error, stack) {
       debugPrint('[VyanaStorage] Init failed: $error\n$stack');
       _failureReason =
           'Failed to prepare app storage. Restart Vyana after checking free space.';
+    }
+  }
+
+  Future<void> _rememberReadingFrom(String root) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_readingFromKey, root);
+    } on Object catch (error) {
+      debugPrint('[VyanaStorage] could not record the vault root: $error');
+    }
+  }
+
+  /// Item 102: on iPhone, keeps the vault out of iCloud device backups.
+  ///
+  /// Android does this in the manifest (allowBackup="false" and the data
+  /// extraction rules). iPhone has no manifest switch: the flag is set per
+  /// file or folder, and is lost when one is recreated, so it is set at
+  /// every launch — by the app delegate before Flutter starts, and again
+  /// here once the folders are known to exist. A failure is logged, never
+  /// fatal: the app works either way.
+  static const _backupExclusionChannel =
+      MethodChannel('vyana/backup_exclusion');
+
+  Future<void> _excludeFromDeviceBackup(List<String> paths) async {
+    if (kIsWeb || !Platform.isIOS) return;
+    try {
+      await _backupExclusionChannel.invokeMethod<int>(
+        'excludeFromBackup',
+        {'paths': paths.toSet().toList()},
+      );
+    } on Object catch (error) {
+      debugPrint('[VyanaStorage] could not exclude from backup: $error');
     }
   }
 
@@ -242,43 +293,92 @@ class VyanaStorageService {
     required String to,
   }) async {
     if (from == to) return true;
+    final prefs = await SharedPreferences.getInstance();
+    final moveCompleted = prefs.getString(_pendingCleanupKey) == from;
+    final readingNew = prefs.getString(_readingFromKey) == to;
 
+    // Item 99: an attempt that was killed part-way left folders at the new
+    // location that nothing has proved. They are wiped and copied again
+    // from scratch, never trusted.
+    final unfinished = prefs.getStringList(_moveAttemptKey);
+    if (unfinished != null) {
+      if (!moveCompleted) {
+        debugPrint('[VyanaStorage] an earlier move did not finish; redoing it');
+        for (final folder in unfinished) {
+          await _rollback(Directory(p.join(to, folder)));
+        }
+      }
+      await prefs.remove(_moveAttemptKey);
+    }
+
+    // Decide every folder before copying any, so the attempt is one unit.
+    final plan = <String>[];
     for (final folder in privateFolders) {
       final source = Directory(p.join(from, folder));
       final destination = Directory(p.join(to, folder));
-      if (!await source.exists()) continue;
-
-      // An empty folder is not a migration. Without this an empty `cache/`
-      // "copied" successfully every launch, which marked the run as having
-      // migrated, which deferred the cleanup — forever. The old vault would
-      // have sat outside in plain sight for the life of the install, with
-      // every launch believing it had just done the move.
-      if (!shouldMigrateFolder(
+      final move = folderMoveFor(
         sourceHasData: await storageHoldsAnything(source),
         destinationHasData: await storageHoldsAnything(destination),
-      )) {
-        continue;
+        moveCompleted: moveCompleted,
+        readingDestination: readingNew,
+      );
+      switch (move) {
+        case FolderMove.skip:
+          continue;
+        case FolderMove.recopy:
+          // Data on both sides with no finished move recorded: the copy
+          // here is from an attempt that did not complete (v1.1.6 left
+          // exactly this), and the app went on writing to the old place.
+          // The old place is the newer one.
+          debugPrint('[VyanaStorage] $folder here is stale; copying again');
+          await _rollback(destination);
+          plan.add(folder);
+        case FolderMove.copy:
+          plan.add(folder);
       }
+    }
+    if (plan.isEmpty) return true;
 
-      final copied = await copyStorageTreeVerified(source, destination);
-      if (copied) _copiedSomething = true;
-      if (!copied) {
-        // Reading from the old place is not what the item asks for, and it
-        // is a great deal better than either reading from a half-written
-        // new one or refusing to start. The next launch tries again.
-        debugPrint(
-          '[VyanaStorage] $folder did not copy cleanly; staying on the old '
-          'location so nothing is lost.',
-        );
-        await _rollback(destination);
-        return false;
+    await prefs.setStringList(_moveAttemptKey, plan);
+    Future<bool> abandon(String why) async {
+      // Item 99: every folder this attempt copied goes, not only the one
+      // that failed. Leaving `wellness` here after `cache` failed is what
+      // let a later launch skip it, read the stale copy, and delete the
+      // newer one.
+      debugPrint('[VyanaStorage] $why; undoing this attempt, staying put');
+      for (final folder in plan) {
+        await _rollback(Directory(p.join(to, folder)));
+      }
+      await prefs.remove(_moveAttemptKey);
+      return false;
+    }
+
+    for (final folder in plan) {
+      final copied = await copyStorageTreeVerified(
+        Directory(p.join(from, folder)),
+        Directory(p.join(to, folder)),
+      );
+      // Reading from the old place is not what the item asks for, and it
+      // is a great deal better than either reading from a half-written
+      // new one or refusing to start. The next launch tries again.
+      if (!copied) return abandon('$folder did not copy cleanly');
+    }
+
+    // Item 99: the database has to open at the new location before the
+    // app is switched to it. A byte-for-byte copy of a file that does not
+    // open is still a vault nobody can read.
+    if (plan.contains('wellness')) {
+      final vault = File(p.join(to, 'wellness', vaultDatabaseFile));
+      if (vault.existsSync() && !storageDatabaseOpens(vault.path)) {
+        return abandon('the vault does not open at the new location');
       }
     }
 
-    if (!_copiedSomething) return true;
     _migratedThisLaunch = true;
-    final prefs = await SharedPreferences.getInstance();
+    // The finished move is recorded before the attempt marker goes, so a
+    // kill between the two still reads as finished.
     await prefs.setString(_pendingCleanupKey, from);
+    await prefs.remove(_moveAttemptKey);
     debugPrint('[VyanaStorage] Vault copied inward; old copy kept for now');
     return true;
   }
@@ -339,7 +439,6 @@ class VyanaStorageService {
   /// True once this launch has written the new copy, so the launch that
   /// made it is never also the launch that deletes the old one.
   bool _migratedThisLaunch = false;
-  bool _copiedSomething = false;
 }
 
 /// Whether [dir] holds a file with anything in it.
@@ -410,6 +509,58 @@ typedef FolderMigrationState = ({
   bool staleHasData,
   bool currentHasData,
 });
+
+/// Item 99: what to do with one private folder at launch.
+enum FolderMove {
+  /// Nothing to copy, or the new location is the live one.
+  skip,
+
+  /// Something to copy and nothing in the way.
+  copy,
+
+  /// Data on both sides and no finished move: the copy at the new location
+  /// is left over from an attempt that did not complete, and is replaced.
+  recopy,
+}
+
+/// Item 99: decides a folder's move.
+///
+/// The case that lost data: `wellness` copied, `cache` failed, and the app
+/// went on writing to the old location. The next launch saw data at the
+/// new location, skipped `wellness`, and read the stale copy. Data on both
+/// sides is only ever right once a move has finished (the old copy then
+/// waits to be deleted); before that, it means the new copy is stale.
+///
+/// [readingDestination] is whether the app last read the vault from the new
+/// location. Then the new copy is the live one, whatever else is true, and
+/// is never replaced.
+FolderMove folderMoveFor({
+  required bool sourceHasData,
+  required bool destinationHasData,
+  required bool moveCompleted,
+  bool readingDestination = false,
+}) {
+  if (!sourceHasData) return FolderMove.skip;
+  if (!destinationHasData) return FolderMove.copy;
+  if (moveCompleted || readingDestination) return FolderMove.skip;
+  return FolderMove.recopy;
+}
+
+/// Item 99: whether the SQLite file at [path] opens and passes a quick
+/// integrity check. Opened read-only, so checking can never change it.
+bool storageDatabaseOpens(String path) {
+  sqlite.Database? db;
+  try {
+    db = sqlite.sqlite3.open(path, mode: sqlite.OpenMode.readOnly);
+    final rows = db.select('PRAGMA quick_check');
+    return rows.isNotEmpty && rows.first.values.first == 'ok';
+  } on Object catch (error) {
+    debugPrint('[VyanaStorage] vault did not open at $path: $error');
+    return false;
+  } finally {
+    db?.close();
+  }
+}
 
 /// Whether a folder should be copied inward.
 ///

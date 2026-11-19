@@ -54,7 +54,13 @@ class _VitalsDetailScreenState extends State<VitalsDetailScreen> {
     final t = context.vyana;
     final meta = _metricMeta(metric);
     final dashboard = HomeDashboard.from(controller);
-    final points = vitalHistoryPoints(controller.history, metric);
+    // Item 133: with the readings taken by hand, which the ring's own
+    // background history does not include.
+    final points = withCapturedReadings(
+      vitalHistoryPoints(controller.history, metric),
+      controller.capturedReadingsFor(metric),
+      unit: meta.unit,
+    );
 
     return Scaffold(
       body: DecoratedBox(
@@ -1025,7 +1031,7 @@ class _RetestButton extends StatelessWidget {
           // there is no value there is nothing to report but the failure.
           title = 'Take a new reading';
           subtitle =
-              "Couldn't get a clean reading. Keep the ring snug and try again.";
+              "Couldn't get a reading. Keep the ring snug and try again.";
         } else {
           title = 'Take a new reading';
           subtitle = controller.isConnected

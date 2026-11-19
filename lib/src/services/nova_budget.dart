@@ -1,8 +1,8 @@
 /// Item 70 — how much Nova is told, and when.
 ///
 /// Item 51 gave Nova the user's own numbers. This is the arithmetic of
-/// fitting them in. The context window is small — 1,024 tokens on Android,
-/// 512 on iOS — and it is shared by the instructions, the DATA block, the
+/// fitting them in. The context window is small — 2,048 tokens, 1,024 on a
+/// low-memory phone (item 124) — and it is shared by the instructions, the DATA block, the
 /// LOOKUP block, the whole conversation so far and the reply. Overflow is
 /// not a clean failure: the model either errors or silently drops the
 /// oldest part of the window, which is the question.
@@ -246,9 +246,14 @@ bool _mentionsWeekday(String text, int weekday) {
   final long = _longWeekdays[weekday - 1];
   if (RegExp('\\b$long\\b').hasMatch(text)) return true;
   final short = _shortWeekdays[weekday - 1].toLowerCase();
+  // Item 116: "sun" is the sun. "this sun", "the sun's out", "last sun I
+  // got" are not Sunday, so the short form counts only with a time word
+  // after it — "sun night", "sun morning".
+  final timeWordOnly = short == 'sun';
   // "on sat", "last sat" …
-  if (RegExp('\\b(?:${_datePrefixes.join('|')})\\s+$short\\b')
-      .hasMatch(text)) {
+  if (!timeWordOnly &&
+      RegExp('\\b(?:${_datePrefixes.join('|')})\\s+$short\\b')
+          .hasMatch(text)) {
     return true;
   }
   // "sat night", "sat morning" …
@@ -256,7 +261,7 @@ bool _mentionsWeekday(String text, int weekday) {
     return true;
   }
   // "sat's" — possessive, as in "sat's sleep".
-  return RegExp("\\b$short's\\b").hasMatch(text);
+  return !timeWordOnly && RegExp("\\b$short's\\b").hasMatch(text);
 }
 
 /// A day and month written out, or null when the text has none.
@@ -351,8 +356,10 @@ NovaLookupRange? novaLookupRangeFor(String message, {DateTime? now}) {
 
   // A metric named over time, with no date: the last week is the useful
   // default — the same window Metrics opens on.
-  if (RegExp(r'\b(trend|trending|average|over time|recently|lately)\b')
-      .hasMatch(text)) {
+  // Item 116: not "recently", "lately" or "trend" on their own. They are
+  // vague, and the rule is "if unsure, add nothing": a week of numbers
+  // Nova was not asked about costs the room the question needs.
+  if (RegExp(r'\b(average|over time)\b').hasMatch(text)) {
     return NovaLookupRange(from: back(6), to: today, label: 'last 7 days');
   }
   return null;
@@ -383,10 +390,16 @@ String novaDaysAgoWord(int daysAgo) => switch (daysAgo) {
 /// thresholds, so what Nova is told is what the person was actually told.
 /// The flags record when, not what, so these name the kind and the day and
 /// claim nothing more.
+///
+/// Item 116: the offline and not-synced alerts too. They record that they
+/// were sent for the episode still going on, not when, so they are named as
+/// current rather than dated.
 List<String> recentAlertConcerns({
   required DateTime now,
   DateTime? healthFiredAt,
   DateTime? lowBatteryFiredAt,
+  bool offlineAlerted = false,
+  bool staleAlerted = false,
   Duration within = const Duration(days: 3),
 }) {
   final out = <String>[];
@@ -399,16 +412,45 @@ List<String> recentAlertConcerns({
 
   add('health', healthFiredAt);
   add('low battery', lowBatteryFiredAt);
+  if (offlineAlerted) out.add('ring out of reach alert sent');
+  if (staleAlerted) out.add('ring not synced alert sent');
   return out;
+}
+
+/// The DATA block for one message, with what decides whether it is sent.
+///
+/// Item 106: [block] is what Nova reads. [key] is only the parts that
+/// matter enough to tell her again: the night, the readiness word, the
+/// alerts and concerns, and whether the sync is stale or missing. The block
+/// also carries the last-sync time and the battery, which move all day;
+/// comparing the block text re-sent it on nearly every message.
+/// [timeLine] is the time of day, which goes with every message as one
+/// short line of its own, so a new minute never re-sends the numbers.
+class NovaData {
+  const NovaData({
+    required this.block,
+    required this.key,
+    this.timeLine = '',
+  });
+
+  final String block;
+  final String key;
+  final String timeLine;
+
+  static const NovaData none = NovaData(block: '', key: '');
 }
 
 /// Whether the DATA block still has to be sent.
 ///
 /// Item 70: it was re-sent with every message. On Android that pushed the
 /// conversation past the window by the third turn, and the part dropped to
-/// make room is the oldest — the question. The numbers do not change
-/// between two messages a minute apart, so sending them again buys nothing
-/// and costs the thing it was meant to support.
+/// make room is the oldest — the question.
+///
+/// Item 106 (decided 15 Nov): sent with the first message of each
+/// conversation, and again only when [key] changes — a new night, a new
+/// readiness word, a new alert, a sync going stale. Never because the time
+/// changed. [lastSentKey] is null at the start of a conversation and after
+/// the session was rebuilt.
 ///
 /// [sessionRemembers] is the whole subtlety. An on-device chat keeps the
 /// turns it has been given, so a block sent once is still in the window. A
@@ -416,26 +458,154 @@ List<String> recentAlertConcerns({
 /// and remembers nothing between calls, so there the block must always go.
 bool novaDataNeedsSending({
   required String block,
-  required String? lastSent,
+  required String key,
+  required String? lastSentKey,
   required bool sessionRemembers,
 }) {
   if (block.trim().isEmpty) return false;
   if (!sessionRemembers) return true;
-  return block != lastSent;
+  return key != lastSentKey;
 }
 
 /// Assembles what is actually sent for one message.
 ///
 /// Order matters: the question comes first, so that if the window does
-/// overflow, the part most likely to survive is what was asked.
+/// overflow, the part most likely to survive is what was asked. The time
+/// line is next: one short line, sent every time (item 106).
 String composeNovaPrompt({
   required String message,
+  String timeLine = '',
   String dataBlock = '',
   String lookupBlock = '',
 }) {
   return [
     message,
+    if (timeLine.trim().isNotEmpty) timeLine,
     if (dataBlock.trim().isNotEmpty) dataBlock,
     if (lookupBlock.trim().isNotEmpty) lookupBlock,
   ].join('\n\n');
+}
+
+// ── How a reply ended (item 123) ─────────────────────────────────────────
+
+/// Why a reply stopped. Logged once per reply, so a cut-off answer on a
+/// phone names its own cause.
+enum NovaReplyEnd {
+  /// The model's stream closed with room left in the window.
+  finished,
+
+  /// The repeat guard stopped a token loop.
+  guard,
+
+  /// The window ran out while the reply was being written.
+  windowFull,
+
+  /// Generation failed after some text had arrived.
+  error;
+
+  /// Anything but [finished] means the reply is not a whole answer.
+  bool get isCutOff => this != finished;
+}
+
+/// A reply that stopped before the model finished it.
+///
+/// Item 123: thrown instead of returning the text, so a half answer can
+/// never be stored or shown as a finished one. [partial] is what had
+/// arrived, kept on screen under "Cut off".
+class NovaReplyCutOff implements Exception {
+  const NovaReplyCutOff(this.partial, this.reason, [this.detail]);
+
+  final String partial;
+  final NovaReplyEnd reason;
+  final Object? detail;
+
+  @override
+  String toString() =>
+      'NovaReplyCutOff(${reason.name}${detail == null ? '' : ': $detail'})';
+}
+
+/// The stuck-reply guard: stops a stream that repeats one piece of text.
+///
+/// Item 123: empty and whitespace-only pieces are ignored. The runtime can
+/// emit them between words, and four in a row used to look like a loop and
+/// stopped real replies after six or eight words. They neither count toward
+/// a streak nor break one.
+class NovaRepeatGuard {
+  NovaRepeatGuard({this.limit = 4});
+
+  final int limit;
+  String _last = '';
+  int _streak = 0;
+
+  /// Feeds one piece; true when the stream should be stopped.
+  bool shouldStop(String token) {
+    if (token.trim().isEmpty) return false;
+    if (token == _last) {
+      _streak++;
+    } else {
+      _last = token;
+      _streak = 1;
+    }
+    return _streak >= limit;
+  }
+}
+
+/// One turn the live session holds: what was asked (without the DATA
+/// block, which is sent again after any rebuild), what Nova said, and
+/// roughly what both cost.
+class NovaTurn {
+  const NovaTurn({
+    required this.message,
+    required this.reply,
+    required this.tokens,
+  });
+
+  final String message;
+  final String reply;
+  final int tokens;
+}
+
+/// A token count when the tokenizer cannot be asked: four characters a
+/// token, rounded up, which over-counts English slightly. Over is safe.
+int novaTokenEstimate(String text) =>
+    text.trim().isEmpty ? 0 : (text.length / 4).ceil();
+
+// ── Making room in a long conversation (item 126) ────────────────────────
+
+/// Room kept for Nova's reply when deciding whether the next turn fits.
+const int kNovaReplyReserveTokens = 400;
+
+/// At most this many earlier turns are carried into a fresh session.
+const int kNovaKeepTurns = 3;
+
+/// Whether the next message, plus room for the reply, no longer fits in
+/// what the session already holds ([used]: instructions and turns).
+bool novaWindowNeedsRoom({
+  required int used,
+  required int prompt,
+  required int window,
+  int reserve = kNovaReplyReserveTokens,
+}) =>
+    window > 0 && used + prompt + reserve > window;
+
+/// How many of the most recent turns a fresh session can carry.
+///
+/// [fixedTokens] is what the new session must hold whatever happens: the
+/// instructions, the next message with its DATA block, and the reply's
+/// reserve. Turns are kept newest first, up to [maxTurns], while they fit.
+int novaTurnsToKeep({
+  required List<int> turnTokens,
+  required int fixedTokens,
+  required int window,
+  int maxTurns = kNovaKeepTurns,
+}) {
+  var keep = math.min(maxTurns, turnTokens.length);
+  while (keep > 0) {
+    final kept = turnTokens
+        .sublist(turnTokens.length - keep)
+        .fold<int>(0, (sum, t) => sum + t);
+    if (fixedTokens + kept <= window) break;
+    keep--;
+  }
+  return keep;
 }

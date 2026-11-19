@@ -94,10 +94,10 @@ void main() {
     test('settings travel with it', () async {
       final payload = await buildBackupPayload(
         db: db,
-        settings: const {'flutter.vyana.user_profile': '{"firstName":"Leena"}'},
+        settings: const {'vyana.user_profile': '{"firstName":"Leena"}'},
       );
       expect(
-        (payload['settings'] as Map)['flutter.vyana.user_profile'],
+        (payload['settings'] as Map)['vyana.user_profile'],
         contains('Leena'),
       );
     });
@@ -174,7 +174,7 @@ void main() {
       // describe a phone that does not exist.
       expect(
         kBackupExcludedSettingKeys,
-        contains('flutter.vyana.paired_prana_ring'),
+        contains('vyana.paired_prana_ring'),
       );
       for (final key in kBackupExcludedSettingKeys) {
         expect(kBackupSettingKeys, isNot(contains(key)));
@@ -182,8 +182,8 @@ void main() {
     });
 
     test('the profile and pins are in', () {
-      expect(kBackupSettingKeys, contains('flutter.vyana.user_profile'));
-      expect(kBackupSettingKeys, contains('flutter.vyana.practice.pins'));
+      expect(kBackupSettingKeys, contains('vyana.user_profile'));
+      expect(kBackupSettingKeys, contains('vyana.practice.pins'));
     });
   });
 

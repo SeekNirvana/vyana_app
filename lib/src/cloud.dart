@@ -1,20 +1,32 @@
 part of '../main.dart';
 
+/// [includeAddress] is false for the sync log (item 119): the ring's MAC
+/// address explains nothing about a sync, so it stands in for no device ID
+/// there. An export keeps it, being the person's own data on purpose.
 Map<String, dynamic> buildCloudHistoryBatch({
   required dynamic device,
   required DeviceBasicSnapshot? basicInfo,
   required DeviceFeatureSnapshot? features,
   required RingHistory history,
+  bool includeAddress = true,
 }) {
   final now = DateTime.now().toUtc();
   final basicDeviceId = basicInfo?.deviceId;
   final deviceId = basicDeviceId != null && basicDeviceId != '-'
       ? basicDeviceId
-      : deviceAddress(device);
+      : includeAddress
+          ? deviceAddress(device)
+          : 'Unknown address';
   final safeDeviceId = deviceId == 'Unknown address'
       ? 'unknown-device'
       : deviceId;
-  final batchId = '$safeDeviceId-${now.toIso8601String()}'.replaceAll(
+  // Item 119: never built from the address. Without a device ID the
+  // fallback above is the ring's MAC, which then sat in every sync log
+  // entry's batchId even after item 90 stripped device.address.
+  final idForBatch = basicDeviceId != null && basicDeviceId != '-'
+      ? basicDeviceId
+      : 'unknown-device';
+  final batchId = '$idForBatch-${now.toIso8601String()}'.replaceAll(
     RegExp(r'[^A-Za-z0-9_.:-]'),
     '_',
   );
@@ -28,7 +40,7 @@ Map<String, dynamic> buildCloudHistoryBatch({
     },
     'device': {
       'deviceId': basicInfo?.deviceId,
-      'address': deviceAddress(device),
+      if (includeAddress) 'address': deviceAddress(device),
       'name': deviceLabel(device),
       'deviceType': basicInfo?.deviceType,
       'firmwareVersion': basicInfo?.firmwareVersion,

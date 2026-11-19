@@ -95,7 +95,19 @@ class ReownWalletService extends StateNotifier<ReownWalletState> {
   /// reaches Reown's relay and API, so the call site *is* the consent, and
   /// a caller that is not the person opening Wallet does not have it.
   Future<void> initIfNeeded(BuildContext context) async {
-    if (_initStarted) return;
+    if (_initStarted) {
+      // Item 122: the modal keeps the context it was built with, the first
+      // Wallet screen's. Once that screen is closed the modal has no live
+      // context and Connect opens nothing, and the SDK offers no way to
+      // hand it a new one. So a reopened Wallet rebuilds it with its own.
+      // disconnectOnDispose is false, so a connected wallet stays connected.
+      final modal = state.modal;
+      if (modal == null || modal.modalContext != null || !context.mounted) {
+        return;
+      }
+      modal.dispose();
+      state = const ReownWalletState();
+    }
     _initStarted = true;
 
     if (await isSolanaMobileDevice()) {

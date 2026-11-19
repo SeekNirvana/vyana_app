@@ -58,7 +58,11 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       plan: ref.watch(weeklyPlanProvider),
       // Item 94: what has been stood down for today, so both screens agree
       // about which planned practice is on offer.
-      skippedToday: ref.watch(plannedSkipsProvider.notifier).today,
+      // Item 103: the state, not the notifier. Watching the notifier never
+      // rebuilt on a skip, so "Not today" and Undo changed nothing on
+      // screen until something else did.
+      skippedToday:
+          ref.watch(plannedSkipsProvider).skippedOn(DateTime.now()),
     );
     final suggested = suggestion.activity;
     final look = scoreLook(
@@ -1294,6 +1298,10 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
     }
     // If the same practice is already running, jump back into it.
     if (!controller.active) {
+      // Item 98: the first practice with voice cues asks, once, whether to
+      // download Nova's voice. Answering either way starts the practice.
+      await maybeOfferNovaVoiceForCues(context, ref);
+      if (!context.mounted) return;
       // Bug 12: the chosen length now reaches the session, so a suggested
       // three minutes counts down and ends instead of running forever.
       final error = await controller.start(

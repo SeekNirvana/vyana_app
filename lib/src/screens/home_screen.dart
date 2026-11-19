@@ -100,6 +100,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         // Bug 14(d): the one correction the app offers for a night the ring
         // ended at a brief waking. Sits under the Sleep card it concerns.
         _SleptOnPrompt(controller: controller),
+        // Item 108: once, after the first sync, the one sentence about
+        // where history lives, with the answer to it.
+        _FirstSyncBackupCard(hasSynced: controller.lastSyncedAt != null),
         // ── Chosen ─────────────────────────────────────────────────────────
         const SizedBox(height: 22),
         const IntentRow(),
@@ -715,6 +718,91 @@ class _MetricCards extends ConsumerWidget {
 }
 
 /// Decides whether last night has a question to ask, and asks it once.
+/// Item 108: whether the one-time backup card is still to be answered.
+final _firstSyncBackupCardAnsweredProvider =
+    FutureProvider<({bool answered, DateTime? lastBackup})>((ref) async {
+  ref.watch(backupRowSubtitleProvider);
+  final prefs = await SharedPreferences.getInstance();
+  return (
+    answered: prefs.getBool(kFirstSyncBackupCardKey) ?? false,
+    lastBackup: await ref.read(backupServiceProvider).lastBackupAt(),
+  );
+});
+
+/// Item 108: the card shown once after the first sync. Back up now or Not
+/// now both answer it; it never comes back.
+class _FirstSyncBackupCard extends ConsumerWidget {
+  const _FirstSyncBackupCard({required this.hasSynced});
+
+  final bool hasSynced;
+
+  Future<void> _answer(WidgetRef ref) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kFirstSyncBackupCardKey, true);
+    ref.invalidate(_firstSyncBackupCardAnsweredProvider);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(_firstSyncBackupCardAnsweredProvider).valueOrNull;
+    if (state == null ||
+        !firstSyncBackupCardDue(
+          hasSynced: hasSynced,
+          lastBackup: state.lastBackup,
+          answered: state.answered,
+        )) {
+      return const SizedBox.shrink();
+    }
+    final t = context.vyana;
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: HairlineCard(
+        padding: const EdgeInsets.fromLTRB(14, 13, 14, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Your history lives only on this phone.',
+              style: VyanaType.label.copyWith(color: t.text),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Deleting Vyana deletes it. A backup is a file you keep '
+              'wherever you like, locked with your passphrase.',
+              style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => _answer(ref),
+                  child: Text(
+                    'Not now',
+                    style: VyanaType.label.copyWith(color: t.textSec),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    final attempt = await runBackupFlow(context, ref);
+                    if (attempt == null) return;
+                    await _answer(ref);
+                    if (context.mounted) showBackupOutcome(context, attempt);
+                  },
+                  child: Text(
+                    'Back up now',
+                    style: VyanaType.label.copyWith(color: t.green),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SleptOnPrompt extends ConsumerWidget {
   const _SleptOnPrompt({required this.controller});
 
@@ -883,7 +971,12 @@ class SuggestedPracticeBlock extends StatelessWidget {
   /// "Planned today" on a planned day (item 46).
   final String heading;
 
-  /// What the card opens with. Null keeps the morning's short dose.
+  /// What the card opens with, and the length it shows.
+  ///
+  /// Item 104: null means there is no length to show. It used to fall back
+  /// to the morning cap, so a practice done fewer than three times printed
+  /// "2 MIN" or "4 MIN" on Home and Practice, a length nobody had chosen.
+  /// The morning slot passes its short dose explicitly.
   final int? minutes;
 
   /// The mono line in the card: "YOUR USUAL · 32 MIN", "PLANNED · 2 OF 3".
@@ -917,7 +1010,9 @@ class SuggestedPracticeBlock extends StatelessWidget {
     final t = context.vyana;
     final hue = intent.hue(t);
     final soft = t.isDark ? intent.soft(t) : hue;
-    final minutes = this.minutes ?? suggestedMinutesFor(intent, activity);
+    final minutes = this.minutes;
+    // Item 104: no meta and no minutes → no length at all.
+    final lengthLine = meta ?? (minutes == null ? null : '$minutes MIN');
     final card = HairlineCard(
       padding: const EdgeInsets.fromLTRB(12, 11, 11, 11),
       // Bug 45: the day slot opens the practice with no target set — "your
@@ -963,26 +1058,29 @@ class SuggestedPracticeBlock extends StatelessWidget {
                     // YOUR USUAL 40 MIN" where it used to be "15 MIN" — so
                     // it needs room to give. Unconstrained it overflowed the
                     // row by 238px at 360dp.
-                    Flexible(
-                      child: MonoEyebrow(
-                        meta ?? '$minutes MIN',
-                        size: 11,
-                        spacing: 0.8,
-                        color: t.heading,
-                        shrinkToFit: true,
-                      ),
-                    ),
-                    if (compact) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        width: 3,
-                        height: 3,
-                        decoration: BoxDecoration(
-                          color: t.mutedInk,
-                          shape: BoxShape.circle,
+                    if (lengthLine != null)
+                      Flexible(
+                        child: MonoEyebrow(
+                          lengthLine,
+                          size: 11,
+                          spacing: 0.8,
+                          color: t.heading,
+                          shrinkToFit: true,
                         ),
                       ),
-                      const SizedBox(width: 6),
+                    if (compact) ...[
+                      if (lengthLine != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          width: 3,
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: t.mutedInk,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
                       Expanded(
                         child: Text(
                           reason,
@@ -1142,7 +1240,11 @@ class _SuggestedPractice extends ConsumerWidget {
       plan: ref.watch(weeklyPlanProvider),
       // Item 94: what has been stood down for today, so both screens agree
       // about which planned practice is on offer.
-      skippedToday: ref.watch(plannedSkipsProvider.notifier).today,
+      // Item 103: the state, not the notifier. Watching the notifier never
+      // rebuilt on a skip, so "Not today" and Undo changed nothing on
+      // screen until something else did.
+      skippedToday:
+          ref.watch(plannedSkipsProvider).skippedOn(DateTime.now()),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1194,19 +1296,25 @@ Future<void> _skipPlannedToday(
   await skips.skip(id);
   await reminders.reschedule();
 
-  messenger.showSnackBar(
-    SnackBar(
-      content: const Text('Skipped for today'),
-      duration: const Duration(seconds: 6),
-      action: SnackBarAction(
-        label: 'Undo',
-        onPressed: () async {
-          await skips.unskip(id);
-          await reminders.reschedule();
-        },
+  // Item 129: persist: false, or recent Flutter keeps a snack bar that has
+  // an action until it is dismissed, ignoring the six seconds — and on the
+  // app-level messenger it followed the person to every other screen.
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: const Text('Skipped for today'),
+        duration: const Duration(seconds: 6),
+        persist: false,
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            await skips.unskip(id);
+            await reminders.reschedule();
+          },
+        ),
       ),
-    ),
-  );
+    );
 }
 
 /// Item 46: one line under a planned practice on a low-readiness day. The
@@ -1255,8 +1363,9 @@ List<SessionRow> todaysFinishedSessions(
   // A session belongs to the day it was finished on.
   final rows = [
     for (final s in sessions)
+      // Item 114: the same day rule as every other screen.
       if (s.endedAt != null &&
-          DateTime(s.endedAt!.year, s.endedAt!.month, s.endedAt!.day) == day)
+          sessionDay(s.startedAt, endedAt: s.endedAt) == day)
         s,
   ]..sort((a, b) => a.startedAt.compareTo(b.startedAt));
   return rows;
@@ -1382,6 +1491,28 @@ class _DiscoverRingPanel extends StatelessWidget {
               ),
             ),
           ),
+          // Item 111: when Pair now is greyed out, the reason and a Retry.
+          if (!controller.isReady)
+            Align(
+              alignment: Alignment.center,
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    ringServiceStatusLine(controller),
+                    style: VyanaType.caption.copyWith(color: t.textMuted),
+                  ),
+                  if (controller.sdkFailure != null)
+                    TextButton(
+                      onPressed: () => unawaited(controller.retrySdkInit()),
+                      child: Text(
+                        'Retry',
+                        style: VyanaType.label.copyWith(color: t.green),
+                      ),
+                    ),
+                ],
+              ),
+            ),
         ],
       ),
     );

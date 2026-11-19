@@ -98,6 +98,21 @@ class RingController extends ChangeNotifier {
   DeviceAppControlMeasureHealthDataType? _activeMeasureType;
   bool _measureCaptured = false;
   MeasurementOutcome? _lastMeasurement;
+
+  /// Item 110: when the offline alert was last handed to the OS.
+  DateTime? _offlineAlertArmedAt;
+
+  /// Item 133: the value the ring actually sent during this measurement,
+  /// and whether its raw reply has been logged yet (once per measurement).
+  CapturedReading? _measuredReading;
+  bool _measureReplyLogged = false;
+
+  /// Item 133: readings taken by hand, kept so they reach the vital's list.
+  /// The ring's background history does not include them.
+  final List<CapturedReading> _capturedReadings = [];
+  static const _capturedReadingsKey = 'vyana.ring.captured_readings_v1';
+  static const _capturedReadingsKeep = Duration(days: 14);
+  bool _capturedReadingsLoaded = false;
   static const _kMaxVitalRetries = 2;
 
   static const _healthMonitoringEnabledKey = 'health_monitoring_enabled_v1';
@@ -310,6 +325,56 @@ class RingController extends ChangeNotifier {
   /// back to its default subtitle (bug 15). Cleared when a new one starts.
   MeasurementOutcome? get lastMeasurement => _lastMeasurement;
 
+  /// Item 133: readings taken by hand for [kind], oldest first.
+  List<CapturedReading> capturedReadingsFor(VitalsMetricKind kind) {
+    if (!_capturedReadingsLoaded) unawaited(_loadCapturedReadings());
+    return [
+      for (final r in _capturedReadings)
+        if (r.kind == kind) r,
+    ];
+  }
+
+  Future<void> _loadCapturedReadings() async {
+    if (_capturedReadingsLoaded) return;
+    _capturedReadingsLoaded = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_capturedReadingsKey);
+      if (raw == null || raw.isEmpty) return;
+      final cutoff = DateTime.now().subtract(_capturedReadingsKeep);
+      final loaded = [
+        for (final item in jsonDecode(raw) as List)
+          if (CapturedReading.fromJson(item) case final r?)
+            if (r.at.isAfter(cutoff)) r,
+      ];
+      if (_disposed) return;
+      _set(() {
+        _capturedReadings
+          ..insertAll(0, loaded)
+          ..sort((a, b) => a.at.compareTo(b.at));
+      });
+    } on Object catch (error) {
+      debugPrint('[Measure] could not read stored readings: $error');
+    }
+  }
+
+  Future<void> _keepCapturedReading(CapturedReading reading) async {
+    await _loadCapturedReadings();
+    final cutoff = DateTime.now().subtract(_capturedReadingsKeep);
+    _capturedReadings
+      ..add(reading)
+      ..removeWhere((r) => r.at.isBefore(cutoff));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _capturedReadingsKey,
+        jsonEncode([for (final r in _capturedReadings) r.toJson()]),
+      );
+    } on Object catch (error) {
+      debugPrint('[Measure] could not keep the reading: $error');
+    }
+  }
+
   /// Forgets the last result — called when the user leaves the detail screen.
   void clearLastMeasurement() {
     if (_lastMeasurement == null) return;
@@ -394,21 +459,17 @@ class RingController extends ChangeNotifier {
   /// Whether the ring is on its charger *right now* — what the pill shows.
   bool get isCharging => _isConnected && wasChargingWhenLastSeen;
 
-  /// Whether the newest status we have says charging, connected or not. A
-  /// ring on its charger often drops out of range; it is still off the
-  /// finger on purpose, so the low-battery and out-of-reach alerts have
-  /// nothing to warn about (bug 43).
+  /// Whether the ring is charging, as far as the app can know.
+  ///
+  /// Item 118: only while it is connected. Bug 43 kept believing
+  /// "charging" for two hours after the ring went out of reach, since a
+  /// ring on its charger often drops out of range; but for those two hours
+  /// the low-battery and out-of-reach alerts were muted, for a ring that
+  /// might as easily have been taken off the charger and left somewhere.
+  /// Out of reach, the app does not know, and does not pretend to.
   bool get wasChargingWhenLastSeen {
     if (normalizedBatteryStatus(batteryStatus) != 'charging') return false;
-    if (_isConnected) return true;
-    // Item 84 (bug 43, second half): believed for a while, not forever. A
-    // ring is full inside two hours, so a status that still says "charging"
-    // long after the ring went out of reach is a stale reading — and
-    // believing it muted every battery and out-of-reach alert indefinitely,
-    // which is the opposite of what bug 43 was for.
-    final seen = _lastConnectionConfirmedAt;
-    if (seen == null) return false;
-    return DateTime.now().difference(seen) <= kChargingBelievedFor;
+    return _isConnected;
   }
 
   /// Battery percent from the newest source that reported one.
@@ -655,6 +716,34 @@ class RingController extends ChangeNotifier {
     unawaited(_maybePeriodicSync());
   }
 
+  /// Item 110: whether a "connected" reading should re-arm the offline
+  /// alert: when the ring has just come back, or when the last arming is
+  /// [every] old. Not on every poll that says what the last one said.
+  @visibleForTesting
+  static bool offlineAlertNeedsRearming({
+    required bool wasConnected,
+    required DateTime? lastArmedAt,
+    required DateTime now,
+    Duration every = const Duration(minutes: 5),
+  }) {
+    if (!wasConnected || lastArmedAt == null) return true;
+    return now.difference(lastArmedAt) >= every;
+  }
+
+  /// Item 132: whether a battery poll brought anything new to store.
+  @visibleForTesting
+  static bool batteryPollChanged({
+    required DeviceBasicSnapshot? previous,
+    required int? previousVitalsBattery,
+    required DeviceBasicSnapshot next,
+  }) {
+    if (previous == null) return true;
+    if (previous.batteryPower != next.batteryPower) return true;
+    if (previousVitalsBattery != next.batteryPower) return true;
+    return normalizedBatteryStatus(previous.batteryStatus) !=
+        normalizedBatteryStatus(next.batteryStatus);
+  }
+
   Future<void> _maybeRefreshBattery() async {
     if (!_isReady || !_isConnected || _isSyncing || _isBatteryPolling) return;
     final now = DateTime.now();
@@ -670,9 +759,15 @@ class RingController extends ChangeNotifier {
       final battery = basicInfo.batteryPower;
       // The ring answered, so the percentage is current even when unchanged.
       if (battery != null && battery > 0) _markBatteryRead();
-      if (_basicInfo?.batteryPower == battery &&
-          _vitals.battery == battery &&
-          _basicInfo != null) {
+      // Item 132: the charging status as well as the percentage. Taking the
+      // ring off its charger does not change the percentage, so comparing
+      // only that kept "Charging" on the pill until the battery dropped a
+      // point, which can take hours.
+      if (!batteryPollChanged(
+        previous: _basicInfo,
+        previousVitalsBattery: _vitals.battery,
+        next: basicInfo,
+      )) {
         return;
       }
       _set(() {
@@ -777,10 +872,20 @@ class RingController extends ChangeNotifier {
       // of reach is announced even if the app never runs again in between.
       // Item 64: only where the schedule is the only path. On Android the
       // service checks it live, and arming both is why it arrived twice.
-      if (!liveChecksRunHere) {
+      // Item 110: on iPhone the 2-second poll reports "connected" every
+      // time, and each one cancelled and re-scheduled this. Re-armed when
+      // the connection comes back, and otherwise at most every few
+      // minutes, which keeps the two-hour alert accurate to minutes.
+      final now = DateTime.now();
+      if (!liveChecksRunHere &&
+          offlineAlertNeedsRearming(
+            wasConnected: wasConnected,
+            lastArmedAt: _offlineAlertArmedAt,
+            now: now,
+          )) {
+        _offlineAlertArmedAt = now;
         unawaited(
-          VitalsNotificationService.instance
-              .scheduleRingOfflineAlert(DateTime.now()),
+          VitalsNotificationService.instance.scheduleRingOfflineAlert(now),
         );
       }
       _resetReconnectBackoff();
@@ -884,9 +989,19 @@ class RingController extends ChangeNotifier {
         _eventLog.removeLast();
       }
       _vitals = _vitals.mergeLiveEvent(map);
-      if (_activeMeasureType != null &&
-          _eventCarriesPlausibleValue(map, _activeMeasureType!)) {
-        _measureCaptured = true;
+      final measuring = _activeMeasureType;
+      if (measuring != null) {
+        // Item 133 (5): the ring's raw reply, once per measurement, to
+        // tell "the ring sent nothing" from "the app did not read it".
+        if (!_measureReplyLogged && map.isNotEmpty) {
+          _measureReplyLogged = true;
+          debugPrint('[Measure] raw reply for ${measuring.name}: $map');
+        }
+        final reading = capturedReadingFrom(map, measuring);
+        if (reading != null) {
+          _measureCaptured = true;
+          _measuredReading = reading;
+        }
       }
       if (measurementMessage != null) {
         _testStatus = measurementMessage;
@@ -930,8 +1045,7 @@ class RingController extends ChangeNotifier {
         _activeMeasureType != null &&
         !_measureCaptured) {
       _set(() => _testStatus =
-          "Couldn't get a clean reading — keep the ring snug on your "
-          'finger and try again.');
+          "Couldn't get a reading. Keep the ring snug and try again.");
       _publishMeasurementSnapshot();
     }
     if (sessionEventSink != null && map.isNotEmpty) {
@@ -1148,7 +1262,11 @@ class RingController extends ChangeNotifier {
     }
   }
 
-  void handleScannerDetectedConnection(dynamic device) {
+  /// Item 111: completes once the ring is saved as paired, so the scan
+  /// screen can ask [currentRingNeedsOnboarding] about a ring that exists.
+  /// It used to fire the save and return, and setup asked before the save
+  /// had finished — saw no ring, and skipped setup.
+  Future<void> handleScannerDetectedConnection(dynamic device) async {
     if (_disposed) return;
     final shouldSync = !_isConnected;
     _set(() {
@@ -1157,10 +1275,10 @@ class RingController extends ChangeNotifier {
       _status = 'Connected to ${deviceLabel(device)}';
       _lastConnectionConfirmedAt = DateTime.now();
     });
-    unawaited(savePairedRingFromDevice(device));
     if (shouldSync) {
       unawaited(_syncDeviceData());
     }
+    await savePairedRingFromDevice(device);
   }
 
   Future<void> disconnect() async {
@@ -1361,6 +1479,11 @@ class RingController extends ChangeNotifier {
     if (address != null && address != 'Unknown address') return address;
     return null;
   }
+
+  /// Item 108: a restore has just replaced the stored history. When this
+  /// phone has nothing in memory yet (the first-launch restore), show what
+  /// came back; a live sync's history is newer and is kept.
+  Future<void> reloadHistoryAfterRestore() => _hydrateHistoryFromCache();
 
   Future<void> _hydrateHistoryFromCache() async {
     final cache = _historyCache;
@@ -1911,90 +2034,16 @@ class RingController extends ChangeNotifier {
     }
     _activeMeasureType = action.type;
     _measureCaptured = false;
+    _measuredReading = null;
+    _measureReplyLogged = false;
     _set(() => _lastMeasurement = null);
     await _beginMeasurement(action.label, () => _repo.measure(action.type, true));
   }
 
-  /// Whether [map] delivers an in-range value for [type] — mirrors the keys
-  /// `RingVitals.mergeLiveEvent` reads, so it is the true "we got a reading"
-  /// signal (loose contact yields zeros, which fail these gates).
-  bool _eventCarriesPlausibleValue(
-    Map<dynamic, dynamic> map,
-    DeviceAppControlMeasureHealthDataType type,
-  ) {
-    switch (type) {
-      case DeviceAppControlMeasureHealthDataType.heartRate:
-        return plausibleHeartRate(
-              readInt(map['deviceRealHeartRate'], const ['heartRate', 'value']) ??
-                  readInt(map['deviceRealSport'], const ['heartRate']),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.bloodOxygen:
-        return plausibleSpo2(
-              readInt(map['deviceRealBloodOxygen'], const [
-                'bloodOxygen',
-                'value',
-              ]),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.hrv:
-        return plausibleHrv(
-              readInt(map['deviceRealECGAlgorithmHRV'], const ['hrv', 'value']),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.bodyTemperature:
-        return validTemperature(
-              readDouble(map['deviceRealTemperature'], const [
-                'temperature',
-                'value',
-              ]),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.bloodPressure:
-        return plausibleBloodPressure(
-              pressureText(map['deviceRealBloodPressure']),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.bloodGlucose:
-        return plausibleGlucose(
-              readDouble(map['deviceRealBloodGlucose'], const [
-                'bloodGlucose',
-                'value',
-              ]),
-            ) !=
-            null;
-      case DeviceAppControlMeasureHealthDataType.pressure:
-        return readDouble(map['deviceRealPressure'], const [
-              'pressure',
-              'value',
-            ]) !=
-            null;
-      default:
-        return false;
-    }
-  }
-
-  /// Current plausible value already held for [type] (null when we have none).
-  double? _plausibleVitalForType(DeviceAppControlMeasureHealthDataType type) {
-    switch (type) {
-      case DeviceAppControlMeasureHealthDataType.heartRate:
-        return _vitals.heartRate?.toDouble();
-      case DeviceAppControlMeasureHealthDataType.bloodOxygen:
-        return _vitals.bloodOxygen?.toDouble();
-      case DeviceAppControlMeasureHealthDataType.hrv:
-        return _vitals.hrv?.toDouble();
-      case DeviceAppControlMeasureHealthDataType.bodyTemperature:
-        return _vitals.temperature;
-      case DeviceAppControlMeasureHealthDataType.bloodPressure:
-        return _vitals.bloodPressure != null ? 1 : null;
-      case DeviceAppControlMeasureHealthDataType.bloodGlucose:
-        return _vitals.bloodGlucose;
-      case DeviceAppControlMeasureHealthDataType.pressure:
-        return _vitals.pressure;
-      default:
-        return 1; // metrics we don't range-check — never block on them
-    }
-  }
+  // Item 133: what a measurement event carries is read by
+  // capturedReadingFrom() in vitals_quality.dart, which keeps the value the
+  // ring sent rather than only whether it sent one. The old "do we already
+  // hold a value" check, which let an hours-old reading pass as new, is gone.
 
   /// Hands-off "Monitor all vitals": reconnect if needed, then run every
   /// supported realtime measurement one after the other (ECG is intentionally
@@ -2103,7 +2152,10 @@ class RingController extends ChangeNotifier {
         );
         await _runMeasurementAndWait(action);
         // Captured a fresh reading, or we already hold a good value for it.
-        if (_measureCaptured || _plausibleVitalForType(action.type) != null) {
+        // Item 133: only a value the ring sent during this attempt. An
+        // older value already held used to pass, so a ring that sent
+        // nothing was reported as read.
+        if (_measureCaptured) {
           captured = true;
           break;
         }
@@ -2498,17 +2550,24 @@ class RingController extends ChangeNotifier {
   /// Captures whether the finished measurement produced a value, and which,
   /// so the UI can distinguish a clean reading from a failed one — the two
   /// used to look identical (bug 15).
+  ///
+  /// Item 133: a reading is new only if the ring sent a value during this
+  /// measurement, and the value shown is that one, written as the top of
+  /// the screen writes it. It is then kept, so it appears in the list.
   void _recordMeasurementOutcome() {
     final type = _activeMeasureType;
     if (type == null) return;
-    final captured =
-        _measureCaptured || _plausibleVitalForType(type) != null;
+    final reading = _measureCaptured ? _measuredReading : null;
     _lastMeasurement = MeasurementOutcome(
       type: type,
-      captured: captured,
-      at: DateTime.now(),
-      value: captured ? _plausibleVitalForType(type)?.toString() : null,
+      captured: reading != null,
+      at: reading?.at ?? DateTime.now(),
+      value: reading?.text,
     );
+    if (reading != null && reading.kind != VitalsMetricKind.stress) {
+      unawaited(_keepCapturedReading(reading));
+    }
+    _measuredReading = null;
   }
 
   void _completeMeasurement(String message, {required bool sync}) {
@@ -2716,6 +2775,8 @@ class RingController extends ChangeNotifier {
     // when it is needed. It runs whenever it is enabled and a ring is
     // paired, and says so in its notification.
     if (_foregroundServiceEnabled && _pairedRing != null) {
+      // A new service has no text yet, whatever was sent to the last one.
+      _lastForegroundNotification = null;
       unawaited(
         RingForegroundService.start(
           intervalMinutes: _periodicSyncIntervalMinutes,
@@ -2726,6 +2787,17 @@ class RingController extends ChangeNotifier {
     }
   }
 
+  /// Item 110: the last notification text sent to the service, so the
+  /// platform is only told when it changes, not on every poll.
+  ({String title, String body})? _lastForegroundNotification;
+
+  void _sendForegroundNotification(String title, String body) {
+    final next = (title: title, body: body);
+    if (next == _lastForegroundNotification) return;
+    _lastForegroundNotification = next;
+    unawaited(RingForegroundService.update(title: title, body: body));
+  }
+
   void _updateForegroundNotification() {
     if (!Platform.isAndroid ||
         !_foregroundServiceEnabled ||
@@ -2733,11 +2805,9 @@ class RingController extends ChangeNotifier {
       return;
     }
     if (!_isConnected) {
-      unawaited(
-        RingForegroundService.update(
-          title: _pairedRing?.displayName ?? 'Vyana',
-          body: 'Reconnecting to your ring…',
-        ),
+      _sendForegroundNotification(
+        _pairedRing?.displayName ?? 'Vyana',
+        'Reconnecting to your ring…',
       );
       return;
     }
@@ -2756,12 +2826,7 @@ class RingController extends ChangeNotifier {
     ];
     final body = parts.isEmpty ? 'Ring connected' : parts.join(' · ');
 
-    unawaited(
-      RingForegroundService.update(
-        title: _pairedRing?.displayName ?? 'Vyana',
-        body: body,
-      ),
-    );
+    _sendForegroundNotification(_pairedRing?.displayName ?? 'Vyana', body);
   }
 }
 

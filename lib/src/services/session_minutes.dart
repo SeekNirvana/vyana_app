@@ -93,13 +93,29 @@ String minutesLabel(int minutes, {int? seconds}) {
 
 /// Which day a session belongs to.
 ///
-/// By the time it started. The history list already grouped this way and
-/// the week grouped by end time, so a session begun at 23:50 and finished
-/// at 00:10 appeared on different days in different places. Start is the
-/// honest answer to "when did you practise": it is the day someone chose
-/// and the day they remember.
-DateTime sessionDay(DateTime startedAt) =>
-    DateTime(startedAt.year, startedAt.month, startedAt.day);
+/// Item 114: the day it *ended* on, everywhere. Item 80 chose the start,
+/// but Done today (bug 32) already used the end, so a session from 23:50
+/// to 00:10 was on Tuesday in the week and Wednesday under Done today. The
+/// end is the one that cannot be wrong on Home: a session finished this
+/// morning is something done today. [startedAt] is used only for a session
+/// with no end, which nothing shows anyway.
+DateTime sessionDay(DateTime startedAt, {DateTime? endedAt}) {
+  final at = endedAt ?? startedAt;
+  return DateTime(at.year, at.month, at.day);
+}
+
+/// Item 114: a session's length as every screen shows it — `under 1m`,
+/// `40m`, `1h 05m`. Done today said "40s", the week "0m", and only the
+/// practice total said "under 1m".
+String sessionLengthText(int seconds) {
+  if (seconds <= 0) return '0m';
+  if (seconds < 60) return 'under 1m';
+  final minutes = (seconds / 60).round();
+  if (minutes < 60) return '${minutes}m';
+  final h = minutes ~/ 60;
+  final m = minutes % 60;
+  return m == 0 ? '${h}h' : '${h}h ${m.toString().padLeft(2, '0')}m';
+}
 
 /// How many whole days back from [today] a session sits, or null when it is
 /// outside the window.
@@ -108,10 +124,11 @@ DateTime sessionDay(DateTime startedAt) =>
 /// screen that offers one.
 int? daysBack({
   required DateTime startedAt,
+  DateTime? endedAt,
   required DateTime today,
   required int window,
 }) {
-  final day = sessionDay(startedAt);
+  final day = sessionDay(startedAt, endedAt: endedAt);
   final from = DateTime(today.year, today.month, today.day);
   final back = from.difference(day).inDays;
   if (back < 0 || back >= window) return null;

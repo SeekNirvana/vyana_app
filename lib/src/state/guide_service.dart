@@ -2,9 +2,17 @@ part of '../../main.dart';
 
 /// A single chat turn in the guides UI.
 class GuideMessage {
-  const GuideMessage({required this.fromUser, required this.text});
+  const GuideMessage({
+    required this.fromUser,
+    required this.text,
+    this.cutOff = false,
+  });
   final bool fromUser;
   final String text;
+
+  /// Item 123: a reply that stopped before Nova finished it. Shown as
+  /// "Cut off" with Try again, and never stored as an answer.
+  final bool cutOff;
 }
 
 /// Maps a catalog [GuidePersona] id to its on-device runtime [GuideKind].
