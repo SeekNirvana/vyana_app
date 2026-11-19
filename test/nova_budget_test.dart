@@ -184,38 +184,41 @@ void main() {
     });
   });
 
-  group('the data block is sent once a session', () {
+  group('the data block is sent once a conversation (item 106)', () {
     const block = 'DATA\nreadiness 62';
+    const key = 'night:Mon:28800\nreadiness:Balanced';
+
+    bool needs({
+      String b = block,
+      String k = key,
+      String? last,
+      bool remembers = true,
+    }) =>
+        novaDataNeedsSending(
+          block: b,
+          key: k,
+          lastSentKey: last,
+          sessionRemembers: remembers,
+        );
 
     test('the first message carries it', () {
-      expect(
-        novaDataNeedsSending(
-          block: block,
-          lastSent: null,
-          sessionRemembers: true,
-        ),
-        isTrue,
-      );
+      expect(needs(last: null), isTrue);
     });
 
-    test('the second does not, while the numbers are the same', () {
-      expect(
-        novaDataNeedsSending(
-          block: block,
-          lastSent: block,
-          sessionRemembers: true,
-        ),
-        isFalse,
-      );
+    test('the second does not, while what matters is the same', () {
+      expect(needs(last: key), isFalse);
     });
 
-    test('a change sends it again', () {
+    test('a block whose text changed but whose key did not stays unsent', () {
+      // The last-sync minute and the battery move all day; on their own
+      // they never send the numbers again.
+      expect(needs(b: 'DATA\nreadiness 62\nring: battery 41%', last: key),
+          isFalse);
+    });
+
+    test('a change that matters sends it again', () {
       expect(
-        novaDataNeedsSending(
-          block: 'DATA\nreadiness 71',
-          lastSent: block,
-          sessionRemembers: true,
-        ),
+        needs(k: 'night:Mon:28800\nreadiness:Ready', last: key),
         isTrue,
       );
     });
@@ -223,26 +226,12 @@ void main() {
     test('an endpoint gets it every time', () {
       // An HTTP request carries its whole context and remembers nothing, so
       // skipping it there would leave Nova with no numbers at all.
-      expect(
-        novaDataNeedsSending(
-          block: block,
-          lastSent: block,
-          sessionRemembers: false,
-        ),
-        isTrue,
-      );
+      expect(needs(last: key, remembers: false), isTrue);
     });
 
     test('an empty block is never sent', () {
       for (final empty in ['', '   ', '\n']) {
-        expect(
-          novaDataNeedsSending(
-            block: empty,
-            lastSent: null,
-            sessionRemembers: true,
-          ),
-          isFalse,
-        );
+        expect(needs(b: empty, last: null), isFalse);
       }
     });
   });
@@ -256,6 +245,16 @@ void main() {
       );
       expect(composed.indexOf('how did I sleep?'), 0);
       expect(composed.indexOf('DATA'), lessThan(composed.indexOf('LOOKUP')));
+    });
+
+    test('the time goes as its own short line, after the question', () {
+      final composed = composeNovaPrompt(
+        message: 'how did I sleep?',
+        timeLine: 'now: Mon 9 Nov 08:10 · morning',
+        dataBlock: 'DATA\nx',
+      );
+      expect(composed.indexOf('how did I sleep?'), 0);
+      expect(composed.indexOf('now:'), lessThan(composed.indexOf('DATA')));
     });
 
     test('blank blocks leave no empty gaps', () {

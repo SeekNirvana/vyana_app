@@ -402,13 +402,40 @@ List<String> recentAlertConcerns({
   return out;
 }
 
+/// The DATA block for one message, with what decides whether it is sent.
+///
+/// Item 106: [block] is what Nova reads. [key] is only the parts that
+/// matter enough to tell her again: the night, the readiness word, the
+/// alerts and concerns, and whether the sync is stale or missing. The block
+/// also carries the last-sync time and the battery, which move all day;
+/// comparing the block text re-sent it on nearly every message.
+/// [timeLine] is the time of day, which goes with every message as one
+/// short line of its own, so a new minute never re-sends the numbers.
+class NovaData {
+  const NovaData({
+    required this.block,
+    required this.key,
+    this.timeLine = '',
+  });
+
+  final String block;
+  final String key;
+  final String timeLine;
+
+  static const NovaData none = NovaData(block: '', key: '');
+}
+
 /// Whether the DATA block still has to be sent.
 ///
 /// Item 70: it was re-sent with every message. On Android that pushed the
 /// conversation past the window by the third turn, and the part dropped to
-/// make room is the oldest — the question. The numbers do not change
-/// between two messages a minute apart, so sending them again buys nothing
-/// and costs the thing it was meant to support.
+/// make room is the oldest — the question.
+///
+/// Item 106 (decided 15 Nov): sent with the first message of each
+/// conversation, and again only when [key] changes — a new night, a new
+/// readiness word, a new alert, a sync going stale. Never because the time
+/// changed. [lastSentKey] is null at the start of a conversation and after
+/// the session was rebuilt.
 ///
 /// [sessionRemembers] is the whole subtlety. An on-device chat keeps the
 /// turns it has been given, so a block sent once is still in the window. A
@@ -416,25 +443,29 @@ List<String> recentAlertConcerns({
 /// and remembers nothing between calls, so there the block must always go.
 bool novaDataNeedsSending({
   required String block,
-  required String? lastSent,
+  required String key,
+  required String? lastSentKey,
   required bool sessionRemembers,
 }) {
   if (block.trim().isEmpty) return false;
   if (!sessionRemembers) return true;
-  return block != lastSent;
+  return key != lastSentKey;
 }
 
 /// Assembles what is actually sent for one message.
 ///
 /// Order matters: the question comes first, so that if the window does
-/// overflow, the part most likely to survive is what was asked.
+/// overflow, the part most likely to survive is what was asked. The time
+/// line is next: one short line, sent every time (item 106).
 String composeNovaPrompt({
   required String message,
+  String timeLine = '',
   String dataBlock = '',
   String lookupBlock = '',
 }) {
   return [
     message,
+    if (timeLine.trim().isNotEmpty) timeLine,
     if (dataBlock.trim().isNotEmpty) dataBlock,
     if (lookupBlock.trim().isNotEmpty) lookupBlock,
   ].join('\n\n');

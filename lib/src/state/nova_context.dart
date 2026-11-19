@@ -48,6 +48,8 @@ class NovaFacts {
     this.plannedSkipped = false,
     this.patterns = const [],
     this.concerns = const [],
+    this.readinessHrvOnly = false,
+    this.syncStale = false,
   });
 
   final DateTime now;
@@ -87,17 +89,55 @@ class NovaFacts {
   /// Anything concerning in the last three days, from the app's existing
   /// rules only. No new thresholds.
   final List<String> concerns;
+
+  /// Item 106: whether today's readiness is HRV alone, so the word matches
+  /// the one the screen shows.
+  final bool readinessHrvOnly;
+
+  /// Item 106: the stale-sync banner's own condition.
+  final bool syncStale;
 }
+
+/// The time line sent with every message (item 106): the moment of day and
+/// the clock, and nothing that would make the numbers worth re-sending.
+String novaTimeLine(DateTime now) =>
+    'now: ${_stamp(now)} · ${_momentWord(homeMomentAt(now))}';
+
+/// What decides whether the DATA block is sent again (item 106).
+///
+/// Only what matters enough to tell Nova twice: which night she has and
+/// what it said, the readiness word, the alerts and concerns, and whether
+/// the ring's sync is stale or missing. Not the time, not the last-sync
+/// minute, not the battery percentage.
+String novaDataKey(NovaFacts f) {
+  final night = f.lastNight;
+  return [
+    if (night == null)
+      'night:missing:${f.nightReason.name}'
+    else
+      'night:${_date(night.day)}:${night.sleepSeconds}:${night.sleepScore}'
+          ':${f.nightReason.name}',
+    'readiness:${readinessStateWord(f.today.readiness, hrvOnly: f.readinessHrvOnly)}',
+    'sync:${!f.hasRing ? 'none' : f.lastSyncedAt == null ? 'never' : f.syncStale ? 'stale' : 'ok'}',
+    'concerns:${f.concerns.join('|')}',
+  ].join('\n');
+}
+
+/// The DATA block, its key and the time line together.
+NovaData novaDataFrom(NovaFacts f) => NovaData(
+      block: formatNovaData(f),
+      key: novaDataKey(f),
+      timeLine: novaTimeLine(f.now),
+    );
 
 /// The block appended to every message. The user never sees or types it.
 ///
 /// Short fields, not sentences; any line with nothing in it is omitted.
 String formatNovaData(NovaFacts f) {
+  // Item 106: the time is no longer in here. It goes with every message as
+  // its own line ([novaTimeLine]); in the block it changed the text every
+  // minute and the whole block was sent again.
   final lines = <String>['DATA (from the ring and app, not the user)'];
-
-  lines.add(
-    'now: ${_stamp(f.now)} · ${_momentWord(homeMomentAt(f.now))}',
-  );
 
   // Last night — recorded, partial or missing, and *why* when it is not
   // there (item 36). "I can't see one" is a useless answer on its own.
@@ -309,7 +349,7 @@ List<String> _concernsFrom({
 /// live in preferences rather than in a provider. Worth the await — the
 /// alternative was Nova describing a calm week to a person whose phone had
 /// told them otherwise.
-Future<String> novaDataBlockFor(WidgetRef ref, {DateTime? at}) async {
+Future<NovaData> novaDataBlockFor(WidgetRef ref, {DateTime? at}) async {
   final now = at ?? DateTime.now();
   final controller = ref.read(ringControllerProvider);
   final dashboard = HomeDashboard.from(controller);
@@ -343,9 +383,11 @@ Future<String> novaDataBlockFor(WidgetRef ref, {DateTime? at}) async {
   final tonight = sleepNightForToday(nights, now: now);
   final patterns = ref.read(patternsProvider).valueOrNull ?? const [];
 
-  return formatNovaData(
+  return novaDataFrom(
     NovaFacts(
       now: now,
+      readinessHrvOnly: dashboard.readinessIsHrvOnly,
+      syncStale: ringIsStale(controller),
       lastNight: tonight == null ? null : _dayFrom(history, tonight.day),
       nightReason: dashboard.nightReason,
       yesterday: _dayFrom(

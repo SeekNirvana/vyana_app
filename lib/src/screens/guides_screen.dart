@@ -68,7 +68,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     // that — it used to go with every message, which pushed the question
     // out of the window by the third turn on Android.
     final lookup = novaLookupBlockFor(ref, prompt);
-    final dataBlock = await novaDataBlockFor(ref);
+    final novaData = await novaDataBlockFor(ref);
 
     final kind = guideKindForPersona(guide);
     final runtime = ref.read(guideRuntimeServiceProvider);
@@ -113,7 +113,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
             in runtime.streamResponse(
           guide: kind,
           prompt: prompt,
-          dataBlock: dataBlock,
+          data: novaData,
           lookupBlock: lookup,
         )) {
           if (!mounted) return;
@@ -143,7 +143,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
         final reply = await runtime.generateResponse(
           guide: kind,
           prompt: prompt,
-          dataBlock: dataBlock,
+          data: novaData,
           lookupBlock: lookup,
         );
         if (!mounted) return;

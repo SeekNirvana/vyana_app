@@ -636,9 +636,11 @@ void main() {
       List<String> concerns = const [],
       List<String> patterns = const [],
       DateTime? lastSync,
+      DateTime? at,
+      int battery = 12,
     }) =>
         NovaFacts(
-          now: now,
+          now: at ?? now,
           lastNight: lastNight,
           nightReason: reason,
           yesterday: NovaDay(
@@ -659,7 +661,7 @@ void main() {
           intentConfirmed: false,
           hasRing: true,
           lastSyncedAt: lastSync ?? DateTime(2026, 11, 9, 23, 10),
-          batteryPercent: 12,
+          batteryPercent: battery,
           suggestion: 'Body Scan',
           suggestionMinutes: 15,
           plannedActivity: 'Yoga Flow',
@@ -667,6 +669,43 @@ void main() {
           patterns: patterns,
           concerns: concerns,
         );
+
+    test('item 106: a new minute, sync or battery level does not resend',
+        () {
+      final base = novaDataKey(facts());
+      expect(
+        novaDataKey(facts(at: now.add(const Duration(minutes: 7)))),
+        base,
+      );
+      expect(
+        novaDataKey(
+          facts(lastSync: DateTime(2026, 11, 10, 15, 1), battery: 40),
+        ),
+        base,
+      );
+      expect(formatNovaData(facts()), isNot(contains('now:')));
+      expect(novaTimeLine(now), contains('15:20'));
+    });
+
+    test('item 106: a new alert or a new night does', () {
+      final base = novaDataKey(facts());
+      expect(
+        novaDataKey(facts(concerns: ['low battery alert sent today'])),
+        isNot(base),
+      );
+      expect(
+        novaDataKey(
+          facts(
+            lastNight: NovaDay(
+              day: DateTime(2026, 11, 10),
+              sleepSeconds: 7 * 3600,
+              sleepScore: 80,
+            ),
+          ),
+        ),
+        isNot(base),
+      );
+    });
 
     test('a missing night says why, and when the ring last synced', () {
       final block = formatNovaData(

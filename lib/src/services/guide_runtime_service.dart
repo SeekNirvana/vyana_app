@@ -112,14 +112,14 @@ class GuideRuntimeService {
   Future<String> generateResponse({
     required GuideKind guide,
     required String prompt,
-    String dataBlock = '',
+    NovaData data = NovaData.none,
     String lookupBlock = '',
   }) async {
     var finalResponse = '';
     await for (final partial in streamResponse(
       guide: guide,
       prompt: prompt,
-      dataBlock: dataBlock,
+      data: data,
       lookupBlock: lookupBlock,
     )) {
       finalResponse = partial;
@@ -127,22 +127,24 @@ class GuideRuntimeService {
     return finalResponse;
   }
 
-  /// The DATA block the live session has already been given, if any.
+  /// The key of the DATA block the live session has already been given.
   ///
   /// Item 70: cleared in [offload], so it is remembered for exactly as long
   /// as the session that received it. A block "already sent" to a session
   /// that no longer exists would leave Nova with no numbers at all.
-  String? _sentDataBlock;
+  /// Item 106: the key, not the text, so a new minute or a new battery
+  /// percentage does not send the numbers again.
+  String? _sentDataKey;
 
   /// Stream a response for [prompt] as text accumulates.
   ///
-  /// [dataBlock] and [lookupBlock] are passed separately rather than joined
+  /// [data] and [lookupBlock] are passed separately rather than joined
   /// into [prompt] by the caller, because whether the DATA block needs
   /// sending depends on the session — which only this service knows about.
   Stream<String> streamResponse({
     required GuideKind guide,
     required String prompt,
-    String dataBlock = '',
+    NovaData data = NovaData.none,
     String lookupBlock = '',
   }) async* {
     final onCloud = _backend.backend == AiBackend.cloud && _backend.cloudReady;
@@ -168,7 +170,8 @@ class GuideRuntimeService {
       yield* _backend.streamFromEndpoint(
         composeNovaPrompt(
           message: prompt,
-          dataBlock: dataBlock,
+          timeLine: data.timeLine,
+          dataBlock: data.block,
           lookupBlock: lookupBlock,
         ),
         systemPrompt: cloudConfig.systemPrompt,
@@ -188,7 +191,7 @@ class GuideRuntimeService {
         await initialize(guide);
         yield* _streamOnce(
           prompt,
-          dataBlock: dataBlock,
+          data: data,
           lookupBlock: lookupBlock,
         );
         _backendAttemptIndex = 0;
@@ -228,7 +231,7 @@ class GuideRuntimeService {
   /// would have arrived without it.
   Stream<String> _streamOnce(
     String message, {
-    required String dataBlock,
+    required NovaData data,
     required String lookupBlock,
   }) async* {
     if (_activeChat == null) {
@@ -247,8 +250,9 @@ class GuideRuntimeService {
     // An on-device chat keeps the turns it was given, so repeating the
     // numbers is what pushes the question out of the window.
     final sendData = novaDataNeedsSending(
-      block: dataBlock,
-      lastSent: _sentDataBlock,
+      block: data.block,
+      key: data.key,
+      lastSentKey: _sentDataKey,
       sessionRemembers: true,
     );
 
@@ -258,7 +262,8 @@ class GuideRuntimeService {
           Message.text(
             text: composeNovaPrompt(
               message: message,
-              dataBlock: sendData ? dataBlock : '',
+              timeLine: data.timeLine,
+              dataBlock: sendData ? data.block : '',
               lookupBlock: lookupBlock,
             ),
             isUser: true,
@@ -268,7 +273,7 @@ class GuideRuntimeService {
         // block was composed would mean a turn that failed to be added
         // left Nova with no numbers for the rest of the session, and no
         // sign of why.
-        if (sendData) _sentDataBlock = dataBlock;
+        if (sendData) _sentDataKey = data.key;
       } catch (e) {
         throw StateError('Failed to add message to chat: $e');
       }
@@ -345,7 +350,7 @@ class GuideRuntimeService {
       // everything else, so it has to be sent again. Without this, asking
       // for a new conversation left Nova with no numbers and nothing to
       // say about them.
-      _sentDataBlock = null;
+      _sentDataKey = null;
     } on Object catch (error) {
       // A model that will not forget is worse than one that cannot be asked
       // to, so drop it and let the next message rebuild from nothing.
@@ -372,7 +377,7 @@ class GuideRuntimeService {
     _activeGuide = null;
     // Item 70: the DATA block is remembered for exactly as long as the
     // session that received it.
-    _sentDataBlock = null;
+    _sentDataKey = null;
     _loadedConfigEpoch = null;
     _loadedBackendAttempt = null;
     _loadedPrefsUpdatedAt = null;
