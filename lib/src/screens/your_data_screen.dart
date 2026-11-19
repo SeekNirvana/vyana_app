@@ -165,27 +165,15 @@ class _YourDataScreenState extends ConsumerState<YourDataScreen> {
   }
 
   Future<void> _backUp() async {
-    final passphrase =
-        await askForBackupPassphrase(context, creating: true);
-    if (passphrase == null || !mounted) return;
-    if (passphrase.isEmpty) {
-      setState(() => _note = 'A backup needs a passphrase.');
-      return;
-    }
-
-    setState(() {
-      _busy = true;
-      _note = null;
-    });
-
-    final info = await PackageInfo.fromPlatform();
-    final attempt = await ref.read(backupServiceProvider).backUpNow(
-          passphrase: passphrase,
-          appVersion: info.version,
-        );
+    setState(() => _note = null);
+    final attempt = await runBackupFlow(
+      context,
+      ref,
+      onStart: () => setState(() => _busy = true),
+    );
     if (!mounted) return;
-
     setState(() => _busy = false);
+    if (attempt == null) return;
     switch (attempt.outcome) {
       case BackupOutcome.saved:
         await _readLastBackup();
@@ -378,6 +366,84 @@ class _YourDataScreenState extends ConsumerState<YourDataScreen> {
   }
 }
 
+/// Item 108: Back up now, from anywhere it is offered (Your data, the You
+/// row, the card after the first sync). Asks for the passphrase, makes
+/// the backup, and refreshes the You row whatever happened, so its "Last
+/// backup" line is never a backup behind. Returns null if the person
+/// backed out before anything started. [onStart] runs once the passphrase
+/// is in, for a screen that shows it is busy.
+Future<BackupAttempt?> runBackupFlow(
+  BuildContext context,
+  WidgetRef ref, {
+  VoidCallback? onStart,
+}) async {
+  final passphrase = await askForBackupPassphrase(context, creating: true);
+  if (passphrase == null || !context.mounted) return null;
+  if (passphrase.isEmpty) {
+    return const BackupAttempt(
+      BackupOutcome.failed,
+      message: 'A backup needs a passphrase.',
+    );
+  }
+  onStart?.call();
+  final info = await PackageInfo.fromPlatform();
+  final attempt = await ref.read(backupServiceProvider).backUpNow(
+        passphrase: passphrase,
+        appVersion: info.version,
+      );
+  ref.invalidate(backupRowSubtitleProvider);
+  return attempt;
+}
+
+/// The snack bar for a finished [runBackupFlow], for the places that have
+/// no line of their own to put it on.
+void showBackupOutcome(BuildContext context, BackupAttempt? attempt) {
+  if (attempt == null || !context.mounted) return;
+  switch (attempt.outcome) {
+    case BackupOutcome.saved:
+      showVyanaSnackBar(
+        context,
+        message: 'Backup saved. Keep the passphrase somewhere safe.',
+        icon: 'check',
+      );
+    case BackupOutcome.dismissed:
+      showVyanaSnackBar(context, message: 'Nothing was saved.', icon: 'info');
+    case BackupOutcome.failed:
+      showVyanaSnackBar(
+        context,
+        message: attempt.message ?? 'The backup did not finish.',
+        icon: 'alert',
+      );
+  }
+}
+
+/// Item 108: after a restore, everything that read its state once (from
+/// preferences or the vault) reads it again, so the profile, pins and
+/// screens show what was restored instead of the old state until the app
+/// restarts. Streams over the vault update by themselves; these do not.
+///
+/// The ring controller and the database are not torn down: rebuilding them
+/// would drop the ring's connection for nothing, so the ring is asked to
+/// reload its stored history instead.
+Future<void> refreshAfterRestore(WidgetRef ref) async {
+  ref
+    ..invalidate(userProfileProvider)
+    ..invalidate(pinnedPracticesProvider)
+    ..invalidate(voiceCuesEnabledProvider)
+    ..invalidate(personalBaselinesProvider)
+    ..invalidate(sleepExtensionProvider)
+    ..invalidate(dayIntentProvider)
+    ..invalidate(backupRowSubtitleProvider)
+    ..invalidate(chatFootprintProvider)
+    ..invalidate(hasRingOrdersProvider);
+  try {
+    await ref.read(ringControllerProvider).reloadHistoryAfterRestore();
+    await ref.read(weeklyPlanReminderProvider.notifier).reschedule();
+  } on Object catch (error) {
+    debugPrint('[Backup] refresh after restore: $error');
+  }
+}
+
 /// Chooses a backup, asks for the passphrase, and restores it.
 ///
 /// Shared by Your data and the first-launch offer so the two cannot drift
@@ -396,6 +462,9 @@ Future<bool> runRestoreFlow(BuildContext context, WidgetRef ref) async {
   try {
     final report =
         await service.restoreFrom(file: file, passphrase: passphrase);
+    // Item 108: what was read before the restore is reloaded now, rather
+    // than on the next restart.
+    await refreshAfterRestore(ref);
     if (!context.mounted) return true;
     showVyanaSnackBar(context, message: report.summary, icon: 'check');
     return true;

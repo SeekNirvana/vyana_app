@@ -100,6 +100,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         // Bug 14(d): the one correction the app offers for a night the ring
         // ended at a brief waking. Sits under the Sleep card it concerns.
         _SleptOnPrompt(controller: controller),
+        // Item 108: once, after the first sync, the one sentence about
+        // where history lives, with the answer to it.
+        _FirstSyncBackupCard(hasSynced: controller.lastSyncedAt != null),
         // ── Chosen ─────────────────────────────────────────────────────────
         const SizedBox(height: 22),
         const IntentRow(),
@@ -715,6 +718,91 @@ class _MetricCards extends ConsumerWidget {
 }
 
 /// Decides whether last night has a question to ask, and asks it once.
+/// Item 108: whether the one-time backup card is still to be answered.
+final _firstSyncBackupCardAnsweredProvider =
+    FutureProvider<({bool answered, DateTime? lastBackup})>((ref) async {
+  ref.watch(backupRowSubtitleProvider);
+  final prefs = await SharedPreferences.getInstance();
+  return (
+    answered: prefs.getBool(kFirstSyncBackupCardKey) ?? false,
+    lastBackup: await ref.read(backupServiceProvider).lastBackupAt(),
+  );
+});
+
+/// Item 108: the card shown once after the first sync. Back up now or Not
+/// now both answer it; it never comes back.
+class _FirstSyncBackupCard extends ConsumerWidget {
+  const _FirstSyncBackupCard({required this.hasSynced});
+
+  final bool hasSynced;
+
+  Future<void> _answer(WidgetRef ref) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kFirstSyncBackupCardKey, true);
+    ref.invalidate(_firstSyncBackupCardAnsweredProvider);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(_firstSyncBackupCardAnsweredProvider).valueOrNull;
+    if (state == null ||
+        !firstSyncBackupCardDue(
+          hasSynced: hasSynced,
+          lastBackup: state.lastBackup,
+          answered: state.answered,
+        )) {
+      return const SizedBox.shrink();
+    }
+    final t = context.vyana;
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: HairlineCard(
+        padding: const EdgeInsets.fromLTRB(14, 13, 14, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Your history lives only on this phone.',
+              style: VyanaType.label.copyWith(color: t.text),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Deleting Vyana deletes it. A backup is a file you keep '
+              'wherever you like, locked with your passphrase.',
+              style: VyanaType.bodySm.copyWith(color: t.textSec, height: 1.45),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => _answer(ref),
+                  child: Text(
+                    'Not now',
+                    style: VyanaType.label.copyWith(color: t.textSec),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    final attempt = await runBackupFlow(context, ref);
+                    if (attempt == null) return;
+                    await _answer(ref);
+                    if (context.mounted) showBackupOutcome(context, attempt);
+                  },
+                  child: Text(
+                    'Back up now',
+                    style: VyanaType.label.copyWith(color: t.green),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SleptOnPrompt extends ConsumerWidget {
   const _SleptOnPrompt({required this.controller});
 

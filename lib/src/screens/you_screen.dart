@@ -621,15 +621,34 @@ class YouScreen extends ConsumerWidget {
             // Item 53: the one row that says where history lives, above
             // the exports — a backup is the thing that comes back, and an
             // export is not, so it goes first.
+            // Item 108: the row says the one sentence, where things stand,
+            // and offers the answer — in the row's own grey, never a badge.
             SettingsRow(
               icon: 'shield',
               iconColor: t.heading,
               label: 'Your data',
-              // Item 53: says how long it has been, but only once that is
-              // fair to mention — and in the row's own grey, never a badge.
-              subtitle: ref.watch(backupRowSubtitleProvider).valueOrNull ??
-                  'Back up, restore, and exports',
+              subtitle: kYourDataRowLine,
               onTap: () => openYourData(context),
+              below: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      ref.watch(backupRowSubtitleProvider).valueOrNull ?? '',
+                      style: VyanaType.caption.copyWith(color: t.textMuted),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      final attempt = await runBackupFlow(context, ref);
+                      if (context.mounted) showBackupOutcome(context, attempt);
+                    },
+                    child: Text(
+                      'Back up now',
+                      style: VyanaType.label.copyWith(color: t.green),
+                    ),
+                  ),
+                ],
+              ),
             ),
             SettingsRow(
               icon: 'download',

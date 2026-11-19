@@ -30,26 +30,48 @@ final backupServiceProvider = Provider<BackupService>((ref) {
   return BackupService(ref.watch(databaseProvider));
 });
 
-/// What the Your data row should say under its label.
+/// What the Your data row says about backing up, under its fixed line.
 ///
-/// Item 53: the row normally describes the screen. When a backup is overdue
-/// it says so instead — in the row's ordinary grey, with no badge, no
-/// colour and no notification. A backup is a good idea, not an emergency,
-/// and an app that shouts about its own housekeeping teaches people to
-/// stop reading it.
+/// Item 108: "Last backup 2 Nov" or "Never backed up", always, so the row
+/// says where things stand rather than only when a backup is overdue. A
+/// weekly run that did not finish says so instead, until the next one
+/// does. Invalidated after every backup and restore so it is never a
+/// screen behind.
 final backupRowSubtitleProvider = FutureProvider<String>((ref) async {
-  const normal = 'Back up, restore, and exports';
   final service = ref.watch(backupServiceProvider);
-  final lastBackup = await service.lastBackupAt();
-  final startedAt = await ref.watch(databaseProvider).historyStartedAt();
-  if (startedAt == null) return normal;
-
-  final overdue = backupIsOverdue(
-    lastBackup: lastBackup,
-    historyAge: DateTime.now().difference(startedAt),
-  );
-  return overdue ? lastBackupLine(lastBackup) : normal;
+  final auto = await service.autoBackupStatus();
+  if (auto.enabled && auto.lastError != null) return auto.lastError!;
+  return lastBackupDateLine(await service.lastBackupAt());
 });
+
+/// Item 108: the You row's fixed line.
+const String kYourDataRowLine =
+    'Your history lives only on this phone. Deleting Vyana deletes it.';
+
+/// "Last backup 2 Nov" / "Never backed up". The date rather than an age:
+/// a date is something to check against your own memory.
+String lastBackupDateLine(DateTime? lastBackup) {
+  if (lastBackup == null) return 'Never backed up';
+  return 'Last backup ${lastBackup.day} ${_monthShort[lastBackup.month - 1]}';
+}
+
+const List<String> _monthShort = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/// Item 108: whether the one-time card after the first sync has been
+/// answered (Back up now, or Not now). Once is once.
+const String kFirstSyncBackupCardKey = 'vyana.backup.first_sync_card_done';
+
+/// Whether to show that card: the ring has synced, nothing has ever been
+/// backed up, and the card has not been answered.
+bool firstSyncBackupCardDue({
+  required bool hasSynced,
+  required DateTime? lastBackup,
+  required bool answered,
+}) =>
+    hasSynced && lastBackup == null && !answered;
 
 /// When the last backup was handed off, as an ISO date.
 const String kLastBackupKey = 'vyana.backup.last_at';
@@ -82,9 +104,14 @@ class BackupService {
   /// When the last backup was handed off, or null if never.
   Future<DateTime?> lastBackupAt() async {
     final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getString(kLastBackupKey);
-    if (stored == null) return null;
-    return DateTime.tryParse(stored);
+    final manual = DateTime.tryParse(prefs.getString(kLastBackupKey) ?? '');
+    // Item 108: a weekly run that finished is a backup too, so the row's
+    // "Last backup" date counts it.
+    final weekly =
+        DateTime.tryParse(prefs.getString(kAutoBackupLastRunKey) ?? '');
+    if (manual == null) return weekly;
+    if (weekly == null) return manual;
+    return weekly.isAfter(manual) ? weekly : manual;
   }
 
   /// Builds a backup, locks it with [passphrase], and offers it to the

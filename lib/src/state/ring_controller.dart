@@ -1433,6 +1433,11 @@ class RingController extends ChangeNotifier {
     return null;
   }
 
+  /// Item 108: a restore has just replaced the stored history. When this
+  /// phone has nothing in memory yet (the first-launch restore), show what
+  /// came back; a live sync's history is newer and is kept.
+  Future<void> reloadHistoryAfterRestore() => _hydrateHistoryFromCache();
+
   Future<void> _hydrateHistoryFromCache() async {
     final cache = _historyCache;
     if (cache == null || _history.totalRecords > 0) return;
