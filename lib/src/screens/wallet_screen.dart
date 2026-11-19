@@ -19,7 +19,10 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (await isSolanaMobileDevice()) return;
       if (!mounted) return;
-      ref.read(reownWalletProvider.notifier).initIfNeeded(context);
+      // Item 122: awaited, so the listeners attach to the modal this screen
+      // will use, which on a reopened Wallet is a newly built one.
+      await ref.read(reownWalletProvider.notifier).initIfNeeded(context);
+      if (!mounted) return;
       _attachReownListeners();
     });
   }

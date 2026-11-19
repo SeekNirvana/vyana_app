@@ -936,17 +936,51 @@ DateTimeRange overnightWindowFor(DateTime now) {
 
 /// Whether the ring measured anything at all between [from] and [to] — the
 /// test for "was it even on the finger".
+///
+/// Item 122: a reading within [kRingSampleTolerance] either side counts. The
+/// gap check walks the night in five-minute steps, and a ring sampling
+/// heart rate every ten or thirty minutes left most steps with no reading
+/// in them, so worn time showed as "Not recorded". The cost is that a
+/// charger gap under about half an hour reads as sleep, which is the
+/// smaller error.
+///
+/// The record timestamps are collected and sorted once per history, then
+/// searched, rather than every record scanned for every step.
 bool ringMeasuredBetween(RingHistory history, DateTime from, DateTime to) {
-  final start = from.millisecondsSinceEpoch ~/ 1000;
-  final end = to.millisecondsSinceEpoch ~/ 1000;
-  for (final records in [history.combined, history.heartRate, history.steps]) {
-    for (final record in records) {
-      final ts = timestampOf(record);
-      if (ts != null && ts >= start && ts <= end) return true;
+  final start =
+      from.subtract(kRingSampleTolerance).millisecondsSinceEpoch ~/ 1000;
+  final end = to.add(kRingSampleTolerance).millisecondsSinceEpoch ~/ 1000;
+  final stamps = _measuredStamps(history);
+  // First stamp at or after start.
+  var lo = 0;
+  var hi = stamps.length;
+  while (lo < hi) {
+    final mid = (lo + hi) >> 1;
+    if (stamps[mid] < start) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
     }
   }
-  return false;
+  return lo < stamps.length && stamps[lo] <= end;
 }
+
+/// Item 122: how far from a stretch a reading may be and still show the
+/// ring was being worn through it.
+const Duration kRingSampleTolerance = Duration(minutes: 15);
+
+final Expando<List<int>> _measuredStampsCache = Expando('measuredStamps');
+
+List<int> _measuredStamps(RingHistory history) =>
+    _measuredStampsCache[history] ??= [
+      for (final records in [
+        history.combined,
+        history.heartRate,
+        history.steps,
+      ])
+        for (final record in records)
+          if (timestampOf(record) case final ts?) ts,
+    ]..sort();
 
 /// Battery at or under this counts as flat for the purpose of explaining a
 /// lost night: the ring stops recording before it reports 0.

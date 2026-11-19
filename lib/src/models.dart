@@ -973,6 +973,12 @@ class FeatureItem {
   final bool supported;
 }
 
+/// Item 122: [RingHistory.sleepNights], kept per history instance. Keyed
+/// on the slept-on answers too, since those change the nights.
+final Expando<
+        ({Map<DateTime, DateTime> extensions, List<SleepDaySummary> nights})>
+    _sleepNightsCache = Expando('sleepNights');
+
 class RingHistory {
   const RingHistory({
     required this.steps,
@@ -991,10 +997,23 @@ class RingHistory {
   /// them the heart rate needed to tell a gap the ring slept through from a
   /// gap where it was on its charger — so one of them disagreeing was a
   /// matter of time. One entry point, one answer.
-  List<SleepDaySummary> get sleepNights => sleepDaySummaries(
-        sleep,
-        measuring: (from, to) => ringMeasuredBetween(this, from, to),
-      );
+  ///
+  /// Item 122: computed once per history (and per set of slept-on answers)
+  /// rather than on every read. It scanned every record each time, and
+  /// Home and Sleep read it many times a frame with months of data.
+  List<SleepDaySummary> get sleepNights {
+    final cached = _sleepNightsCache[this];
+    if (cached != null && identical(cached.extensions, sleepNightExtensions)) {
+      return cached.nights;
+    }
+    final nights = sleepDaySummaries(
+      sleep,
+      measuring: (from, to) => ringMeasuredBetween(this, from, to),
+    );
+    _sleepNightsCache[this] =
+        (extensions: sleepNightExtensions, nights: nights);
+    return nights;
+  }
 
   final List<dynamic> steps;
   final List<dynamic> sleep;

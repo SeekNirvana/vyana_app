@@ -228,6 +228,19 @@ class WeeklyPlanReminderController extends StateNotifier<bool> {
       await notify.cancelPlanReminder();
       return;
     }
+    // Item 122: at a cold start this runs before the plan has loaded from
+    // the vault, and an unloaded plan reads as empty — which cancelled the
+    // reminder on every launch. Wait for the first read instead.
+    if (!_ref.read(weeklyPlanRowsProvider).hasValue) {
+      try {
+        await _ref.read(weeklyPlanRowsProvider.future);
+      } on Object catch (error) {
+        // Not knowing the plan is no reason to cancel its reminder.
+        debugPrint('[Plan] could not read the plan to reschedule: $error');
+        return;
+      }
+      if (!mounted) return;
+    }
     final plan = _ref.read(weeklyPlanProvider);
     if (plan.isEmpty) {
       await notify.cancelPlanReminder();

@@ -24,6 +24,7 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'backup_file.dart' show kBackupFileExtension;
@@ -53,6 +54,21 @@ enum FileOfferResult {
   unavailable,
 }
 
+/// Item 122: a point to anchor the share sheet's popover to on iPad — the
+/// middle of the app's window, which is always inside the source view.
+Rect? shareSheetAnchor() {
+  final views = WidgetsBinding.instance.platformDispatcher.views;
+  if (views.isEmpty) return null;
+  final view = views.first;
+  final size = view.physicalSize / view.devicePixelRatio;
+  if (size.isEmpty) return null;
+  return Rect.fromCenter(
+    center: Offset(size.width / 2, size.height / 2),
+    width: 1,
+    height: 1,
+  );
+}
+
 class FileExchangeService {
   const FileExchangeService();
 
@@ -72,6 +88,10 @@ class FileExchangeService {
         ShareParams(
           files: [XFile(file.path)],
           subject: subject,
+          // Item 122: iPad presents the sheet as a popover and needs an
+          // anchor; without one it fails to open. The middle of the screen
+          // is a valid anchor everywhere and is ignored on phones.
+          sharePositionOrigin: shareSheetAnchor(),
         ),
       );
       switch (result.status) {
