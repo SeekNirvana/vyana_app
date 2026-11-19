@@ -1,0 +1,98 @@
+name: Tag release on merge
+
+# Merging a version bump into main releases it. When pubspec.yaml carries a
+# version that has no tag yet, and CHANGELOG.md has a finished section for
+# it, this tags the merge commit v<version> and starts release.yml on that
+# tag, which builds and publishes the APKs exactly as a hand-pushed tag
+# would.
+#
+# Why it starts release.yml itself: a tag pushed with the workflow's own
+# GITHUB_TOKEN does not trigger other workflows (GitHub's rule against
+# loops). workflow_dispatch is the exception, and release.yml run on a tag
+# ref sees ref_type 'tag', so it publishes a full release, not a dry run.
+#
+# Nothing happens when:
+#   - the tag already exists (a merge that did not change the version, or a
+#     release someone tagged by hand), or
+#   - the changelog heading still says "unreleased" (work in progress
+#     merged early). Replace the heading with a dated one to release.
+# A version with no changelog section at all fails, as ci.yml would.
+on:
+  push:
+    branches: [main]
+    paths:
+      - pubspec.yaml
+      - CHANGELOG.md
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag and start the release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Every tag, so an existing one is seen.
+          fetch-depth: 0
+
+      - name: Decide whether this merge is a release
+        id: decide
+        run: |
+          set -euo pipefail
+          full="$(grep -m1 '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')"
+          name="${full%%+*}"
+          tag="v$name"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists; nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          heading="$(grep -m1 "^## v$name" CHANGELOG.md || true)"
+          if [ -z "$heading" ]; then
+            echo "::error::pubspec.yaml is $name but CHANGELOG.md has no" \
+                 "'## v$name' section."
+            exit 1
+          fi
+          case "$heading" in
+            *unreleased*)
+              echo "::notice::CHANGELOG.md still marks v$name as unreleased;" \
+                   "not tagging."
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          echo "Releasing $tag from ${GITHUB_SHA::7}: $heading"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Tag the merge commit
+        if: steps.decide.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$TAG" -m "Vyana ${TAG#v}" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
+
+      - name: Start the release build
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+          echo "Started release.yml on $TAG."

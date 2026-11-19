@@ -1,8 +1,10 @@
 name: Release
 
-# Cut a release by pushing a tag that matches the version in pubspec.yaml:
+# Cut a release by merging a version bump into main: tag-release.yml tags
+# the merge commit and starts this workflow on the tag. Or push the tag by
+# hand; it must match the version in pubspec.yaml:
 #
-#     git tag v1.1.5 && git push origin v1.1.5
+#     git tag v1.1.7 && git push origin v1.1.7
 #
 # A manual run publishes a prerelease instead, so a dry run never claims to
 # be the latest version.
