@@ -259,3 +259,35 @@ Ask me later
 
 # v1.1.6 — The panels describe this release (96)
 Last updated November 2026
+
+# v1.1.7 — A reply that stops early says so (123)
+Cut off
+
+# v1.1.7 — Keep or delete a conversation (127)
+Keep this conversation?
+Save conversations
+
+# v1.1.7 — Voice cues ask for Nova's voice (98)
+Until it is installed, cues show as text on screen
+
+# v1.1.7 — Where your history lives, on the You row (108)
+Deleting Vyana deletes it
+
+# v1.1.7 — A greyed-out Pair says why (111)
+Starting the ring service
+The ring service didn't start
+
+# v1.1.7 — One set of readiness words (112)
+Partial read: sleep not recorded
+
+# v1.1.7 — "Your normal" leftovers (113)
+not enough readings yet
+
+# v1.1.7 — The sync log can be opened (119)
+Sync log
+
+# v1.1.7 — Privacy, one backup line (121)
+Backups go only where you save them
+
+# v1.1.7 — Unstaged sleep is counted and drawn (105)
+Unstaged sleep
