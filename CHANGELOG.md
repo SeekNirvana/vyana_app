@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.7 — unreleased
+
+Work in progress on `feat/v1.1.7`: the 15–19 Nov handover, one commit per
+item. The full entry is written at release prep, once device testing has
+settled what ships.
+
 ## v1.1.6 — 2026-11-15 · What the app knows, and what it only claimed
 
 This release started as a model-selection fix and became an audit. Three
