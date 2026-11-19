@@ -15,7 +15,7 @@ part of '../../main.dart';
 /// can be held to: [ChatHistoryController.startFresh] clears both together.
 ///
 /// What is deliberately *not* offered is picking a stored conversation back
-/// up. The whole context window is 1,024 tokens on Android and 512 on iOS —
+/// up. The whole context window is 2,048 tokens (1,024 on a low-memory phone) —
 /// the system prompt and the DATA block of the user's own numbers come out of
 /// that same budget — so replaying a conversation of any length into the model
 /// would push out the thing being asked. A reopened conversation is therefore

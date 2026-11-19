@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/db.dart';
+import 'device_capability_service.dart';
 import 'guide_model_manager.dart';
 
 /// User-selectable response length presets mapped to on-device max tokens.
@@ -93,21 +94,19 @@ class GuidePersonaPrefsService extends ChangeNotifier {
   /// The context window, shared by the instructions, the data blocks, the
   /// conversation and the reply itself.
   ///
-  /// **Item 51 developer note — do not change these two numbers here.**
-  /// With the shorter instructions and the DATA block (about 150 tokens
-  /// each) Android keeps roughly 700 tokens for the reply and earlier
-  /// messages, iOS only about 180 — so on iPhone a longer chat will forget
-  /// earlier messages and replies stay short. Whether iOS should be raised
-  /// to 1,024 to match Android has to be measured for memory and speed on
-  /// the oldest supported iPhones first, and reported back before anything
-  /// moves.
+  /// Item 124 (decided 15 Nov, replacing item 51's "leave the cap alone"):
+  /// 2,048 tokens on a phone with enough memory, 1,024 on a low-memory one,
+  /// the same on Android and iPhone. 2,048 is Google's own published setup
+  /// for Gemma 4 E2B on LiteRT-LM on phones; the model itself takes 32k.
+  /// 1,024 left about 700 words for instructions, data, conversation and
+  /// reply together, which is one of the suspects in Nova stopping after a
+  /// few words (123). The app chooses; there is no user setting.
   ///
-  /// Item 70 changed how they are *used*, not what they are: the response
-  /// length setting no longer scales them. It used to, so "Short" left
-  /// 256 tokens on iOS for instructions, data, question and answer
-  /// together, and every message was over budget before it was sent.
-  static const int androidBalancedMaxTokens = 1024;
-  static const int iosBalancedMaxTokens = 512;
+  /// Item 70 changed how they are *used*: the response length setting does
+  /// not scale them. A smaller window does not produce a shorter answer, it
+  /// produces a forgotten question.
+  static const int fullWindowTokens = 2048;
+  static const int lowMemoryWindowTokens = 1024;
 
   final VyanaDatabase _db;
 
@@ -156,7 +155,9 @@ class GuidePersonaPrefsService extends ChangeNotifier {
       ].join('\n'),
       temperature: (prefs?.temperatureOverride ?? defaultTemperature)
           .clamp(0.2, 1.2),
-      contextTokens: contextTokensFor(),
+      contextTokens: contextTokensFor(
+        lowRam: await DeviceCapabilityService.instance.isLowRam(),
+      ),
       replyTokens: replyTokensFor(responseLength),
       responseLength: responseLength,
       usesCustomSystemPrompt: usesCustom,
@@ -167,12 +168,11 @@ class GuidePersonaPrefsService extends ChangeNotifier {
 
   /// The context window for this phone.
   ///
-  /// Item 70: not scaled by the response length. A smaller window does not
-  /// produce a shorter answer, it produces a forgotten question.
-  static int contextTokensFor() =>
-      defaultTargetPlatform == TargetPlatform.iOS
-      ? iosBalancedMaxTokens
-      : androidBalancedMaxTokens;
+  /// Item 124: by memory, not by platform. [lowRam] is
+  /// [DeviceCapabilityService.isLowRam] (under 6 GB); a phone whose memory
+  /// cannot be read gets the full window, as Gemma's own setup does.
+  static int contextTokensFor({required bool lowRam}) =>
+      lowRam ? lowMemoryWindowTokens : fullWindowTokens;
 
   /// How long a reply may be.
   ///

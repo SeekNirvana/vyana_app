@@ -314,11 +314,13 @@ void main() {
       // The fault: "Short" halved the window to 256 on iOS, so instructions,
       // data, question and answer had to share it and every message was
       // over budget before being sent.
-      final window = GuidePersonaPrefsService.contextTokensFor();
-      for (final length in GuideResponseLength.values) {
-        expect(GuidePersonaPrefsService.replyTokensFor(length), lessThan(window + 1));
+      for (final lowRam in [true, false]) {
+        final window = GuidePersonaPrefsService.contextTokensFor(lowRam: lowRam);
+        for (final length in GuideResponseLength.values) {
+          expect(GuidePersonaPrefsService.replyTokensFor(length), lessThan(window + 1));
+        }
+        expect(window, anyOf(1024, 2048));
       }
-      expect(window, anyOf(512, 1024));
     });
 
     test('a shorter setting asks for a shorter reply', () {

@@ -769,9 +769,10 @@ void main() {
       );
     });
 
-    test('the token cap is unchanged — item 51 says to measure first', () {
-      expect(GuidePersonaPrefsService.androidBalancedMaxTokens, 1024);
-      expect(GuidePersonaPrefsService.iosBalancedMaxTokens, 512);
+    test('the window is 2,048, or 1,024 on a low-memory phone (item 124)',
+        () {
+      expect(GuidePersonaPrefsService.contextTokensFor(lowRam: false), 2048);
+      expect(GuidePersonaPrefsService.contextTokensFor(lowRam: true), 1024);
     });
   });
 

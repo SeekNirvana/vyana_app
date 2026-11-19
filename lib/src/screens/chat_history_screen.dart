@@ -7,8 +7,8 @@ part of '../../main.dart';
 /// opening one shows the transcript as it was on screen.
 ///
 /// A transcript is for reading, and says so at the end rather than offering a
-/// "continue" that could not work: the model holds 1,024 tokens on Android
-/// (512 on iOS) for the system prompt, the user's own numbers, the question
+/// "continue" that could not work: the model holds 2,048 tokens (1,024 on a
+/// low-memory phone) for the system prompt, the user's own numbers, the question
 /// and the reply together, so replaying a stored conversation into it would
 /// cost the room the next answer needs.
 Future<void> openChatHistory(BuildContext context) {

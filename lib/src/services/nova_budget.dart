@@ -1,8 +1,8 @@
 /// Item 70 — how much Nova is told, and when.
 ///
 /// Item 51 gave Nova the user's own numbers. This is the arithmetic of
-/// fitting them in. The context window is small — 1,024 tokens on Android,
-/// 512 on iOS — and it is shared by the instructions, the DATA block, the
+/// fitting them in. The context window is small — 2,048 tokens, 1,024 on a
+/// low-memory phone (item 124) — and it is shared by the instructions, the DATA block, the
 /// LOOKUP block, the whole conversation so far and the reply. Overflow is
 /// not a clean failure: the model either errors or silently drops the
 /// oldest part of the window, which is the question.
