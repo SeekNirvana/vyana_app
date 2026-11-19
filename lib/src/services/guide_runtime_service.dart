@@ -36,6 +36,10 @@ class GuideRuntimeService {
   static const _guideTopK = 40;
   static const _guideTopP = 0.9;
   static const _maxIdenticalStreamTokens = 4;
+
+  /// Below this many tokens of room left after a reply, the reply is taken
+  /// to have run into the end of the window rather than finished.
+  static const _windowFullMargin = 16;
   // Bump when inference/session defaults change to drop stale in-memory models.
   static const _runtimeConfigEpoch = 2;
 
@@ -52,6 +56,19 @@ class GuideRuntimeService {
 
   InferenceModel? _currentModel;
   InferenceChat? _activeChat;
+
+  /// The loaded session's window and instructions, for counting what is
+  /// sent against what fits (items 123 and 126).
+  int _windowTokens = 0;
+  String _systemPrompt = '';
+  int _systemTokens = 0;
+
+  /// What the live session holds, turn by turn, and roughly how many tokens
+  /// that is. Kept here because the session itself does not say, and it is
+  /// what lets a cut-off reply be taken back out (123) and a long
+  /// conversation be trimmed (126).
+  final List<NovaTurn> _turns = [];
+  int _turnTokens = 0;
 
   GuideKind? _activeGuide;
   bool _isGenerating = false;
@@ -257,17 +274,29 @@ class GuideRuntimeService {
     );
 
     try {
+      final dataSent = sendData ? data.block : '';
+      final composed = composeNovaPrompt(
+        message: message,
+        timeLine: data.timeLine,
+        dataBlock: dataSent,
+        lookupBlock: lookupBlock,
+      );
+
+      // Item 123, debug line 1: what this reply is being asked to fit
+      // into. If replies are still cut short on a phone, this says whether
+      // the window was the reason.
+      final promptTokens = await _countTokens(composed);
+      debugPrint(
+        '[GuideRuntime] sending: system=$_systemTokens '
+        'data=${await _countTokens(dataSent)} '
+        'lookup=${await _countTokens(lookupBlock)} '
+        'message=${await _countTokens(message)} '
+        'prompt=$promptTokens history=$_turnTokens window=$_windowTokens',
+      );
+
       try {
         await _activeChat!.addQueryChunk(
-          Message.text(
-            text: composeNovaPrompt(
-              message: message,
-              timeLine: data.timeLine,
-              dataBlock: sendData ? data.block : '',
-              lookupBlock: lookupBlock,
-            ),
-            isUser: true,
-          ),
+          Message.text(text: composed, isUser: true),
         );
         // Recorded only now the session has it. Recording it when the
         // block was composed would mean a turn that failed to be added
@@ -279,6 +308,8 @@ class GuideRuntimeService {
       }
 
       var responseText = '';
+      var end = NovaReplyEnd.finished;
+      Object? failure;
 
       if (defaultTargetPlatform == TargetPlatform.iOS) {
         final response = await _activeChat!.generateChatResponse();
@@ -289,44 +320,128 @@ class GuideRuntimeService {
         yield responseText;
       } else {
         final buffer = StringBuffer();
-        var lastToken = '';
-        var identicalTokenStreak = 0;
+        // Item 123: empty and whitespace pieces no longer count as a
+        // repeat; between words they tripped the guard after a few words.
+        final guard = NovaRepeatGuard(limit: _maxIdenticalStreamTokens);
 
-        await for (final response in _activeChat!.generateChatResponseAsync()) {
-          if (response is! TextResponse) {
-            continue;
+        try {
+          await for (final response
+              in _activeChat!.generateChatResponseAsync()) {
+            if (response is! TextResponse) {
+              continue;
+            }
+
+            final token = response.token;
+            if (guard.shouldStop(token)) {
+              debugPrint(
+                '[GuideRuntime] Degenerate token loop detected ("$token"); '
+                'stopping generation.',
+              );
+              end = NovaReplyEnd.guard;
+              await _activeChat!.stopGeneration();
+              break;
+            }
+
+            buffer.write(token);
+            yield _trimRepeatingTail(buffer.toString());
           }
-
-          final token = response.token;
-          if (token == lastToken) {
-            identicalTokenStreak++;
-          } else {
-            lastToken = token;
-            identicalTokenStreak = 1;
-          }
-
-          if (identicalTokenStreak >= _maxIdenticalStreamTokens) {
-            debugPrint(
-              '[GuideRuntime] Degenerate token loop detected ("$token"); '
-              'stopping generation.',
-            );
-            await _activeChat!.stopGeneration();
-            break;
-          }
-
-          buffer.write(token);
-          yield _trimRepeatingTail(buffer.toString());
+        } catch (error) {
+          // A failure with nothing written is still a failure, and a
+          // backend failure goes back to the retry loop. Anything else
+          // after some text is a cut-off reply, not an answer.
+          if (buffer.isEmpty || _isInferenceBackendError(error)) rethrow;
+          end = NovaReplyEnd.error;
+          failure = error;
         }
         responseText = _trimRepeatingTail(buffer.toString()).trimRight();
+      }
+
+      final replyTokens = await _countTokens(responseText);
+      if (end == NovaReplyEnd.finished &&
+          _windowTokens > 0 &&
+          _systemTokens + _turnTokens + promptTokens + replyTokens >=
+              _windowTokens - _windowFullMargin) {
+        end = NovaReplyEnd.windowFull;
+      }
+
+      // Item 123, debug line 2: why the stream ended.
+      debugPrint(
+        '[GuideRuntime] reply ended: ${end.name} '
+        '(${responseText.length} chars, ~$replyTokens tokens'
+        '${failure == null ? '' : ', $failure'})',
+      );
+
+      if (end.isCutOff) {
+        // The session now holds a question with half an answer, or none.
+        // Put it back to the turns before this one, so Try again is asked
+        // fresh rather than on top of a broken turn.
+        await _rebuildSession(_turns);
+        throw NovaReplyCutOff(responseText, end, failure);
       }
 
       if (responseText.isEmpty) {
         throw StateError('No response generated from model');
       }
+      _turns.add(
+        NovaTurn(
+          message: message,
+          reply: responseText,
+          tokens: promptTokens + replyTokens,
+        ),
+      );
+      _turnTokens += promptTokens + replyTokens;
       _lastError = null;
     } finally {
       _isGenerating = false;
     }
+  }
+
+  /// Token count of [text] by the loaded model's own tokenizer, or an
+  /// estimate (four characters a token) when it cannot be asked.
+  Future<int> _countTokens(String text) async {
+    if (text.trim().isEmpty) return 0;
+    final chat = _activeChat;
+    if (chat != null) {
+      try {
+        return await chat.session.sizeInTokens(text);
+      } on Object {
+        // Fall through to the estimate.
+      }
+    }
+    return novaTokenEstimate(text);
+  }
+
+  /// Replaces what the session holds with [keep]: the instructions, then
+  /// those turns only. The DATA block goes again with the next message.
+  ///
+  /// The saved conversation on screen is not touched; this is only what
+  /// Nova holds in memory.
+  Future<void> _rebuildSession(List<NovaTurn> keep) async {
+    final chat = _activeChat;
+    if (chat == null) return;
+    final kept = List<NovaTurn>.of(keep);
+    try {
+      await chat.clearHistory(
+        replayHistory: [
+          for (final turn in kept) ...[
+            Message.text(text: turn.message, isUser: true),
+            Message(text: turn.reply, isUser: false),
+          ],
+        ],
+      );
+      _turns
+        ..clear()
+        ..addAll(kept);
+      _turnTokens = kept.fold(0, (sum, t) => sum + t.tokens);
+    } on Object catch (error) {
+      debugPrint('[GuideRuntime] could not rebuild the session ($error)');
+      _turns.clear();
+      _turnTokens = 0;
+      // Called from inside a reply; offload would otherwise wait for it.
+      _isGenerating = false;
+      await offload(resetBackendAttempts: false);
+    }
+    _sentDataKey = null;
   }
 
   /// Drop the conversation so far without unloading the model.
@@ -346,6 +461,8 @@ class GuideRuntimeService {
     if (_isGenerating) return;
     try {
       await chat.clearHistory();
+      _turns.clear();
+      _turnTokens = 0;
       // Item 70: the session has just forgotten the DATA block along with
       // everything else, so it has to be sent again. Without this, asking
       // for a new conversation left Nova with no numbers and nothing to
@@ -381,6 +498,8 @@ class GuideRuntimeService {
     _loadedConfigEpoch = null;
     _loadedBackendAttempt = null;
     _loadedPrefsUpdatedAt = null;
+    _turns.clear();
+    _turnTokens = 0;
     _isGenerating = false;
     await _currentModel?.close();
     _currentModel = null;
@@ -418,6 +537,8 @@ class GuideRuntimeService {
       maxTokens: effective.contextTokens,
       preferredBackend: backend,
     );
+    _windowTokens = effective.contextTokens;
+    _systemPrompt = effective.systemPrompt;
 
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       await Future.delayed(const Duration(milliseconds: 100));
@@ -436,6 +557,10 @@ class GuideRuntimeService {
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       await Future.delayed(const Duration(milliseconds: 100));
     }
+
+    _turns.clear();
+    _turnTokens = 0;
+    _systemTokens = await _countTokens(_systemPrompt);
 
     _activeGuide = definition.kind;
     _loadedConfigEpoch = _runtimeConfigEpoch;

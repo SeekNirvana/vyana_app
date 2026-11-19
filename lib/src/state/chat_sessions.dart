@@ -221,13 +221,37 @@ class ChatHistoryController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Item 123: the reply at [index] stopped before Nova finished it. What
+  /// arrived stays on screen, marked, and is not written as an answer.
+  void markCutOff(int index, String partial) {
+    if (index < 0 || index >= _messages.length) return;
+    _messages[index] =
+        GuideMessage(fromUser: false, text: partial, cutOff: true);
+    notifyListeners();
+  }
+
+  /// Empties a cut-off reply so Try again can stream into the same bubble.
+  /// Returns the question it was answering, or null when there is none.
+  String? resetReply(int index) {
+    if (index < 1 || index >= _messages.length) return null;
+    final question = _messages[index - 1];
+    if (!question.fromUser) return null;
+    _messages[index] = const GuideMessage(fromUser: false, text: '');
+    _pendingReplyId = null;
+    notifyListeners();
+    return question.text;
+  }
+
   /// Writes the finished reply, whatever it says.
   ///
   /// Including the apology the screen shows when generation failed: the
   /// transcript is a record of what happened, and a conversation that read as
   /// an unanswered question would be a different and less useful record.
+  /// Item 123: except a cut-off reply, which is half an answer and would be
+  /// read back later as a whole one.
   Future<void> finishReply(int index) async {
     if (index < 0 || index >= _messages.length) return;
+    if (_messages[index].cutOff) return;
     final body = _messages[index].text;
     final sessionId = _sessionId;
     if (sessionId == null || body.trim().isEmpty) return;

@@ -57,24 +57,6 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     final prompt = (text ?? _input.text).trim();
     if (prompt.isEmpty || _sending) return;
 
-    // Item 51: the model used to be sent the typed text and nothing else, so
-    // it could not answer a question about the user's own data — and there
-    // was never a privacy reason for it, since model and data are both on
-    // this phone. The block is appended after the user's words; the user
-    // never sees or types it, and the bubble below still shows `prompt`.
-    // Item 70: handed over separately rather than joined here. Whether the
-    // DATA block still needs sending depends on what the live session has
-    // already been given, and the runtime is the only thing that knows
-    // that — it used to go with every message, which pushed the question
-    // out of the window by the third turn on Android.
-    final lookup = novaLookupBlockFor(ref, prompt);
-    final novaData = await novaDataBlockFor(ref);
-
-    final kind = guideKindForPersona(guide);
-    final runtime = ref.read(guideRuntimeServiceProvider);
-    final manager = ref.read(guideModelManagerProvider);
-    final voice = ref.read(guideVoiceServiceProvider);
-    final history = ref.read(chatHistoryProvider);
     final backend = ref.read(aiBackendProvider);
     final onCloud = backend.backend == AiBackend.cloud && backend.cloudReady;
 
@@ -95,7 +77,7 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
     // The user bubble and the empty one the reply streams into. Written to
     // the vault as it goes, so closing the app mid-answer loses the answer
     // rather than the question.
-    final replyIndex = await history.addUserTurn(
+    final replyIndex = await ref.read(chatHistoryProvider).addUserTurn(
       personaId: guide.id,
       text: prompt,
       backend: onCloud ? 'cloud' : 'device',
@@ -104,6 +86,40 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
           : ref.read(onDeviceModelProvider).label,
     );
     _scrollToEnd();
+    await _reply(guide, prompt, replyIndex);
+  }
+
+  /// Item 123: Try again on a reply that was cut off. Streams into the same
+  /// bubble; the question is not asked twice.
+  Future<void> _retry(GuidePersona guide, int replyIndex) async {
+    if (_sending) return;
+    final prompt = ref.read(chatHistoryProvider).resetReply(replyIndex);
+    if (prompt == null) return;
+    setState(() => _sending = true);
+    _scrollToEnd();
+    await _reply(guide, prompt, replyIndex);
+  }
+
+  /// Streams Nova's answer to [prompt] into the bubble at [replyIndex].
+  Future<void> _reply(GuidePersona guide, String prompt, int replyIndex) async {
+    // Item 51: the model used to be sent the typed text and nothing else, so
+    // it could not answer a question about the user's own data — and there
+    // was never a privacy reason for it, since model and data are both on
+    // this phone. The block is appended after the user's words; the user
+    // never sees or types it, and the bubble below still shows `prompt`.
+    // Item 70: handed over separately rather than joined here. Whether the
+    // DATA block still needs sending depends on what the live session has
+    // already been given, and the runtime is the only thing that knows
+    // that — it used to go with every message, which pushed the question
+    // out of the window by the third turn on Android.
+    final lookup = novaLookupBlockFor(ref, prompt);
+    final novaData = await novaDataBlockFor(ref);
+
+    final kind = guideKindForPersona(guide);
+    final runtime = ref.read(guideRuntimeServiceProvider);
+    final manager = ref.read(guideModelManagerProvider);
+    final voice = ref.read(guideVoiceServiceProvider);
+    final history = ref.read(chatHistoryProvider);
 
     try {
       if (manager.streamingEnabled) {
@@ -152,6 +168,10 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
           unawaited(voice.speak(stripGuideMarkdown(reply)));
         }
       }
+    } on NovaReplyCutOff catch (cut) {
+      // Item 123: half an answer is shown as half an answer, with Try
+      // again, and never stored as if it were complete.
+      history.markCutOff(replyIndex, cut.partial);
     } catch (e) {
       history.updateReply(
         replyIndex,
@@ -356,10 +376,13 @@ class _GuidesScreenState extends ConsumerState<GuidesScreen> {
         }
         final m = messages[i];
         final pending = !m.fromUser && m.text.isEmpty;
+        final canRetry = m.cutOff && i == messages.length - 1 && !_sending;
         return _Bubble(
           fromUser: m.fromUser,
           accent: ac,
           text: pending ? '…' : m.text,
+          cutOff: m.cutOff,
+          onRetry: canRetry ? () => _retry(guide, i) : null,
         );
       },
     );
@@ -581,11 +604,20 @@ class _QuickPrompts extends StatelessWidget {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble(
-      {required this.fromUser, required this.text, required this.accent});
+  const _Bubble({
+    required this.fromUser,
+    required this.text,
+    required this.accent,
+    this.cutOff = false,
+    this.onRetry,
+  });
   final bool fromUser;
   final String text;
   final Color accent;
+
+  /// Item 123: the reply stopped before Nova finished it.
+  final bool cutOff;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -608,10 +640,43 @@ class _Bubble extends StatelessWidget {
           ),
           border: Border.all(color: fromUser ? Colors.transparent : t.border),
         ),
-        child: GuideFormattedText(
-          text: text,
-          style: VyanaType.body.copyWith(color: t.text, height: 1.45),
-        ),
+        child: !cutOff
+            ? GuideFormattedText(
+                text: text,
+                style: VyanaType.body.copyWith(color: t.text, height: 1.45),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (text.trim().isNotEmpty)
+                    GuideFormattedText(
+                      text: text,
+                      style: VyanaType.body
+                          .copyWith(color: t.textSec, height: 1.45),
+                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Cut off',
+                        style: VyanaType.mono10.copyWith(color: t.textMuted),
+                      ),
+                      if (onRetry != null) ...[
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          onTap: onRetry,
+                          child: Text(
+                            'Try again',
+                            style: VyanaType.label.copyWith(color: accent),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
       ),
     );
   }

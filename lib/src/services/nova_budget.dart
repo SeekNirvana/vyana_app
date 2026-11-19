@@ -470,3 +470,87 @@ String composeNovaPrompt({
     if (lookupBlock.trim().isNotEmpty) lookupBlock,
   ].join('\n\n');
 }
+
+// ── How a reply ended (item 123) ─────────────────────────────────────────
+
+/// Why a reply stopped. Logged once per reply, so a cut-off answer on a
+/// phone names its own cause.
+enum NovaReplyEnd {
+  /// The model's stream closed with room left in the window.
+  finished,
+
+  /// The repeat guard stopped a token loop.
+  guard,
+
+  /// The window ran out while the reply was being written.
+  windowFull,
+
+  /// Generation failed after some text had arrived.
+  error;
+
+  /// Anything but [finished] means the reply is not a whole answer.
+  bool get isCutOff => this != finished;
+}
+
+/// A reply that stopped before the model finished it.
+///
+/// Item 123: thrown instead of returning the text, so a half answer can
+/// never be stored or shown as a finished one. [partial] is what had
+/// arrived, kept on screen under "Cut off".
+class NovaReplyCutOff implements Exception {
+  const NovaReplyCutOff(this.partial, this.reason, [this.detail]);
+
+  final String partial;
+  final NovaReplyEnd reason;
+  final Object? detail;
+
+  @override
+  String toString() =>
+      'NovaReplyCutOff(${reason.name}${detail == null ? '' : ': $detail'})';
+}
+
+/// The stuck-reply guard: stops a stream that repeats one piece of text.
+///
+/// Item 123: empty and whitespace-only pieces are ignored. The runtime can
+/// emit them between words, and four in a row used to look like a loop and
+/// stopped real replies after six or eight words. They neither count toward
+/// a streak nor break one.
+class NovaRepeatGuard {
+  NovaRepeatGuard({this.limit = 4});
+
+  final int limit;
+  String _last = '';
+  int _streak = 0;
+
+  /// Feeds one piece; true when the stream should be stopped.
+  bool shouldStop(String token) {
+    if (token.trim().isEmpty) return false;
+    if (token == _last) {
+      _streak++;
+    } else {
+      _last = token;
+      _streak = 1;
+    }
+    return _streak >= limit;
+  }
+}
+
+/// One turn the live session holds: what was asked (without the DATA
+/// block, which is sent again after any rebuild), what Nova said, and
+/// roughly what both cost.
+class NovaTurn {
+  const NovaTurn({
+    required this.message,
+    required this.reply,
+    required this.tokens,
+  });
+
+  final String message;
+  final String reply;
+  final int tokens;
+}
+
+/// A token count when the tokenizer cannot be asked: four characters a
+/// token, rounded up, which over-counts English slightly. Over is safe.
+int novaTokenEstimate(String text) =>
+    text.trim().isEmpty ? 0 : (text.length / 4).ceil();
