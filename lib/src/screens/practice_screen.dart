@@ -1298,6 +1298,10 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
     }
     // If the same practice is already running, jump back into it.
     if (!controller.active) {
+      // Item 98: the first practice with voice cues asks, once, whether to
+      // download Nova's voice. Answering either way starts the practice.
+      await maybeOfferNovaVoiceForCues(context, ref);
+      if (!context.mounted) return;
       // Bug 12: the chosen length now reaches the session, so a suggested
       // three minutes counts down and ends instead of running forever.
       final error = await controller.start(

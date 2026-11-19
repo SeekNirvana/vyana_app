@@ -502,10 +502,19 @@ class YouScreen extends ConsumerWidget {
               icon: 'waveform',
               iconColor: t.heading,
               label: 'Voice cues',
+              // Item 98: without the voice the row offers it, rather than
+              // saying cues are silent and leaving it there.
               subtitle: voiceSvc.novaVoiceReady
                   ? 'Nova speaks during sessions · tap to preview'
-                  : "Silent until Nova's voice is installed",
+                  : voiceSvc.isDownloadingNovaVoice
+                      ? "Downloading Nova's voice · "
+                          '${(voiceSvc.novaVoiceDownloadProgress * 100).round()}%'
+                      : voiceSvc.novaVoiceAvailableToInstall
+                          ? "Install Nova's voice to hear cues · tap to "
+                              'download (${voiceSvc.novaVoiceDownloadSize})'
+                          : 'Cues show as text on screen',
               chevron: false,
+              enabled: true,
               trailing: VSwitch(
                 on: ref.watch(voiceCuesEnabledProvider),
                 color: t.green,
@@ -513,7 +522,12 @@ class YouScreen extends ConsumerWidget {
                     .read(voiceCuesEnabledProvider.notifier)
                     .set(!ref.read(voiceCuesEnabledProvider)),
               ),
-              onTap: () => _previewVoiceCue(context, ref),
+              onTap: voiceSvc.novaVoiceReady
+                  ? () => _previewVoiceCue(context, ref)
+                  : voiceSvc.novaVoiceAvailableToInstall &&
+                          !voiceSvc.isDownloadingNovaVoice
+                      ? () => unawaited(voiceSvc.downloadNovaVoiceModel())
+                      : null,
             ),
           ],
         ),

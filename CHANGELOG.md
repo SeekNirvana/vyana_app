@@ -430,11 +430,9 @@ data, nine that made it confusing, and four changes. One commit per item.
   installed in the same step as Nova herself. Every file is fetched only
   from our own HTTPS host, pinned by SHA-256 and verified after download
   and again before first load. Never a cloud voice: every reply would
-  otherwise leave the phone. When the voice is missing or fails its check
-  Nova falls back to the best *offline* system voice — iOS Premium then
-  Enhanced, Android's own quality ranking — rather than the first one in
-  the list. *The Kokoro release still has to be mirrored and its checksums
-  pinned; see `docs/building.md`. Until then the fallback is what ships.*
+  otherwise leave the phone. *Corrected in v1.1.7 (#98): no system-voice
+  fallback shipped. When the voice is missing, cues show as text and Nova
+  does not speak; v1.1.7 asks once to download the voice instead.*
 - **The suggestion changes through the day (#45).** One card, in one
   place, chosen by the moment: the morning keeps its four-minute practice,
   the afternoon suggests something you actually do ("YOUR USUAL · 32 MIN",

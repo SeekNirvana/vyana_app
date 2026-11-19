@@ -120,3 +120,38 @@ final voiceCuesEnabledProvider =
     StateNotifierProvider<VoiceCuesController, bool>(
   (ref) => VoiceCuesController(),
 );
+
+/// Item 98: whether the one-time download question has been asked.
+const String kVoiceCueDownloadAskedKey = 'vyana.voice_cues.download_asked';
+
+/// The question's title, with the size from the one place it is kept.
+String novaVoiceForCuesTitle(String size) =>
+    "Download Nova's voice ($size) for spoken cues";
+
+/// Item 98 (decided 16 Nov): ask people to download the voice rather than
+/// fall back to another one. The first time a practice with voice cues
+/// starts and the voice is not installed, ask once — Download or Not now.
+/// Never asked again; You → Voice cues offers the download after that.
+/// Until it is installed, cues show as text on screen.
+Future<void> maybeOfferNovaVoiceForCues(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  if (!ref.read(voiceCuesEnabledProvider)) return;
+  if (!novaVoiceConfigured) return;
+  if (NovaVoiceService.instance.isReady || await novaVoiceIsReady()) return;
+  final prefs = await SharedPreferences.getInstance();
+  if (prefs.getBool(kVoiceCueDownloadAskedKey) ?? false) return;
+  await prefs.setBool(kVoiceCueDownloadAskedKey, true);
+  if (!context.mounted) return;
+  final voice = ref.read(guideVoiceServiceProvider);
+  final download = await showVyanaConfirmDialog<bool>(
+    context: context,
+    title: novaVoiceForCuesTitle(voice.novaVoiceDownloadSize),
+    message: 'Until it is installed, cues show as text on screen. It is a '
+        'large download, so Wi-Fi is best.',
+    confirmLabel: 'Download',
+    cancelLabel: 'Not now',
+  );
+  if (download == true) unawaited(voice.downloadNovaVoiceModel());
+}
