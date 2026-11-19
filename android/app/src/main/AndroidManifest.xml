@@ -51,19 +51,19 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Bug 21: lets the scheduled ring alerts survive a reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Item 87: SCHEDULE_EXACT_ALARM is no longer declared here. Every
-         schedule this app makes is inexactAllowWhileIdle, so asking for it
-         was asking for a right we never use.
-         It is still in the merged manifest, and deliberately so: the
-         merger report blames AliAgent-release-4.2.1, part of the YCBT ring
-         SDK, which declares it for itself. Forcing it out with
-         tools:node="remove" would leave a vendor blob calling setExact
-         without the permission, which throws — and that blob is the ring
-         connection. Not worth a SecurityException inside the one component
-         nobody here can debug, for a permission the user is not prompted
-         about on the versions this app targets.
-         Checked with: aapt2 dump permissions, plus
-         build/app/outputs/logs/manifest-merger-dappStore-debug-report.txt -->
+    <!-- Item 120: SCHEDULE_EXACT_ALARM is removed from the merged manifest.
+         Every schedule this app makes is inexactAllowWhileIdle, and it came
+         in only through AliAgent-release-4.2.1 (part of the YCBT ring SDK),
+         which declares it. Item 87 kept it for fear the SDK calls setExact
+         without it; checked against the bytecode of every .aar and .jar in
+         vyana_sdk/android/libs, no class references setExact,
+         setExactAndAllowWhileIdle or setAlarmClock. flutter_foreground_task's
+         restart alarm asks canScheduleExactAlarms() first and falls back to
+         an inexact alarm, so nothing throws without it.
+         Test pairing and sync on a device after this (handover item 120). -->
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        tools:node="remove" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
