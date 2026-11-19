@@ -723,7 +723,11 @@ class AppPrivacyScreen extends StatelessWidget {
                   'Your own AI server — if you set one, your messages and a summary of your ring data go to that server only',
                   // Item 96: backups and exports, which item 53 and item 65
                   // added and nothing here mentioned.
-                  'Backups — encrypted with your passphrase and saved wherever you choose; the weekly automatic backup is off unless you turn it on',
+                  // Item 121: one line for backups. A second said "Vyana
+                  // never sends it anywhere", which repeated this and stops
+                  // being true once the weekly backup writes to a Drive or
+                  // iCloud folder.
+                  'Backups go only where you save them — encrypted with your passphrase; the weekly automatic backup is off unless you turn it on',
                   'Exports — saved or shared where you choose',
                   // Item 96: WalletConnect used to start at launch, so
                   // "only if you connect" was untrue. Item 66 made it true.
@@ -737,11 +741,6 @@ class AppPrivacyScreen extends StatelessWidget {
                   // GPS session started; now they wait for "Show map", and
                   // the person reading this can see what that tap does.
                   'Session map — only if you tap "Show map"; tiles come from OpenStreetMap, which means sending them roughly where you are',
-                  // Item 88: the Cloud sync switch is gone, so the line
-                  // describing it is too — a privacy panel listing a
-                  // feature that does not exist is as wrong as one leaving
-                  // out a feature that does.
-                  'Backing up — an encrypted file you make yourself and put where you choose; Vyana never sends it anywhere',
                 ],
               ),
               _PrivacySection(
@@ -751,7 +750,10 @@ class AppPrivacyScreen extends StatelessWidget {
                   // Item 96: "removes local Vyana data" was true and
                   // incomplete — it is the only copy, which is the part
                   // somebody needs to know before they uninstall.
-                  'Uninstalling deletes all Vyana data on this phone. Back up first if you want to keep it.',
+                  // Item 121: on iPhone, Keychain items (the backup
+                  // passphrase, an AI server key) usually outlive an
+                  // uninstall, so "all" was not true there.
+                  'Uninstalling deletes Vyana\'s data on this phone (on iPhone, a saved passphrase may stay in the Keychain). Back up first if you want to keep it.',
                   'Disconnect or unpair your ring at any time',
                   'Revoke wallet connections in the wallet app',
                   'Export your health report, journal or everything from You at any time',

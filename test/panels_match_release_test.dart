@@ -96,7 +96,10 @@ void main() {
       // The one line somebody needs before they uninstall: this is the
       // only copy, and no platform backup has it.
       expect(code, contains('Google or iCloud backups'));
-      expect(code, contains('Uninstalling deletes all Vyana data'));
+      expect(code, contains('a saved passphrase may stay in the Keychain'));
+      // Item 121: one backup line, and no claim it is never sent anywhere.
+      expect(code, contains('Backups go only where you save them'));
+      expect(code, isNot(contains('never sends it anywhere')));
     });
 
     test("Nova's conversations are listed as kept", () {
