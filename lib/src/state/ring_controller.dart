@@ -717,6 +717,20 @@ class RingController extends ChangeNotifier {
     unawaited(_maybePeriodicSync());
   }
 
+  /// Item 132: whether a battery poll brought anything new to store.
+  @visibleForTesting
+  static bool batteryPollChanged({
+    required DeviceBasicSnapshot? previous,
+    required int? previousVitalsBattery,
+    required DeviceBasicSnapshot next,
+  }) {
+    if (previous == null) return true;
+    if (previous.batteryPower != next.batteryPower) return true;
+    if (previousVitalsBattery != next.batteryPower) return true;
+    return normalizedBatteryStatus(previous.batteryStatus) !=
+        normalizedBatteryStatus(next.batteryStatus);
+  }
+
   Future<void> _maybeRefreshBattery() async {
     if (!_isReady || !_isConnected || _isSyncing || _isBatteryPolling) return;
     final now = DateTime.now();
@@ -732,9 +746,15 @@ class RingController extends ChangeNotifier {
       final battery = basicInfo.batteryPower;
       // The ring answered, so the percentage is current even when unchanged.
       if (battery != null && battery > 0) _markBatteryRead();
-      if (_basicInfo?.batteryPower == battery &&
-          _vitals.battery == battery &&
-          _basicInfo != null) {
+      // Item 132: the charging status as well as the percentage. Taking the
+      // ring off its charger does not change the percentage, so comparing
+      // only that kept "Charging" on the pill until the battery dropped a
+      // point, which can take hours.
+      if (!batteryPollChanged(
+        previous: _basicInfo,
+        previousVitalsBattery: _vitals.battery,
+        next: basicInfo,
+      )) {
         return;
       }
       _set(() {
