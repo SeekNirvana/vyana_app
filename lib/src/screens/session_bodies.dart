@@ -711,6 +711,12 @@ class _StrengthBodyState extends State<StrengthBody> {
       _hrRecovered = null;
     });
     widget.controller.emitCue('Set $_sets complete. Rest for one minute.');
+    // Item 130: the end-of-rest line is prepared during the rest, so it is
+    // heard when the rest ends rather than a second or two later.
+    final restDone = 'Rest complete. Ready for set ${_sets + 1}.';
+    Timer(const Duration(seconds: 5), () {
+      if (mounted) unawaited(widget.controller.prepareCues([restDone]));
+    });
     _restTimer?.cancel();
     _restTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return timer.cancel();
@@ -720,7 +726,7 @@ class _StrengthBodyState extends State<StrengthBody> {
           _hrRecovered = widget.controller.heartRate;
           _resting = false;
           timer.cancel();
-          widget.controller.emitCue('Rest complete. Ready for set ${_sets + 1}.');
+          widget.controller.emitCue(restDone);
         }
       });
     });
@@ -865,6 +871,43 @@ const _breathPatterns = <String, List<int>>{
 };
 const _breathPhaseLabels = ['Breathe in', 'Hold', 'Breathe out', 'Hold'];
 
+/// Where a breath pattern is after [elapsed]: which phase, how many whole
+/// seconds of it are left (rounded up, so a phase counts 5, 4, 3, 2, 1),
+/// and how many phases have begun so far.
+///
+/// Item 130: the pacer is timed from the clock. It used to count
+/// Timer.periodic ticks, and every tick held up by the voice being
+/// generated on the main isolate added drift that never came back.
+/// Phases of zero seconds are skipped; a pattern of all zeros stays on
+/// the first phase.
+({int phase, int remaining, int phasesBegun}) breathPacerAt(
+  List<int> pattern,
+  Duration elapsed,
+) {
+  final cycleMs = pattern.fold<int>(0, (sum, s) => sum + s) * 1000;
+  if (cycleMs <= 0) return (phase: 0, remaining: 0, phasesBegun: 1);
+  final ms = elapsed.isNegative ? 0 : elapsed.inMilliseconds;
+  final cycles = ms ~/ cycleMs;
+  var position = ms % cycleMs;
+  final active = [for (final s in pattern) if (s > 0) s].length;
+  var begun = cycles * active;
+  for (var i = 0; i < pattern.length; i++) {
+    final length = pattern[i] * 1000;
+    if (length == 0) continue;
+    begun++;
+    if (position < length) {
+      final left = length - position;
+      return (
+        phase: i,
+        remaining: (left + 999) ~/ 1000,
+        phasesBegun: begun,
+      );
+    }
+    position -= length;
+  }
+  return (phase: 0, remaining: pattern[0], phasesBegun: begun);
+}
+
 class BreathBody extends StatefulWidget {
   const BreathBody({super.key, required this.controller, required this.accent});
   final SessionController controller;
@@ -880,16 +923,36 @@ class _BreathBodyState extends State<BreathBody> {
   int _phase = 0;
   int _remaining = 0;
   int _coherence = 0;
+  int _phasesBegun = 0;
   Timer? _timer;
+
+  /// Item 130: where the pacer's clock starts, on the session's own clock
+  /// (which already leaves out pauses). Null during the get-ready moment.
+  Duration? _origin;
 
   @override
   void initState() {
     super.initState();
     _remaining = _pattern[0];
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      widget.controller.emitCue(_breathPhaseLabels[_phase]);
-    });
+    unawaited(_getReady());
+  }
+
+  /// Item 130: the get-ready moment. The pacer's phrases are generated
+  /// once, before the clock starts, so each phase change only plays a
+  /// prepared file. After the first session they are already on disk and
+  /// this takes no time at all.
+  Future<void> _getReady() async {
+    await widget.controller.prepareCues([
+      for (var i = 0; i < _pattern.length; i++)
+        if (_pattern[i] > 0) _breathPhaseLabels[i],
+      if (widget.controller.plannedMinutes != null) "Time's up.",
+    ]);
+    if (!mounted) return;
+    _origin = widget.controller.liveElapsed;
+    _tick();
+    // Finer than a second, so a phase change lands within a frame or two
+    // of when it is due; the screen only rebuilds when a number changes.
+    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) => _tick());
   }
 
   @override
@@ -899,22 +962,30 @@ class _BreathBodyState extends State<BreathBody> {
   }
 
   void _tick() {
-    if (!mounted) return;
+    final origin = _origin;
+    if (!mounted || origin == null) return;
+    final at = breathPacerAt(
+      _pattern,
+      widget.controller.liveElapsed - origin,
+    );
+    if (at.phasesBegun == _phasesBegun && at.remaining == _remaining) return;
+    final newPhase = at.phasesBegun != _phasesBegun;
     setState(() {
-      _remaining--;
-      if (_remaining <= 0) {
+      if (newPhase && _phasesBegun > 0) {
         _coherence = (_coherence + 4).clamp(0, 100);
-        var next = (_phase + 1) % 4;
-        var guard = 0;
-        while (_pattern[next] == 0 && guard < 4) {
-          next = (next + 1) % 4;
-          guard++;
-        }
-        _phase = next;
-        _remaining = _pattern[_phase];
-        widget.controller.emitCue(_breathPhaseLabels[_phase]);
       }
+      _phase = at.phase;
+      _remaining = at.remaining;
+      _phasesBegun = at.phasesBegun;
     });
+    if (newPhase) {
+      // A cue that cannot start inside its own phase is dropped, never
+      // heard late and never cutting the one before it.
+      widget.controller.emitCue(
+        _breathPhaseLabels[_phase],
+        within: Duration(seconds: _pattern[_phase]),
+      );
+    }
   }
 
   @override
@@ -956,7 +1027,7 @@ class _BreathBodyState extends State<BreathBody> {
                   border: Border.all(color: widget.accent.withValues(alpha: 0.6)),
                 ),
                 child: Center(
-                  child: Text('$_remaining',
+                  child: Text(_origin == null ? '' : '$_remaining',
                       style: VyanaType.displaySerif.copyWith(
                           color: t.text, fontSize: 44)),
                 ),
@@ -965,7 +1036,7 @@ class _BreathBodyState extends State<BreathBody> {
             ),
           ),
           const SizedBox(height: 16),
-          Text(_breathPhaseLabels[_phase],
+          Text(_origin == null ? 'Get ready' : _breathPhaseLabels[_phase],
               style: VyanaType.titleSerif.copyWith(color: t.text, fontSize: 24)),
           const SizedBox(height: 24),
           Row(
@@ -1023,24 +1094,44 @@ class AudioBody extends StatefulWidget {
 class _AudioBodyState extends State<AudioBody> {
   int _line = 0;
   Timer? _timer;
+  Timer? _prepareTimer;
+
+  /// Prepares the line after [line] a few seconds into this one, once it
+  /// is playing, so the generation does not delay the line being spoken.
+  void _prepareAfter(int line) {
+    _prepareTimer?.cancel();
+    _prepareTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      final next = (line + 1) % _audioScript.length;
+      unawaited(widget.controller.prepareCues([_audioScript[next]]));
+    });
+  }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Item 130: the first line is prepared before it is spoken, and each
+      // later one while the line before it plays, so a line starts when it
+      // is shown rather than a second or two after.
+      await widget.controller.prepareCues([_audioScript[_line]]);
+      if (!mounted) return;
       widget.controller.emitCue(_audioScript[_line]);
+      _prepareAfter(_line);
     });
     _timer = Timer.periodic(const Duration(seconds: 18), (_) {
       if (!mounted) return;
       final next = (_line + 1) % _audioScript.length;
       setState(() => _line = next);
       widget.controller.emitCue(_audioScript[next]);
+      _prepareAfter(next);
     });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _prepareTimer?.cancel();
     super.dispose();
   }
 
