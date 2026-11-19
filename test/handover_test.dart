@@ -768,7 +768,9 @@ void main() {
       expect(at('how was last week?')?.label, 'last week');
       expect(at('show me this month')?.label, 'this month');
       expect(at('what happened on 3 Nov?')?.from, DateTime(2026, 11, 3));
-      expect(at('is my HRV trending down?')?.label, 'last 7 days');
+      // Item 116: "trending" alone is too vague to add a week of numbers.
+      expect(at('is my HRV trending down?'), isNull);
+      expect(at('my average HRV')?.label, 'last 7 days');
       // No date, no metric over time — nothing to look up.
       expect(at('I feel tired'), isNull);
       expect(at('what should I do now?'), isNull);

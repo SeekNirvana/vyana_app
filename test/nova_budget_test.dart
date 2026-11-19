@@ -93,9 +93,39 @@ void main() {
       );
       expect(novaLookupRangeFor('yesterday', now: now)!.days, 1);
       expect(
-        novaLookupRangeFor('my hrv trend', now: now)!.label,
+        novaLookupRangeFor('my average hrv', now: now)!.label,
         'last 7 days',
       );
+    });
+
+    test('item 116: vague words add nothing', () {
+      for (final vague in [
+        'my hrv trend',
+        'have I slept badly recently?',
+        'feeling tired lately',
+      ]) {
+        expect(novaLookupRangeFor(vague, now: now), isNull, reason: vague);
+      }
+    });
+
+    test('item 116: "sun" needs a time word to be Sunday', () {
+      expect(novaLookupRangeFor('this sun is lovely', now: now), isNull);
+      expect(novaLookupRangeFor("the sun's out", now: now), isNull);
+      expect(novaLookupRangeFor('how did I sleep sun night', now: now),
+          isNotNull);
+      expect(novaLookupRangeFor('how was sunday', now: now), isNotNull);
+      // Saturday keeps its prefixes.
+      expect(novaLookupRangeFor('how was last sat', now: now), isNotNull);
+    });
+
+    test('item 116: the offline and not-synced alerts are concerns', () {
+      final concerns = recentAlertConcerns(
+        now: now,
+        offlineAlerted: true,
+        staleAlerted: true,
+      );
+      expect(concerns, contains('ring out of reach alert sent'));
+      expect(concerns, contains('ring not synced alert sent'));
     });
 
     test('a question about now asks for no lookup', () {

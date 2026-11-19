@@ -444,6 +444,9 @@ Future<NovaData> novaDataBlockFor(WidgetRef ref, {DateTime? at}) async {
 Future<List<String>> _recentAlerts(DateTime now) async {
   try {
     final store = await SharedPreferences.getInstance();
+    // Item 116: the service isolate writes these; without a reload this
+    // isolate reads them as they were at launch.
+    await store.reload();
     DateTime? stamp(String key) {
       final millis = store.getInt(key);
       return millis == null
@@ -455,6 +458,8 @@ Future<List<String>> _recentAlerts(DateTime now) async {
       now: now,
       healthFiredAt: stamp(kRingAlertHealthFiredAtKey),
       lowBatteryFiredAt: stamp(kRingAlertLowBatteryFiredAtKey),
+      offlineAlerted: store.getBool(kRingAlertOfflineFiredKey) ?? false,
+      staleAlerted: store.getBool(kRingAlertStaleFiredKey) ?? false,
     );
   } on Object catch (error) {
     debugPrint('[Nova] could not read recent alerts: $error');

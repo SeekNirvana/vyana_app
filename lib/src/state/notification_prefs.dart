@@ -366,6 +366,14 @@ const String kRingAlertHealthFiredAtKey = 'vyana.ring.alert.healthFiredAt';
 const String kRingAlertLowBatteryFiredAtKey =
     'vyana.ring.alert.lowBatteryFiredAt';
 
+/// Item 116: set while the offline alert has been sent for the current
+/// episode, and cleared when the ring is back. Read by Nova.
+const String kRingAlertOfflineFiredKey = 'vyana.ring.alert.offlineFired';
+
+/// Item 116: set while the not-synced alert has been sent for the current
+/// episode. Read by Nova.
+const String kRingAlertStaleFiredKey = 'vyana.ring.alert.staleFired';
+
 const List<String> kRingAlertStateKeys = [
   'vyana.ring.alert.offlineSince',
   'vyana.ring.alert.offlineFired',
@@ -378,11 +386,11 @@ const List<String> kRingAlertStateKeys = [
 
 class _AlertKeys {
   static const offlineSince = 'vyana.ring.alert.offlineSince';
-  static const offlineFired = 'vyana.ring.alert.offlineFired';
+  static const offlineFired = kRingAlertOfflineFiredKey;
   static const lowBatteryFiredAt = kRingAlertLowBatteryFiredAtKey;
   static const overnightBatteryFiredOn =
       'vyana.ring.alert.overnightBatteryFiredOn';
-  static const staleFired = 'vyana.ring.alert.staleFired';
+  static const staleFired = kRingAlertStaleFiredKey;
   static const healthFiredAt = kRingAlertHealthFiredAtKey;
 }
 

@@ -246,9 +246,14 @@ bool _mentionsWeekday(String text, int weekday) {
   final long = _longWeekdays[weekday - 1];
   if (RegExp('\\b$long\\b').hasMatch(text)) return true;
   final short = _shortWeekdays[weekday - 1].toLowerCase();
+  // Item 116: "sun" is the sun. "this sun", "the sun's out", "last sun I
+  // got" are not Sunday, so the short form counts only with a time word
+  // after it — "sun night", "sun morning".
+  final timeWordOnly = short == 'sun';
   // "on sat", "last sat" …
-  if (RegExp('\\b(?:${_datePrefixes.join('|')})\\s+$short\\b')
-      .hasMatch(text)) {
+  if (!timeWordOnly &&
+      RegExp('\\b(?:${_datePrefixes.join('|')})\\s+$short\\b')
+          .hasMatch(text)) {
     return true;
   }
   // "sat night", "sat morning" …
@@ -256,7 +261,7 @@ bool _mentionsWeekday(String text, int weekday) {
     return true;
   }
   // "sat's" — possessive, as in "sat's sleep".
-  return RegExp("\\b$short's\\b").hasMatch(text);
+  return !timeWordOnly && RegExp("\\b$short's\\b").hasMatch(text);
 }
 
 /// A day and month written out, or null when the text has none.
@@ -351,8 +356,10 @@ NovaLookupRange? novaLookupRangeFor(String message, {DateTime? now}) {
 
   // A metric named over time, with no date: the last week is the useful
   // default — the same window Metrics opens on.
-  if (RegExp(r'\b(trend|trending|average|over time|recently|lately)\b')
-      .hasMatch(text)) {
+  // Item 116: not "recently", "lately" or "trend" on their own. They are
+  // vague, and the rule is "if unsure, add nothing": a week of numbers
+  // Nova was not asked about costs the room the question needs.
+  if (RegExp(r'\b(average|over time)\b').hasMatch(text)) {
     return NovaLookupRange(from: back(6), to: today, label: 'last 7 days');
   }
   return null;
@@ -383,10 +390,16 @@ String novaDaysAgoWord(int daysAgo) => switch (daysAgo) {
 /// thresholds, so what Nova is told is what the person was actually told.
 /// The flags record when, not what, so these name the kind and the day and
 /// claim nothing more.
+///
+/// Item 116: the offline and not-synced alerts too. They record that they
+/// were sent for the episode still going on, not when, so they are named as
+/// current rather than dated.
 List<String> recentAlertConcerns({
   required DateTime now,
   DateTime? healthFiredAt,
   DateTime? lowBatteryFiredAt,
+  bool offlineAlerted = false,
+  bool staleAlerted = false,
   Duration within = const Duration(days: 3),
 }) {
   final out = <String>[];
@@ -399,6 +412,8 @@ List<String> recentAlertConcerns({
 
   add('health', healthFiredAt);
   add('low battery', lowBatteryFiredAt);
+  if (offlineAlerted) out.add('ring out of reach alert sent');
+  if (staleAlerted) out.add('ring not synced alert sent');
   return out;
 }
 
