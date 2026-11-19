@@ -418,6 +418,16 @@ bool baselineQuestionDue({
   return spread <= width * kBaselineSteadySpread;
 }
 
+/// Item 113: the same three answers on Metrics as on You → Your normal:
+/// This is normal for me · Keep flagging it · Ask me later. Metrics used to
+/// keep its own older wording ("Mostly rested", "No, I have felt calm…"),
+/// so one choice had two names depending on where it was made.
+const List<(String, BaselineAnswer)> kBaselineAnswerOptions = [
+  ('This is normal for me', BaselineAnswer.adopted),
+  ('Keep flagging it', BaselineAnswer.kept),
+  ('Ask me later', BaselineAnswer.deferred),
+];
+
 /// The question for [vital], with its counts computed from the data rather
 /// than written into the copy. Asks about the feeling, never the value.
 BaselineQuestion baselineQuestionFor(
@@ -432,11 +442,7 @@ BaselineQuestion baselineQuestionFor(
         vital: BaselineVital.sleep,
         prompt: 'You have slept about ${usualSleepLabel ?? 'the same'} on most '
             'nights. Do you usually wake up feeling rested?',
-        options: const [
-          ('Mostly rested', BaselineAnswer.adopted),
-          ('Usually tired', BaselineAnswer.kept),
-          ('It varies', BaselineAnswer.deferred),
-        ],
+        options: kBaselineAnswerOptions,
       );
     case BaselineVital.restingHr:
     case BaselineVital.stress:
@@ -444,22 +450,14 @@ BaselineQuestion baselineQuestionFor(
         vital: BaselineVital.restingHr,
         prompt: 'Your readings have said stressed on $atypicalDays of the last '
             '$windowDays days. Has it felt that way to you?',
-        options: const [
-          ('No, I have felt calm', BaselineAnswer.adopted),
-          ('Yes, it has been a lot', BaselineAnswer.kept),
-          ('Not sure', BaselineAnswer.deferred),
-        ],
+        options: kBaselineAnswerOptions,
       );
     case BaselineVital.hrv:
       return BaselineQuestion(
         vital: BaselineVital.hrv,
         prompt: 'Your recovery readings have been low on $atypicalDays of the '
             'last $windowDays days. Has it felt that way to you?',
-        options: const [
-          ('No, I have felt fine', BaselineAnswer.adopted),
-          ('Yes, I have felt worn out', BaselineAnswer.kept),
-          ('Not sure', BaselineAnswer.deferred),
-        ],
+        options: kBaselineAnswerOptions,
       );
   }
 }
